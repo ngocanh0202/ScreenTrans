@@ -1,0 +1,19 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Set up Python 3.11 venv
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv -r windows/requirements-dev.txt -r spikes/requirements-ci.txt
+      - name: Run tests (no local-only)
+        run: .venv\Scripts\python -m pytest -q -m "not local"
