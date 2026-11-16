@@ -7,6 +7,6 @@ sacremoses
 ctranslate2
 optimum[onnxruntime]
 onnx
-onnxruntime
+onnxruntime==1.32.0  # keep equal to ortVersion in android/mt-core/build.gradle.kts
 sacrebleu
 psutil
