@@ -239,7 +239,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 0 — Khởi tạo & spike ✅ (kết quả: [docs/superpowers/reports/2026-11-17-phase0-results.md](docs/superpowers/reports/2026-11-17-phase0-results.md))
 - [x] Cấu trúc monorepo, `.gitignore`, `ci.yml` khung chạy được.
-- [~] Spike A (harness xong; **còn đo trên ảnh game thật** — làm đầu Phase 1): `winocr` trên ảnh chụp thoại Reverse: 1999 (và thử RapidOCR) — đo độ chính xác, tốc độ. Thiếu gói English OCR thì in hướng dẫn cài.
+- [x] Spike A (đo trên 6 ảnh Reverse: 1999: Windows OCR CER 2,4% / 27 ms, chốt mặc định; RapidOCR ~5 s): `winocr` trên ảnh chụp thoại Reverse: 1999 (và thử RapidOCR) — đo độ chính xác, tốc độ. Thiếu gói English OCR thì in hướng dẫn cài.
 - [x] Spike B: vinai + opus-mt qua CT2 int8, so với `transformers` gốc (đặc biệt token ngôn ngữ mBART).
 - [x] Spike C (đạt: 53 ms/câu, +177 MB RAM): opus-mt ONNX int8 (encoder + decoder merged có KV-cache, export bằng `optimum`) + SentencePiece + vòng giải mã greedy bằng Kotlin, ORT CPU 2 luồng (thử thêm XNNPACK EP), trong app thử tối thiểu. **Đạt** nếu trên POCO X8 Pro: < ~300 ms/câu ~20 từ, RAM < 400 MB, output khớp bản Python. **Không đạt** → phương án dự phòng: ML Kit Translation (en→vi offline, ~30 MB; chất lượng trung bình, không fine-tune được).
 

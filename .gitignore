@@ -16,3 +16,7 @@ android/app/src/main/assets/model/
 .superpowers/
 spikes/ocr/data/*.jpg
 spikes/ocr/data/*.jpeg
+
+# OCR test images and their ground truth stay local
+spikes/ocr/data/*
+!spikes/ocr/data/README.md

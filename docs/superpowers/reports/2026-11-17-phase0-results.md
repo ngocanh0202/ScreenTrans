@@ -6,7 +6,7 @@ Ngày: 2026-11-17 · Nhánh: `phase-0` · Plan: [2026-11-16-phase0-init-and-spik
 
 | Câu hỏi | Kết quả | Quyết định |
 |---|---|---|
-| A. OCR nào đọc tốt chữ game? | Harness xong, cả Windows OCR và RapidOCR đọc đúng ảnh thử. **Chưa đo trên ảnh game thật** (chờ ảnh). | **Tạm** Windows OCR (mặc định spec), RapidOCR dự phòng. Chốt lại khi có ảnh. |
+| A. OCR nào đọc tốt chữ game? | Đo trên 6 ảnh Reverse: 1999 thật: Windows OCR CER 2,4% / 27 ms (khung thoại); RapidOCR 7,1% / ~5 s. | **Windows OCR** mặc định (chốt). RapidOCR quá chậm — chỉ giữ làm tùy chọn, xem lại ở Phase 1. |
 | B. CT2 có khớp `transformers` không, nhanh bao nhiêu? | Khớp (chrF 94,7 / 95,5). opus nhanh, vinai chậm 4–5× nhưng dịch tốt hơn rõ rệt. | Windows mặc định **opus-mt** theo tiêu chí spec; **vinai** tùy chọn. Xem "Cần người dùng quyết định". |
 | C. opus-mt ONNX trên POCO X8 Pro? | 53 ms/câu, +177 MB RAM, load 1,4 s. | **ONNX opus-mt, CPU 2 luồng**. Không cần phương án ML Kit Translation. |
 
@@ -16,7 +16,26 @@ Ngày: 2026-11-17 · Nhánh: `phase-0` · Plan: [2026-11-16-phase0-init-and-spik
 - Ảnh thử tổng hợp (chữ trắng nền đen, Segoe UI 40px): cả hai engine đọc đúng "Hello world".
 - RapidOCR trả mỗi từ một khung → đã gộp theo dòng.
 - Thiếu gói English OCR → `OcrEngineUnavailable` kèm hướng dẫn cài (test bằng monkeypatch).
-- **Còn thiếu:** CER và ms trên 8–10 ảnh khung thoại Reverse: 1999. Chạy `.venv\Scripts\python -m spikes.ocr.run` khi có ảnh trong `spikes/ocr/data/`.
+- **Đo trên ảnh thật (2026-11-17):** 6 ảnh chụp màn hình điện thoại 2048×942 (qua Messenger, JPEG): 5 khung thoại (4 có tên "Druvis III", 1 lời dẫn) + 1 màn hình Log.
+
+Khung thoại (cắt vùng tên + 2 dòng, `python -m spikes.ocr.run`):
+
+| Engine | CER trung bình | ms trung vị |
+|---|---|---|
+| **Windows OCR** | **0,024** | **27** |
+| RapidOCR | 0,071 | ~4.900 |
+
+Toàn màn hình (`python -m spikes.ocr.fullscreen`, dòng "tìm thấy" khi CER ≤ 0,1):
+
+| Ảnh | Windows: tìm thấy / ms | RapidOCR: tìm thấy / ms |
+|---|---|---|
+| 5 ảnh thoại (gồm AUTO/SKIP/EXIT) | 21/27 / 119–251 ms | 22/27 / 2.988–3.991 ms |
+| Màn hình Log (10 dòng) | **9/10** / 122 ms | 4/10 / 5.833 ms |
+
+- **Mọi câu thoại Windows OCR đọc đúng 100%.** Lỗi duy nhất lặp lại: tên **"Druvis III" → "Druvis Ill"** (số La Mã giống chữ "Ill" trong font serif). Không ảnh hưởng dịch (dòng tên không dịch); sửa bằng bảng thuật ngữ game hoặc quy tắc `Ill`→`III` cho dòng tên.
+- Toàn màn hình: Windows OCR thỉnh thoảng bỏ sót / gộp nút "AUTO", "SKIP" — các nút này sẽ bị lọc anyway.
+- RapidOCR chậm ~5 s/ảnh trên laptop (chưa tìm hiểu nguyên nhân) → không dùng được cho Live.
+- **Còn thiếu:** ảnh có câu lựa chọn, menu/kho đồ, game có bong bóng thoại.
 
 ## B. Dịch trên Windows (CTranslate2 int8, laptop 14 luồng logic, máy rảnh)
 
@@ -62,7 +81,7 @@ Model ONNX int8 per-channel: encoder 47 MB + decoder merged 81 MB (thư mục 13
 
 ## Quyết định (theo tiêu chí trong spec)
 
-1. **OCR Windows:** Windows OCR mặc định, RapidOCR dự phòng — **tạm thời**, chốt lại khi đo trên ảnh game thật (đầu Phase 1).
+1. **OCR Windows:** **Windows OCR mặc định (đã chốt sau khi đo ảnh thật)**. RapidOCR quá chậm (~5 s) — tùy chọn, xem lại ở Phase 1.
 2. **Model Windows:** tiêu chí spec là "vinai nếu đoạn ~50 từ beam 2 < 300 ms, không thì opus". vinai ~1.200 ms → **mặc định opus-mt-en-vi**, beam 2, `intra_threads=2`. vinai vẫn có trong cấu hình làm tùy chọn chất lượng cao.
 3. **Android:** ONNX opus-mt, **CPU 2 luồng**, không XNNPACK, greedy. Không cần ML Kit Translation.
 4. **Dung lượng thực tế:** CT2 opus 78 MB, CT2 vinai 439 MB, ONNX opus 131 MB.
@@ -87,6 +106,7 @@ Model ONNX int8 per-channel: encoder 47 MB + decoder merged 81 MB (thư mục 13
 
 ## Việc mang sang Phase 1
 
-- Đo OCR trên ảnh game thật, chốt engine.
+- Sửa tên "III" bị đọc thành "Ill" (thuật ngữ game / quy tắc dòng tên).
+- Thêm ảnh câu lựa chọn, menu, bong bóng thoại vào bộ đo khi có.
 - Chốt model Windows theo lựa chọn ở trên.
 - `onnxruntime` Python ghim 1.32.0 = `ortVersion` trong Gradle (giữ đồng bộ khi nâng cấp).
