@@ -1,0 +1,33 @@
+{
+ "name": "Windows OCR on rv_05 dialogue crop",
+ "lines": [
+  {
+   "text": "The tall stranger stands up. The hall is as quiet as it used to be, but he's",
+   "box": [
+    25,
+    78,
+    1088,
+    31
+   ]
+  },
+  {
+   "text": "the only person walking through it now.",
+   "box": [
+    25,
+    118,
+    521,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "The tall stranger stands up. The hall is as quiet as it used to be, but he's the only person walking through it now.",
+   "sentences": [
+    "The tall stranger stands up.",
+    "The hall is as quiet as it used to be, but he's the only person walking through it now."
+   ]
+  }
+ ]
+}

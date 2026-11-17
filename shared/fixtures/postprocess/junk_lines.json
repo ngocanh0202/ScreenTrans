@@ -1,0 +1,50 @@
+{
+ "name": "synthetic: arrow, numbers, dash",
+ "lines": [
+  {
+   "text": "Where did everyone go?",
+   "box": [
+    20,
+    10,
+    330,
+    30
+   ]
+  },
+  {
+   "text": "▼",
+   "box": [
+    600,
+    50,
+    20,
+    20
+   ]
+  },
+  {
+   "text": "123",
+   "box": [
+    20,
+    200,
+    40,
+    30
+   ]
+  },
+  {
+   "text": "—",
+   "box": [
+    300,
+    200,
+    30,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Where did everyone go?",
+   "sentences": [
+    "Where did everyone go?"
+   ]
+  }
+ ]
+}

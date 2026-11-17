@@ -1,0 +1,47 @@
+{
+ "name": "Windows OCR on rv_01 dialogue crop",
+ "lines": [
+  {
+   "text": "Druvis Ill",
+   "box": [
+    37,
+    13,
+    149,
+    29
+   ]
+  },
+  {
+   "text": "His worry was washed away by the letter. He ran out of the house so quickly",
+   "box": [
+    26,
+    78,
+    1079,
+    31
+   ]
+  },
+  {
+   "text": "that his favorite hat was left lying on the old chair.",
+   "box": [
+    25,
+    118,
+    722,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "name",
+   "text": "Druvis III",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "His worry was washed away by the letter. He ran out of the house so quickly that his favorite hat was left lying on the old chair.",
+   "sentences": [
+    "His worry was washed away by the letter.",
+    "He ran out of the house so quickly that his favorite hat was left lying on the old chair."
+   ]
+  }
+ ]
+}

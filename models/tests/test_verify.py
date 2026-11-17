@@ -25,3 +25,16 @@ def test_leaked_lang_tokens_counts_raw_tokens_after_prefix():
 
 def test_leaked_lang_tokens_none_prefix():
     assert leaked_lang_tokens(["▁a"], None) == 0
+
+
+def test_model_meta_for_vinai_ct2():
+    from models.export import model_meta
+
+    assert model_meta("vinai-en2vi", "ct2") == {
+        "id": "vinai-en2vi", "kind": "mbart", "format": "ct2", "src_lang": "en_XX", "tgt_prefix": "vi_VN"}
+
+
+def test_model_meta_for_opus_onnx():
+    from models.export import model_meta
+
+    assert model_meta("opus-mt-en-vi", "onnx")["kind"] == "marian"

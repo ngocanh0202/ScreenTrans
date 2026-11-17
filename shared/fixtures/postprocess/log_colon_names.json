@@ -1,0 +1,165 @@
+{
+ "name": "Windows OCR on rv_06 Log screen (full screenshot)",
+ "lines": [
+  {
+   "text": "Log",
+   "box": [
+    297,
+    146,
+    63,
+    40
+   ]
+  },
+  {
+   "text": "Druvis Ill:",
+   "box": [
+    376,
+    413,
+    110,
+    20
+   ]
+  },
+  {
+   "text": "Vertin:",
+   "box": [
+    375,
+    636,
+    81,
+    20
+   ]
+  },
+  {
+   "text": "(D Druvis Ill:",
+   "box": [
+    301,
+    731,
+    185,
+    36
+   ]
+  },
+  {
+   "text": "Since their return to the Station, each one of them has been asked to a one-on-one meeting with the",
+   "box": [
+    571,
+    260,
+    1257,
+    26
+   ]
+  },
+  {
+   "text": "Station's staff.",
+   "box": [
+    570,
+    306,
+    298,
+    28
+   ]
+  },
+  {
+   "text": "Vertin ... was the last to arrive.",
+   "box": [
+    569,
+    408,
+    380,
+    22
+   ]
+  },
+  {
+   "text": "He said he was going to ask Madam Z about which team we would join next week. I haven't heard",
+   "box": [
+    571,
+    488,
+    1281,
+    27
+   ]
+  },
+  {
+   "text": "from him since then.",
+   "box": [
+    570,
+    534,
+    249,
+    22
+   ]
+  },
+  {
+   "text": "Yes. Here are the short notes I wrote for your review.",
+   "box": [
+    569,
+    636,
+    783,
+    28
+   ]
+  },
+  {
+   "text": "Then, Sonetto.",
+   "box": [
+    570,
+    733,
+    185,
+    27
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Log",
+   "sentences": [
+    "Log"
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "Since their return to the Station, each one of them has been asked to a one-on-one meeting with the Station's staff.",
+   "sentences": [
+    "Since their return to the Station, each one of them has been asked to a one-on-one meeting with the Station's staff."
+   ]
+  },
+  {
+   "kind": "name",
+   "text": "Druvis III",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "Vertin ... was the last to arrive.",
+   "sentences": [
+    "Vertin ... was the last to arrive."
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "He said he was going to ask Madam Z about which team we would join next week. I haven't heard from him since then.",
+   "sentences": [
+    "He said he was going to ask Madam Z about which team we would join next week.",
+    "I haven't heard from him since then."
+   ]
+  },
+  {
+   "kind": "name",
+   "text": "Vertin",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "Yes. Here are the short notes I wrote for your review.",
+   "sentences": [
+    "Yes.",
+    "Here are the short notes I wrote for your review."
+   ]
+  },
+  {
+   "kind": "name",
+   "text": "Druvis III",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "Then, Sonetto.",
+   "sentences": [
+    "Then, Sonetto."
+   ]
+  }
+ ]
+}

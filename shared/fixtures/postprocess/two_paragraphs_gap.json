@@ -1,0 +1,39 @@
+{
+ "name": "synthetic: vertical gap 2h",
+ "lines": [
+  {
+   "text": "First paragraph here.",
+   "box": [
+    20,
+    10,
+    300,
+    30
+   ]
+  },
+  {
+   "text": "Second paragraph there.",
+   "box": [
+    20,
+    100,
+    320,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "First paragraph here.",
+   "sentences": [
+    "First paragraph here."
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "Second paragraph there.",
+   "sentences": [
+    "Second paragraph there."
+   ]
+  }
+ ]
+}

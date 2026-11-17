@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "entries": [
+    {"source": "HP", "type": "keep"},
+    {"source": "MP", "type": "keep"},
+    {"source": "SP", "type": "keep"},
+    {"source": "AP", "type": "keep"},
+    {"source": "ATK", "type": "keep"},
+    {"source": "DEF", "type": "keep"},
+    {"source": "DMG", "type": "keep"},
+    {"source": "EXP", "type": "keep"},
+    {"source": "CD", "type": "keep"},
+    {"source": "UI", "type": "keep"}
+  ]
+}

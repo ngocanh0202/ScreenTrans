@@ -1,0 +1,85 @@
+{
+ "name": "Windows OCR on rv_03 full screenshot",
+ "lines": [
+  {
+   "text": "AUTO",
+   "box": [
+    1425,
+    53,
+    77,
+    24
+   ]
+  },
+  {
+   "text": "SKIP",
+   "box": [
+    1624,
+    53,
+    62,
+    24
+   ]
+  },
+  {
+   "text": "EXIT",
+   "box": [
+    1799,
+    56,
+    58,
+    23
+   ]
+  },
+  {
+   "text": "Druvis Ill",
+   "box": [
+    557,
+    763,
+    149,
+    30
+   ]
+  },
+  {
+   "text": "Is it because we haven't talked in so long?",
+   "box": [
+    546,
+    828,
+    635,
+    31
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "AUTO",
+   "sentences": [
+    "AUTO"
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "SKIP",
+   "sentences": [
+    "SKIP"
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "EXIT",
+   "sentences": [
+    "EXIT"
+   ]
+  },
+  {
+   "kind": "name",
+   "text": "Druvis III",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "Is it because we haven't talked in so long?",
+   "sentences": [
+    "Is it because we haven't talked in so long?"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,33 @@
+{
+ "name": "synthetic",
+ "lines": [
+  {
+   "text": "Knowing the informa-",
+   "box": [
+    20,
+    10,
+    300,
+    30
+   ]
+  },
+  {
+   "text": "tion is key. Keep going.",
+   "box": [
+    20,
+    48,
+    320,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Knowing the information is key. Keep going.",
+   "sentences": [
+    "Knowing the information is key.",
+    "Keep going."
+   ]
+  }
+ ]
+}

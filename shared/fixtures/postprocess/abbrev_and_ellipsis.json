@@ -1,0 +1,25 @@
+{
+ "name": "synthetic",
+ "lines": [
+  {
+   "text": "Mr. Smith left. Then... nothing. \"Really?\" she asked.",
+   "box": [
+    20,
+    10,
+    700,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Mr. Smith left. Then... nothing. \"Really?\" she asked.",
+   "sentences": [
+    "Mr. Smith left.",
+    "Then... nothing.",
+    "\"Really?\" she asked."
+   ]
+  }
+ ]
+}

@@ -20,3 +20,4 @@ spikes/ocr/data/*.jpeg
 # OCR test images and their ground truth stay local
 spikes/ocr/data/*
 !spikes/ocr/data/README.md
+windows/out/

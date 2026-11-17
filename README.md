@@ -23,3 +23,24 @@ uv pip install --python .venv -r windows/requirements-dev.txt
 ```
 
 Export model (máy dev): cài thêm torch CPU rồi `uv pip install --python .venv -r models/requirements.txt`.
+
+## Dùng thử (Phase 1 — dòng lệnh)
+
+```powershell
+uv pip install --python .venv -r windows/requirements-dev.txt
+# model: export một lần (cần models/requirements.txt + torch CPU), hoặc để app tải theo manifest
+.venv\Scripts\python -m models.export ct2 vinai-en2vi
+cd windows
+..\.venv\Scripts\python -m app.cli --image ..nh.png --model-dir ..\models\outinai-en2vi-ct2 `
+    --glossary ..\shared\glossary\gameseverse1999.json --show-source
+..\.venv\Scripts\python -m app.cli --screen 520,750,1180,160 --model-dir ..\models\outinai-en2vi-ct2
+```
+
+Tùy chọn: `--json` (kết quả JSON), `--timings` (thời gian từng bước ra stderr), `--config` (mặc định `windows/config.yaml`).
+Mã thoát: 0 xong (kể cả không có chữ), 2 thiếu/không tải được model, 3 thiếu gói English OCR của Windows, 4 tham số sai.
+
+Benchmark: `.venv\Scripts\python windows/scripts/benchmark.py --model-dir models/out/vinai-en2vi-ct2`
+
+## Bản quyền
+
+Mã nguồn: **AGPL-3.0** ([LICENSE](LICENSE)). Model và dữ liệu bên thứ ba có giấy phép riêng — xem [NOTICE.md](NOTICE.md) (opus-mt: Apache-2.0, vinai: AGPL-3.0, wordfreq: CC BY-SA 4.0).
