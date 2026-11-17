@@ -81,6 +81,10 @@ Model ONNX int8 per-channel: encoder 47 MB + decoder merged 81 MB (thư mục 13
 - Tokenizer Kotlin lệch spm `nmt_nfkc` ở một số ký tự (ZWSP, BOM, `▁`, 0x0B, 0x1C–0x1F, 0x85…) → đo trực tiếp spm và dùng đúng tập ký tự-thành-dấu-cách; thêm 23 ca khó vào `golden_tokenizer.json` (khớp 23/23).
 - Kiểm tra "token ngôn ngữ lọt ra output" trước đây đếm trên chuỗi đã decode nên không bao giờ báo lỗi → nay đếm trên token thô.
 
+## Quyết định của người dùng (2026-11-17)
+
+**(c) vinai mặc định trên Windows cho cả Live và phím tắt.** Chấp nhận phím tắt dịch đoạn dài ~1–1,5 s để có bản dịch tốt hơn. opus-mt vẫn chọn được trong cấu hình.
+
 ## Việc mang sang Phase 1
 
 - Đo OCR trên ảnh game thật, chốt engine.

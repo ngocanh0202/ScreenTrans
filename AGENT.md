@@ -105,10 +105,10 @@ Interface: `Translator.translate(list[str]) -> list[str]` — luôn dịch **the
 
 | Model | Ghi chú |
 |---|---|
-| `Helsinki-NLP/opus-mt-en-vi` (Marian, ~75M) | Nhanh. **Mặc định Android** (ONNX, CPU 2 luồng: 53 ms/câu trên POCO X8 Pro) và **mặc định Windows** theo tiêu chí Phase 0 (CT2: ~250 ms/đoạn 50 từ) — chờ người dùng xác nhận, xem báo cáo Phase 0 |
-| `vinai/vinai-translate-en2vi-v2` (mBART) | Chất lượng cao hơn rõ rệt nhưng chậm (CT2: ~260–300 ms/câu, ~1,2 s/đoạn 50 từ, 439 MB). Tùy chọn trên Windows. Tokenizer `src_lang="en_XX"`, decode với `target_prefix=[["vi_VN"]]`. **Bắt buộc** `models/verify.py` so output CT2/ONNX với `transformers` gốc. |
+| `Helsinki-NLP/opus-mt-en-vi` (Marian, ~75M) | Nhanh. **Mặc định Android** (ONNX, CPU 2 luồng: 53 ms/câu trên POCO X8 Pro). Trên Windows là tùy chọn nhanh (CT2: ~250 ms/đoạn 50 từ) |
+| `vinai/vinai-translate-en2vi-v2` (mBART) | **Mặc định Windows cho cả Live và phím tắt** (người dùng chọn 2026-11-17, ưu tiên chất lượng). CT2: ~260–300 ms/câu, ~1,2 s/đoạn 50 từ, 439 MB, +454 MB RAM. Tokenizer `src_lang="en_XX"`, decode với `target_prefix=[["vi_VN"]]`. **Bắt buộc** `models/verify.py` so output CT2/ONNX với `transformers` gốc. |
 
-- **Model mặc định mỗi nền tảng chốt bằng benchmark** theo ngân sách ở mục 13: dùng vinai nếu đạt, không thì opus-mt.
+- **Model mặc định đã chốt sau Phase 0:** Windows = vinai (chấp nhận phím tắt dịch đoạn dài ~1–1,5 s, vượt ngân sách 500 ms ở mục 13 — ngân sách đó áp cho opus-mt); Android = opus-mt ONNX. Hiển thị "Đang dịch…" khi bản dịch mất > 300 ms.
 - `beam_size` cấu hình được (mặc định 2). Windows: `intra_threads=2`, `inter_threads=1`.
 - Thiếu model → app hiện màn hình tải model (không crash).
 - Load model **ngầm ngay khi khởi động** (Android: khi bật foreground service), sau đó dịch một câu mẫu để làm nóng. Người dùng dịch khi chưa load xong → overlay hiện "Đang tải model…", có kết quả thì tự hiện. Benchmark ghi thêm thời gian load.
