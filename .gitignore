@@ -12,5 +12,7 @@ android/local.properties
 android/app/src/main/assets/model/
 *.keystore
 *.jks
-data/
+/data/
 .superpowers/
+spikes/ocr/data/*.jpg
+spikes/ocr/data/*.jpeg

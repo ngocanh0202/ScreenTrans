@@ -163,7 +163,8 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
 - **Overlay đặt cạnh khung thoại, không che chữ gốc** (mặc định phía trên, tràn thì đặt dưới) và **không bao giờ nằm trong vùng chụp** (tránh OCR chính bản dịch). Windows thêm `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`. Android: nếu buộc phải chồng thì cắt vùng chụp tránh phần overlay.
 - Overlay chung: nền tối bán trong suốt, chữ trắng, font hỗ trợ tiếng Việt (Windows: Segoe UI), cỡ chữ và độ trong cấu hình được, tùy chọn hiện bản gốc song song.
 - Windows một lần: `Ctrl+Alt+T` chọn vùng → overlay (Esc / click ngoài để đóng, nút copy, nút sửa). `Ctrl+Alt+L` bật/tắt Live. Tray: bật/tắt Live, đổi engine OCR/dịch, mở cài đặt, thoát.
-- Android: nút nổi — chạm để dịch vùng Live hiện tại, giữ để kéo chọn vùng mới; thông báo foreground service có nút dừng.
+- Android: nút nổi — chạm mở menu: **Dịch vùng Live** / **Toàn màn hình** / **Chọn vùng mới**; thông báo foreground service có nút dừng.
+- **Toàn màn hình (một lần):** Windows `Ctrl+Alt+F`; Android: menu nút nổi → "Toàn màn hình". Chụp cả màn hình → OCR → nhóm **khối chữ** theo vị trí → lọc khối chỉ số/ký hiệu → cache → dịch batch → overlay **đè đúng vị trí từng khối**; hiện "Đang dịch…", khối nào xong hiện trước. Esc / chạm ra ngoài để đóng. Chạm một khối: bản gốc, copy, sửa, **"Dùng khối này làm vùng Live"** (lưu vào hồ sơ game). **Không có Live toàn màn hình.**
 - Xử lý đúng DPI scaling (125%, 150%) và nhiều màn hình trên Windows.
 
 ## 12. Cache, dữ liệu, model
@@ -179,6 +180,7 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
 ```yaml
 hotkeys:
   translate_region: "ctrl+alt+t"
+  translate_fullscreen: "ctrl+alt+f"
   toggle_live: "ctrl+alt+l"
 ocr:
   engine: windows          # windows | rapid
@@ -211,6 +213,8 @@ models:
 |---|---|---|
 | Một lần: chọn vùng xong → hiện bản dịch (~50 từ) | < 500 ms | < 800 ms |
 | Live: chữ ổn định → hiện bản dịch (1–2 câu) | < 400 ms | < 600 ms |
+| Toàn màn hình: OCR cả màn hình | < 500 ms | < 500 ms |
+| Toàn màn hình: khối đầu tiên hiện / tất cả (~20 khối) | < 1 s / < 5 s | < 1 s / < 3 s |
 | CPU khi Live và màn hình không đổi | < 2% | không OCR/dịch |
 | GPU dùng cho OCR/dịch | 0 | — |
 | RAM thêm của app | < 1.5 GB | < 600 MB |
@@ -243,6 +247,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 2 — GUI Windows
 - [ ] Tray + phím tắt toàn cục; `selector` (DPI, đa màn hình); `overlay` (copy, Esc, sửa).
+- [ ] Chế độ **toàn màn hình** (`Ctrl+Alt+F`): nhóm khối chữ, lọc, overlay đè từng khối, "Dùng khối này làm vùng Live".
 - [ ] Model load trong worker thread, UI không đơ; màn hình tải model.
 - [ ] `build-windows.yml`.
 
@@ -252,7 +257,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [ ] Đo FPS trước/sau. `release.yml`, phát hành `v0.1.0` Windows.
 
 ### Phase 4 — App Android
-- [ ] MediaProjection foreground service, overlay + nút nổi, ML Kit OCR, ONNX dịch, postprocess (pass fixtures), thuật ngữ, cache, hồ sơ, Live.
+- [ ] MediaProjection foreground service, overlay + nút nổi (menu 3 mục), ML Kit OCR, ONNX dịch, postprocess (pass fixtures), thuật ngữ, cache, hồ sơ, Live, **toàn màn hình**.
 - [ ] Tải model theo manifest. Đo ngân sách hiệu năng trên POCO X8 Pro → chốt model mặc định Android.
 - [ ] `build-android.yml`, thêm `.apk` vào Release.
 

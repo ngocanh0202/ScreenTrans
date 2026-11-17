@@ -123,7 +123,15 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 
 ### 5.7 Chế độ một lần
 - Windows: phím tắt `Ctrl+Alt+T` → kéo chọn vùng → overlay bản dịch (Esc / click ngoài để đóng, nút copy, nút sửa). `Ctrl+Alt+L` bật/tắt Live.
-- Android: nút nổi (bong bóng) → chạm để dịch vùng Live đã chọn, giữ để kéo chọn vùng mới.
+- Android: nút nổi (bong bóng) → chạm mở menu nhỏ: **Dịch vùng Live** / **Toàn màn hình** / **Chọn vùng mới**.
+
+### 5.7b Chế độ toàn màn hình (một lần)
+- Mục đích: đọc menu, kho đồ, kỹ năng, nhiệm vụ — chữ rải rác khắp màn hình. **Không có Live toàn màn hình** (game luôn chuyển động → OCR liên tục → giật game).
+- Kích hoạt: Windows `Ctrl+Alt+F` (chụp màn hình chứa cửa sổ game); Android: menu nút nổi → "Toàn màn hình".
+- Luồng: chụp cả màn hình → OCR → nhóm thành **khối chữ** theo vị trí (không gộp các khối xa nhau thành một đoạn) → lọc khối chỉ có số/ký hiệu, khối 1 ký tự → cache → dịch batch → overlay **đặt đè đúng vị trí từng khối** (nền tối, cỡ chữ co theo khối).
+- Hiện "Đang dịch…" ngay; khối nào xong hiện trước (theo thứ tự trên → dưới).
+- Đóng: Esc / chạm ra ngoài. Chạm vào một khối: xem bản gốc, copy, sửa; **"Dùng khối này làm vùng Live"** → lưu vào hồ sơ game (cách nhanh để chọn khung thoại cho game mới).
+- Windows: overlay toàn màn hình phải loại khỏi ảnh chụp (`WDA_EXCLUDEFROMCAPTURE`) và đóng trước lần chụp kế tiếp.
 
 ### 5.8 Cache & dữ liệu
 - LRU trong bộ nhớ + SQLite (giữ giữa các lần chạy), key = câu nguồn đã chuẩn hóa + model id.
@@ -146,6 +154,8 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 |---|---|---|
 | Phím tắt: chọn vùng xong → hiện bản dịch (~50 từ) | < 500 ms | < 800 ms |
 | Live: chữ ổn định → hiện bản dịch (1–2 câu) | < 400 ms | < 600 ms |
+| Toàn màn hình: OCR cả màn hình | < 500 ms | < 500 ms |
+| Toàn màn hình: khối đầu tiên hiện / tất cả (~20 khối) | < 1 s / < 5 s | < 1 s / < 3 s |
 | CPU khi Live và màn hình không đổi | < 2% | không OCR/dịch |
 | GPU dùng cho OCR/dịch | 0 | — |
 | RAM thêm của app | < 1.5 GB | < 600 MB |
