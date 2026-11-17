@@ -20,9 +20,18 @@ class MarianVocab(json: String) {
         padId = toId.getValue("<pad>")
     }
 
-    /** Source ids for the encoder: pieces mapped through the vocab, unknown -> <unk>, then </s>. */
-    fun ids(pieces: List<String>): IntArray = IntArray(pieces.size + 1) { i ->
-        if (i == pieces.size) eosId else toId[pieces[i]] ?: unkId
+    companion object {
+        /** Marian model_max_length: longer sources overflow the positional embeddings. */
+        const val MAX_SRC = 512
+    }
+
+    /**
+     * Source ids for the encoder: pieces mapped through the vocab, unknown -> <unk>, then </s>.
+     * Truncated to MAX_SRC ids (like the HF tokenizer with truncation=True).
+     */
+    fun ids(pieces: List<String>): IntArray {
+        val n = minOf(pieces.size, MAX_SRC - 1)
+        return IntArray(n + 1) { i -> if (i == n) eosId else toId[pieces[i]] ?: unkId }
     }
 
     /** Detokenize generated ids: drop special tokens, join pieces, '▁' -> space. */

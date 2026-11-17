@@ -35,14 +35,9 @@ class SentencePieceUnigram(json: String) {
     fun normalize(text: String): String {
         val nfkc = Normalizer.normalize(text, Normalizer.Form.NFKC)
         val sb = StringBuilder()
-        for (ch in nfkc) {
-            when {
-                ch.isWhitespace() || ch == ' ' -> sb.append(' ')
-                Character.getType(ch) == Character.CONTROL.toInt() -> {}
-                Character.getType(ch) == Character.FORMAT.toInt() -> {}
-                else -> sb.append(ch)
-            }
-        }
+        // Measured against spm nmt_nfkc (source.spm): these become a space, everything else
+        // (including control chars, ZWNJ/ZWJ, soft hyphen, word joiner) is kept as-is.
+        for (ch in nfkc) sb.append(if (ch in SPM_SPACES) ' ' else ch)
         val collapsed = sb.toString().trim().split(Regex(" +")).filter { it.isNotEmpty() }.joinToString(" ")
         return if (collapsed.isEmpty()) "" else SPACE + collapsed.replace(" ", SPACE)
     }
@@ -91,6 +86,11 @@ class SentencePieceUnigram(json: String) {
 
     companion object {
         const val SPACE = "▁"
+        private val SPM_SPACES: Set<Char> = buildSet {
+            addAll(listOf('\t', '\n', '\u000C', '\r', ' ', ' ', ' ', '​', '‎', '‏'))
+            addAll(listOf(' ', ' ', ' ', ' ', '▁', '　', '﻿', '�'))
+            addAll((' '..' '))
+        }
         private const val NORMAL = 1
         private const val USER_DEFINED = 4
         private const val UNK_PENALTY = 10f

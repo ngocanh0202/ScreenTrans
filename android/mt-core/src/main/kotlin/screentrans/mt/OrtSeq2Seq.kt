@@ -69,8 +69,13 @@ class OrtSeq2Seq(
     override fun start(srcIds: IntArray): DecoderState {
         val n = srcIds.size.toLong()
         val mask = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(srcIds.size) { 1L }), longArrayOf(1, n))
-        val encResult = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(srcIds.size) { srcIds[it].toLong() }), longArrayOf(1, n))
-            .use { ids -> encoder.run(mapOf("input_ids" to ids, "attention_mask" to mask)) }
+        val encResult = try {
+            OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(srcIds.size) { srcIds[it].toLong() }), longArrayOf(1, n))
+                .use { ids -> encoder.run(mapOf("input_ids" to ids, "attention_mask" to mask)) }
+        } catch (t: Throwable) {
+            mask.close()
+            throw t
+        }
         val empty = pastNames.associateWith {
             OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, heads.toLong(), 0, headDim.toLong()))
         }

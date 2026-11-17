@@ -26,6 +26,13 @@ def strip_prefix(tokens: list[str], prefix: str | None) -> list[str]:
     return list(tokens[i:])
 
 
+def leaked_lang_tokens(tokens: list[str], prefix: str | None) -> int:
+    """Language tokens left in a raw hypothesis after the forced prefix (decode() would hide them)."""
+    if prefix is None:
+        return 0
+    return strip_prefix(tokens, prefix).count(prefix)
+
+
 def agreement(ref: list[str], hyp: list[str]) -> float:
     def norm(s: str) -> str:
         return " ".join(s.split())
@@ -76,7 +83,7 @@ def _new_translator(model_dir: Path):
     )
 
 
-def ct2_translate(spec: ModelSpec, model_dir: Path, texts: list[str], beam: int, translator=None, tok=None) -> list[str]:
+def ct2_translate(spec: ModelSpec, model_dir: Path, texts: list[str], beam: int, translator=None, tok=None, leaks: list[int] | None = None) -> list[str]:
     tok = tok or load_tokenizer(spec, model_dir)
     translator = translator or _new_translator(model_dir)
     src = [tok.convert_ids_to_tokens(tok.encode(t)) for t in texts]
@@ -86,8 +93,12 @@ def ct2_translate(spec: ModelSpec, model_dir: Path, texts: list[str], beam: int,
     results = translator.translate_batch(src, **kwargs)
     outs = []
     for r in results:
-        tokens = strip_prefix(r.hypotheses[0], spec.tgt_prefix)
+        raw = r.hypotheses[0]
+        tokens = strip_prefix(raw, spec.tgt_prefix)
         outs.append(tok.decode(tok.convert_tokens_to_ids(tokens), skip_special_tokens=True))
+        if leaks is not None:
+            # CT2 forces target_prefix and does not echo it, so only count lang tokens that remain
+            leaks.append(leaked_lang_tokens(raw, spec.tgt_prefix))
     return outs
 
 
@@ -106,10 +117,12 @@ def verify_ct2(key: str, beam: int) -> dict:
     load_ms = (time.perf_counter() - t0) * 1000
     rss_mb = (proc.memory_info().rss - rss0) / 1e6
 
-    greedy = ct2_translate(spec, model_dir, texts, 1, translator, tok)
+    leaks: list[int] = []
+    greedy = ct2_translate(spec, model_dir, texts, 1, translator, tok, leaks)
     ref = reference_translate(spec, texts)
     chrf = [sacrebleu.sentence_chrf(h, [r]).score for h, r in zip(greedy, ref)]
-    bad_lang = [h for h in greedy if "vi_VN" in h or "en_XX" in h]
+    # raw-token check (decode() with skip_special_tokens would hide them)
+    bad_lang = [t for t, n in zip(texts, leaks) if n]
     empty = [t for t, h in zip(texts, greedy) if not h.strip()]
 
     ct2_translate(spec, model_dir, texts[:2], beam, translator, tok)  # warm-up

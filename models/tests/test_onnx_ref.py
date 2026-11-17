@@ -53,3 +53,21 @@ def test_sp_export_has_pieces():
     assert data["normalizer"] == "nmt_nfkc"
     assert len(data["pieces"]) > 1000
     assert isinstance(data["unk_id"], int)
+
+
+def test_greedy_truncates_overlong_input():
+    from models.onnx_ref import greedy_translate
+
+    text = "The cat sat on the mat. " * 120  # ~841 source ids > model_max_length 512
+    out = greedy_translate([text], ONNX_DIR, max_len=20)
+    assert 0 < len(out[0]) <= 20
+
+
+def test_tokenizer_cases_written_with_tricky_text():
+    from models.onnx_ref import TOKENIZER_CASES, write_tokenizer_cases
+
+    path = write_tokenizer_cases()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert len(data) == len(TOKENIZER_CASES)
+    assert any("\ufeff" in c["text"] for c in data)
+    assert all(c["src_ids"][-1] == 0 for c in data)

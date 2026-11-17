@@ -11,6 +11,34 @@ import numpy as np
 
 OUT = Path(__file__).parent / "out"
 ONNX_DIR = OUT / "opus-mt-en-vi-onnx"
+MAX_SRC = 512  # Marian model_max_length: longer sources overflow the positional embeddings
+
+# Text the Kotlin tokenizer must encode exactly like spm nmt_nfkc (golden_tokenizer.json).
+TOKENIZER_CASES = [
+    "Hello   world",
+    "tab\tseparated\ttext",
+    "line one\nline two\r\nline three",
+    "\ufeffBOM at start",
+    "zero\u200bwidth space",
+    "left\u200eto\u200fright marks",
+    "no\u00a0break and\u3000ideographic space",
+    "en\u2002em\u2003thin\u2009spaces",
+    "line\u2028sep and para\u2029sep",
+    "literal \u2581 lower block",
+    "replacement \ufffd char",
+    "vertical\x0btab and \x1cfile sep",
+    "next\x85line",
+    "soft\u00adhyphen and zw\u200cnj\u200djoiner",
+    "word\u2060joiner",
+    "\u201cCurly quotes\u201d and \u2018single\u2019",
+    "Ellipsis\u2026 and dash \u2014 here",
+    "\u2605\u2605 stars \u2605",
+    "Fullwidth \uff21\uff22\uff23 \uff11\uff12\uff13",
+    "ligature \ufb01ne",
+    "emoji \U0001f600 face",
+    "  leading and trailing  ",
+    "Vi\u1ec7t Nam c\u00f3 d\u1ea5u",
+]
 
 
 class OnnxMarian:
@@ -74,7 +102,7 @@ def greedy_translate(texts: list[str], model_dir: Path, max_len: int = 256) -> l
 
     tok = MarianTokenizer.from_pretrained(str(model_dir))
     model = OnnxMarian(model_dir)
-    return [model.greedy(tok(t)["input_ids"], max_len) for t in texts]
+    return [model.greedy(tok(t, truncation=True, max_length=MAX_SRC)["input_ids"], max_len) for t in texts]
 
 
 def write_golden() -> Path:
@@ -86,7 +114,7 @@ def write_golden() -> Path:
     model = OnnxMarian(ONNX_DIR)
     items = []
     for text in load_sentences():
-        src = tok(text)["input_ids"]
+        src = tok(text, truncation=True, max_length=MAX_SRC)["input_ids"]
         out = model.greedy(src)
         items.append({"text": text, "src_ids": src, "out_ids": out, "out_text": tok.decode(out, skip_special_tokens=True)})
     path = OUT / "golden_opus.json"
@@ -94,8 +122,19 @@ def write_golden() -> Path:
     return path
 
 
+def write_tokenizer_cases() -> Path:
+    from transformers import MarianTokenizer
+
+    tok = MarianTokenizer.from_pretrained(str(ONNX_DIR))
+    items = [{"text": t, "src_ids": tok(t, truncation=True, max_length=MAX_SRC)["input_ids"]} for t in TOKENIZER_CASES]
+    path = OUT / "golden_tokenizer.json"
+    path.write_text(json.dumps(items, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["golden"]:
         print(f"Wrote {write_golden()}")
+        print(f"Wrote {write_tokenizer_cases()}")
     else:
         print(__doc__)

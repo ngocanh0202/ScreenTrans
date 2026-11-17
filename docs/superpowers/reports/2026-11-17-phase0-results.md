@@ -24,7 +24,7 @@ Ngày: 2026-11-17 · Nhánh: `phase-0` · Plan: [2026-11-16-phase0-init-and-spik
 |---|---|---|
 | chrF so với `transformers` fp32 (greedy) | 94,7 | 95,5 |
 | Khớp tuyệt đối | 72% | 83% |
-| Token ngôn ngữ lọt ra output / output rỗng | không / không | không / không |
+| Token ngôn ngữ (`vi_VN`) còn sót trong output, đếm trên token thô / output rỗng | — / không | 0/29 / không |
 | Dung lượng | 78 MB | 439 MB |
 | RAM thêm sau load | ~91 MB | ~454 MB |
 | Thời gian load | 0,24 s | 1,5 s |
@@ -74,6 +74,12 @@ Model ONNX int8 per-channel: encoder 47 MB + decoder merged 81 MB (thư mục 13
 - **(a) opus mặc định** (đúng tiêu chí spec): nhanh nhất, nhưng dịch UI/câu dài kém.
 - **(b) vinai mặc định cho Live, opus cho phím tắt:** chất lượng tốt nơi người dùng đọc nhiều nhất (thoại); tốn RAM cả hai model (~550 MB).
 - **(c) vinai mặc định cho cả hai**, chấp nhận phím tắt chậm ~1–1,5 s với đoạn dài.
+
+## Sửa sau review cuối Phase 0
+
+- Input dài hơn 512 token (giới hạn của Marian) trước đây làm crash cả Python lẫn Kotlin → nay cắt còn 511 token + `</s>` (`MAX_SRC`); Kotlin giải phóng tensor khi encoder lỗi.
+- Tokenizer Kotlin lệch spm `nmt_nfkc` ở một số ký tự (ZWSP, BOM, `▁`, 0x0B, 0x1C–0x1F, 0x85…) → đo trực tiếp spm và dùng đúng tập ký tự-thành-dấu-cách; thêm 23 ca khó vào `golden_tokenizer.json` (khớp 23/23).
+- Kiểm tra "token ngôn ngữ lọt ra output" trước đây đếm trên chuỗi đã decode nên không bao giờ báo lỗi → nay đếm trên token thô.
 
 ## Việc mang sang Phase 1
 

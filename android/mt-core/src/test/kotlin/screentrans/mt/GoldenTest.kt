@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import java.io.File
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class GoldenTest {
     private val modelDir = File(System.getProperty("mt.modelDir") ?: "")
@@ -38,6 +39,40 @@ class GoldenTest {
             println("first mismatch: '${it.text}'\n  kotlin=${vocab.ids(sp.encode(it.text)).toList()}\n  python=${it.srcIds.toList()}")
         }
         assertEquals(0, mismatched.size, "${mismatched.size}/${items.size} sentences tokenized differently")
+    }
+
+    @Test
+    fun `tokenizer matches spm on tricky characters`() {
+        golden()
+        val cases = File(goldenFile.parentFile, "golden_tokenizer.json")
+        assumeTrue(cases.isFile, "golden_tokenizer.json not exported; skipping")
+        val sp = SentencePieceUnigram(File(modelDir, "sp_source.json").readText())
+        val vocab = MarianVocab(File(modelDir, "vocab.json").readText())
+        val bad = JsonParser.parseString(cases.readText()).asJsonArray.map { it.asJsonObject }.filter { c ->
+            val text = c["text"].asString
+            val want = c["src_ids"].asJsonArray.map { it.asInt }.toIntArray()
+            val got = vocab.ids(sp.encode(text))
+            if (!got.contentEquals(want)) println("mismatch ${text.map { "%04x".format(it.code) }}: kotlin=${got.toList()} python=${want.toList()}")
+            !got.contentEquals(want)
+        }
+        assertEquals(0, bad.size, "${bad.size} tricky cases tokenized differently")
+    }
+
+    @Test
+    fun `source is capped at 512 ids ending with eos`() {
+        val vocab = MarianVocab("""{"</s>": 0, "<unk>": 1, "<pad>": 2, "▁a": 3}""")
+        val ids = vocab.ids(List(900) { "▁a" })
+        assertEquals(MarianVocab.MAX_SRC, ids.size)
+        assertEquals(0, ids.last())
+    }
+
+    @Test
+    fun `overlong input translates without crashing`() {
+        golden()
+        Translator(modelDir).use { tr ->
+            val out = tr.translate("The cat sat on the mat. ".repeat(120), maxLen = 20)
+            assertTrue(out.isNotBlank())
+        }
     }
 
     @Test
