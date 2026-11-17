@@ -5,6 +5,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Debug
 import android.os.SystemClock
+import android.view.WindowInsets
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
@@ -40,6 +41,17 @@ class BenchActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             addView(run, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(ScrollView(context).apply { addView(out) }, LinearLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+        // targetSdk 35+ draws edge-to-edge: keep content clear of the status/navigation bars.
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+            }
+            insets
         }
         setContentView(root)
         out.text = "Bấm \"Chạy\" để đo (khoảng 1–3 phút). Đừng tắt màn hình."
