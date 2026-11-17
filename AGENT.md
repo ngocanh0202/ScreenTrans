@@ -105,8 +105,8 @@ Interface: `Translator.translate(list[str]) -> list[str]` — luôn dịch **the
 
 | Model | Ghi chú |
 |---|---|
-| `Helsinki-NLP/opus-mt-en-vi` (Marian, ~75M) | Nhanh, dự kiến mặc định Android |
-| `vinai/vinai-translate-en2vi-v2` (mBART) | Chất lượng cao, dự kiến mặc định Windows. Tokenizer `src_lang="en_XX"`, decode với `target_prefix=[["vi_VN"]]`. **Bắt buộc** `models/verify.py` so output CT2/ONNX với `transformers` gốc. |
+| `Helsinki-NLP/opus-mt-en-vi` (Marian, ~75M) | Nhanh. **Mặc định Android** (ONNX, CPU 2 luồng: 53 ms/câu trên POCO X8 Pro) và **mặc định Windows** theo tiêu chí Phase 0 (CT2: ~250 ms/đoạn 50 từ) — chờ người dùng xác nhận, xem báo cáo Phase 0 |
+| `vinai/vinai-translate-en2vi-v2` (mBART) | Chất lượng cao hơn rõ rệt nhưng chậm (CT2: ~260–300 ms/câu, ~1,2 s/đoạn 50 từ, 439 MB). Tùy chọn trên Windows. Tokenizer `src_lang="en_XX"`, decode với `target_prefix=[["vi_VN"]]`. **Bắt buộc** `models/verify.py` so output CT2/ONNX với `transformers` gốc. |
 
 - **Model mặc định mỗi nền tảng chốt bằng benchmark** theo ngân sách ở mục 13: dùng vinai nếu đạt, không thì opus-mt.
 - `beam_size` cấu hình được (mặc định 2). Windows: `intra_threads=2`, `inter_threads=1`.
@@ -171,7 +171,8 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
 - Cache LRU (key = câu đã chuẩn hóa + model id) + SQLite giữ giữa các lần chạy.
 - Ghi `translations.jsonl` (gốc, dịch, model, game) và `corrections.jsonl` — có thể tắt trong cấu hình.
 - Model đăng trên **repo model public ở Hugging Face Hub** (repo code private nên không dùng Release để chứa model), kèm `manifest.json` (tên, nền tảng, định dạng, URL, SHA-256, kích thước, phiên bản). App đọc manifest từ URL cố định, **chỉ tải model người dùng chọn**, kiểm SHA-256, lưu vào thư mục dữ liệu app; xóa/đổi model trong cài đặt. Kiểm tra giấy phép từng model trước khi đăng lại.
-- Dung lượng ước tính (đo lại ở Phase 0): app Windows ~250–350 MB, `.apk` ~40–60 MB, opus-mt ~80–100 MB, vinai ~0,5–0,7 GB.
+- Dung lượng đo ở Phase 0: CT2 opus-mt 78 MB, CT2 vinai 439 MB, ONNX opus-mt (Android) 131 MB. App Windows ước tính ~250–350 MB, `.apk` ước tính ~40–60 MB (chưa gồm model).
+- ONNX Android: nén int8 **per-channel**, nén encoder + 2 decoder **trước** rồi mới merge. `onnxruntime` Python và `ortVersion` Gradle **phải cùng phiên bản** (hiện 1.32.0).
 
 `windows/config.yaml` mẫu:
 
@@ -228,11 +229,11 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ## 15. Các Phase
 
-### Phase 0 — Khởi tạo & spike
-- [ ] Cấu trúc monorepo, `.gitignore`, `ci.yml` khung chạy được.
-- [ ] Spike A: `winocr` trên ảnh chụp thoại Reverse: 1999 (và thử RapidOCR) — đo độ chính xác, tốc độ. Thiếu gói English OCR thì in hướng dẫn cài.
-- [ ] Spike B: vinai + opus-mt qua CT2 int8, so với `transformers` gốc (đặc biệt token ngôn ngữ mBART).
-- [ ] Spike C: opus-mt ONNX int8 (encoder + decoder merged có KV-cache, export bằng `optimum`) + SentencePiece + vòng giải mã greedy bằng Kotlin, ORT CPU 2 luồng (thử thêm XNNPACK EP), trong app thử tối thiểu. **Đạt** nếu trên POCO X8 Pro: < ~300 ms/câu ~20 từ, RAM < 400 MB, output khớp bản Python. **Không đạt** → phương án dự phòng: ML Kit Translation (en→vi offline, ~30 MB; chất lượng trung bình, không fine-tune được).
+### Phase 0 — Khởi tạo & spike ✅ (kết quả: [docs/superpowers/reports/2026-11-17-phase0-results.md](docs/superpowers/reports/2026-11-17-phase0-results.md))
+- [x] Cấu trúc monorepo, `.gitignore`, `ci.yml` khung chạy được.
+- [~] Spike A (harness xong; **còn đo trên ảnh game thật** — làm đầu Phase 1): `winocr` trên ảnh chụp thoại Reverse: 1999 (và thử RapidOCR) — đo độ chính xác, tốc độ. Thiếu gói English OCR thì in hướng dẫn cài.
+- [x] Spike B: vinai + opus-mt qua CT2 int8, so với `transformers` gốc (đặc biệt token ngôn ngữ mBART).
+- [x] Spike C (đạt: 53 ms/câu, +177 MB RAM): opus-mt ONNX int8 (encoder + decoder merged có KV-cache, export bằng `optimum`) + SentencePiece + vòng giải mã greedy bằng Kotlin, ORT CPU 2 luồng (thử thêm XNNPACK EP), trong app thử tối thiểu. **Đạt** nếu trên POCO X8 Pro: < ~300 ms/câu ~20 từ, RAM < 400 MB, output khớp bản Python. **Không đạt** → phương án dự phòng: ML Kit Translation (en→vi offline, ~30 MB; chất lượng trung bình, không fine-tune được).
 
 ### Phase 1 — Lõi Windows (CLI)
 - [ ] `capture`, `ocr/windows_ocr`, `text/postprocess`, `glossary`, `translate/*`, `cache`, `models`.
