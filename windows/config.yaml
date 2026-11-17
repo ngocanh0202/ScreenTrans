@@ -1,0 +1,32 @@
+hotkeys:
+  translate_region: "ctrl+alt+t"
+  translate_fullscreen: "ctrl+alt+f"
+  toggle_live: "ctrl+alt+l"
+ocr:
+  engine: windows          # windows (rapid: deferred, too slow in Phase 0)
+translator:
+  model: vinai-en2vi       # vinai-en2vi | opus-mt-en-vi (theo manifest)
+  model_dir: null          # thư mục model local; null = tải theo manifest
+  beam_size: 2
+  intra_threads: 2
+overlay:
+  font_size: 14
+  opacity: 0.85
+  show_source: false
+live:
+  interval_ms: 300
+  active_interval_ms: 100
+  settle_ms: 250
+  max_wait_ms: 2000
+  area_min_interval_ms: 1000   # Live vùng lớn: tối đa 1 OCR mỗi giây
+  area_max_blocks: 30
+  change_threshold: 5
+cache:
+  max_items: 5000
+  persist: true
+logging:
+  save_pairs: true
+models:
+  manifest_url: "https://huggingface.co/<owner>/screentrans-models/resolve/main/manifest.json"
+paths:
+  data_dir: null           # null = %LOCALAPPDATA%\ScreenTrans

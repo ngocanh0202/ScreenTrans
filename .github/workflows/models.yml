@@ -1,0 +1,68 @@
+name: models
+
+# Manual: export the translation models, verify them, and publish them with manifest.json
+# to a public Hugging Face model repo. Needs the HF_TOKEN secret (write access to hf_repo).
+on:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: "Hugging Face model repo, e.g. <owner>/screentrans-models"
+        required: true
+      version:
+        description: "Model release version (folder name in the repo)"
+        required: true
+        default: "1"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+      - name: Python env
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .venv -r models/requirements.txt huggingface_hub
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-v1
+
+      - name: Export
+        run: |
+          .venv/bin/python -m models.export ct2 vinai-en2vi
+          .venv/bin/python -m models.export ct2 opus-mt-en-vi
+          .venv/bin/python -m models.export onnx opus-mt-en-vi
+
+      - name: Verify CT2 against transformers
+        run: |
+          .venv/bin/python -m models.verify ct2 vinai-en2vi
+          .venv/bin/python -m models.verify ct2 opus-mt-en-vi
+          rm -f models/out/verify_*.json
+
+      - name: Stage + manifest
+        run: >
+          .venv/bin/python -m models.manifest
+          --base-url "https://huggingface.co/${{ inputs.hf_repo }}/resolve/main"
+          --version "${{ inputs.version }}"
+          --stage models/out/hf
+
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo = "${{ inputs.hf_repo }}"
+          api.create_repo(repo, repo_type="model", exist_ok=True, private=False)
+          api.upload_folder(folder_path="models/out/hf", repo_id=repo, repo_type="model",
+                            commit_message="ScreenTrans models v${{ inputs.version }}")
+          print(f"Manifest: https://huggingface.co/{repo}/resolve/main/manifest.json")
+          PY

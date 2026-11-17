@@ -243,11 +243,21 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [x] Spike B: vinai + opus-mt qua CT2 int8, so với `transformers` gốc (đặc biệt token ngôn ngữ mBART).
 - [x] Spike C (đạt: 53 ms/câu, +177 MB RAM): opus-mt ONNX int8 (encoder + decoder merged có KV-cache, export bằng `optimum`) + SentencePiece + vòng giải mã greedy bằng Kotlin, ORT CPU 2 luồng (thử thêm XNNPACK EP), trong app thử tối thiểu. **Đạt** nếu trên POCO X8 Pro: < ~300 ms/câu ~20 từ, RAM < 400 MB, output khớp bản Python. **Không đạt** → phương án dự phòng: ML Kit Translation (en→vi offline, ~30 MB; chất lượng trung bình, không fine-tune được).
 
-### Phase 1 — Lõi Windows (CLI)
-- [ ] `capture`, `ocr/windows_ocr`, `text/postprocess`, `glossary`, `translate/*`, `cache`, `models`.
-- [ ] `python -m app.cli --image sample.png` in bản dịch.
-- [ ] Fixtures dùng chung + unit test. `scripts/benchmark.py` đo từng bước → chốt model mặc định Windows.
-- [ ] `models.yml` + bản model đầu tiên trên HF Hub.
+### Phase 1 — Lõi Windows (CLI) ✅ (plan: [docs/superpowers/plans/2026-11-17-phase1-windows-core.md](docs/superpowers/plans/2026-11-17-phase1-windows-core.md))
+- [x] `capture`, `ocr/windows_ocr`, `text/postprocess`, `glossary`, `translate/ct2`, `cache`, `models`, `pipeline`.
+- [x] `python -m app.cli --image sample.png` / `--screen x,y,w,h` in bản dịch.
+- [x] Fixtures dùng chung (`shared/fixtures/postprocess/`, quy tắc trong README) + unit test. `windows/scripts/benchmark.py`.
+- [x] `models.yml` (chạy tay) — **còn chờ người dùng** tạo repo HF + secret `HF_TOKEN` và chạy lần đầu.
+- Placeholder thuật ngữ: **`[i]`** (vinai giữ 10/10; `⟦i⟧` bị xóa 0/10).
+- Benchmark (laptop, cache tắt, trung vị 3 lần; OCR 20–60 ms):
+
+| Model / beam | 1 câu thoại | 2 câu thoại | Load (gồm import transformers) |
+|---|---|---|---|
+| vinai / 2 | 270–310 ms | **780–950 ms** (vượt ngân sách Live 400 ms) | ~8,5 s |
+| vinai / 1 | 290–305 ms | 620–810 ms | ~9 s |
+| opus-mt / 2 | 65–105 ms | 205–280 ms | ~8 s |
+
+  → Phase 3 (Live): hiện **từng câu ngay khi dịch xong** (câu đầu ~300 ms) thay vì đợi cả đoạn; cân nhắc lại vinai vs opus cho Live sau khi người dùng thử.
 
 ### Phase 2 — GUI Windows
 - [ ] Tray + phím tắt toàn cục; `selector` (DPI, đa màn hình); `overlay` (copy, Esc, sửa).

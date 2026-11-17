@@ -1,1 +1,9 @@
-# Runtime dependencies for the Windows app (filled in Phase 1).
+pyyaml
+pillow
+numpy
+mss
+winocr
+ctranslate2
+transformers
+sentencepiece
+sacremoses

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScreenTrans glossary",
+  "type": "object",
+  "required": ["version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "type": {"enum": ["keep", "map"]},
+          "target": {"type": "string", "minLength": 1},
+          "case_sensitive": {"type": "boolean"}
+        },
+        "if": {"properties": {"type": {"const": "map"}}},
+        "then": {"required": ["target"]}
+      }
+    }
+  }
+}

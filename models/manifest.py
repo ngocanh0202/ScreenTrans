@@ -1,0 +1,61 @@
+"""Build manifest.json for exported models and stage them for upload.
+
+Usage:
+  python -m models.manifest --base-url https://huggingface.co/<owner>/<repo>/resolve/main --version 1 \\
+      --stage models/out/hf
+Collects every models/out/*-ct2 and *-onnx export (with screentrans_model.json), copies them to
+<stage>/<id>/<format>/<version>/... and writes <stage>/manifest.json.
+"""
+import argparse
+import hashlib
+import json
+import shutil
+from pathlib import Path
+
+OUT = Path(__file__).parent / "out"
+META_FILE = "screentrans_model.json"
+PLATFORM = {"ct2": "windows", "onnx": "android"}
+LICENSES = {"opus-mt-en-vi": "apache-2.0", "vinai-en2vi": "agpl-3.0"}  # from the HF model cards
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def build_manifest(export_dirs: list[Path], base_url: str, version: str, licenses: dict[str, str]) -> dict:
+    models = []
+    for d in export_dirs:
+        meta = json.loads((d / META_FILE).read_text(encoding="utf-8"))
+        prefix = f"{base_url.rstrip('/')}/{meta['id']}/{meta['format']}/{version}"
+        files = []
+        for p in sorted(x for x in d.rglob("*") if x.is_file()):
+            rel = p.relative_to(d).as_posix()
+            files.append({"path": rel, "url": f"{prefix}/{rel}", "sha256": _sha256(p), "size": p.stat().st_size})
+        models.append({
+            "id": meta["id"], "platform": PLATFORM[meta["format"]], "format": meta["format"],
+            "version": version, "license": licenses[meta["id"]], "files": files,
+        })
+    return {"version": 1, "models": models}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--version", required=True)
+    ap.add_argument("--stage", type=Path, required=True)
+    args = ap.parse_args()
+    exports = sorted(d for d in OUT.iterdir() if d.is_dir() and (d / META_FILE).is_file())
+    manifest = build_manifest(exports, args.base_url, args.version, LICENSES)
+    for d, m in zip(exports, manifest["models"]):
+        shutil.copytree(d, args.stage / m["id"] / m["format"] / args.version, dirs_exist_ok=True)
+    args.stage.mkdir(parents=True, exist_ok=True)
+    (args.stage / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
+    print(f"Staged {len(manifest['models'])} models in {args.stage}")
+
+
+if __name__ == "__main__":
+    main()

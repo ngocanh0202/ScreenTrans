@@ -1,0 +1,24 @@
+{
+ "name": "synthetic: initial does not end a sentence",
+ "lines": [
+  {
+   "text": "Ask J. Smith. He knows.",
+   "box": [
+    20,
+    10,
+    400,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Ask J. Smith. He knows.",
+   "sentences": [
+    "Ask J. Smith.",
+    "He knows."
+   ]
+  }
+ ]
+}
