@@ -17,3 +17,16 @@ jobs:
           uv pip install --python .venv -r windows/requirements-dev.txt -r spikes/requirements-ci.txt
       - name: Run tests (no local-only)
         run: .venv\Scripts\python -m pytest -q -m "not local"
+
+  android-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: mt-core unit tests (golden tests skip without model)
+        working-directory: android
+        run: ./gradlew :mt-core:test
