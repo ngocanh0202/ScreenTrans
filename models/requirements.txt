@@ -1,0 +1,12 @@
+# Model export / verification (dev machine + CI only, not shipped).
+# Install torch CPU first:
+#   uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
+transformers
+sentencepiece
+sacremoses
+ctranslate2
+optimum[onnxruntime]
+onnx
+onnxruntime==1.32.0  # keep equal to ortVersion in android/mt-core/build.gradle.kts
+sacrebleu
+psutil

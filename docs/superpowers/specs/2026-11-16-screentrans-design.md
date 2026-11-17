@@ -20,7 +20,7 @@ Thiết bị:
 - **CI/CD** (GitHub Actions) build `.exe` Windows và `.apk` Android.
 
 **Không làm (bây giờ)**
-- Ngôn ngữ nguồn khác tiếng Anh (thiết kế để thêm sau: mỗi model = một cặp ngôn ngữ → Việt).
+- Model dịch **trên máy** cho ngôn ngữ khác tiếng Anh. Tiếng Nhật (và ngôn ngữ khác về sau) dịch **qua engine từ xa trên Kaggle** (LLM ~7B 4-bit), làm ở Phase 5. Kiến trúc đa ngôn ngữ từ đầu (`source_lang` trong hồ sơ game; OCR, hậu xử lý, model theo ngôn ngữ).
 - iOS, macOS, Linux.
 - Fine-tune model trước khi có dữ liệu lỗi thật.
 - Đăng nhập, cloud, đồng bộ giữa thiết bị.
@@ -45,7 +45,7 @@ Thiết bị:
 
 | Hướng | Mô tả | Đánh đổi | Kết luận |
 |---|---|---|---|
-| Kaggle + ngrok | Model chạy trên Kaggle, app gọi qua API public | Trễ mạng 300 ms+, phiên 12 h, URL ngrok đổi, vi phạm điều khoản Kaggle | **Loại.** Kaggle chỉ dùng để fine-tune. |
+| Kaggle + ngrok làm đường chính | Model chạy trên Kaggle, app gọi qua API public | Trễ mạng 300 ms+, phiên 12 h, phải bật tay mỗi lần chơi, quota GPU, rủi ro điều khoản Kaggle, mất mạng là hết dịch | **Loại làm đường chính.** Giữ làm **engine từ xa tùy chọn** (5.2) để thử model lớn (vd LLM 7B) mà laptop không chạy nổi; Kaggle cũng dùng để fine-tune. |
 | A. Mỗi nền tảng tự dịch trên máy | Windows (Python) và Android (Kotlin) đều chạy model local | Phải làm phần suy luận 2 lần; điện thoại phải đủ mạnh | **Chọn.** Máy đủ mạnh, dùng mọi nơi, không phụ thuộc mạng. |
 | B. Điện thoại nhờ laptop dịch qua Wi-Fi | Android chỉ OCR + overlay | Laptop phải bật, chỉ dùng ở nhà | Loại — POCO X8 Pro đủ mạnh để tự dịch. |
 | C. B trước rồi lên A | | Làm hai lần đường đi | Loại cùng lý do trên. |
@@ -80,10 +80,17 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 
 ### 5.2 Dịch
 - **Windows:** CTranslate2 int8, CPU, `inter_threads=1`, `intra_threads=2` (cấu hình được).
-- **Android:** ONNX Runtime (encoder + decoder có KV-cache, export bằng `optimum`), int8, 2 luồng. Tokenizer SentencePiece chạy trên Android (qua onnxruntime-extensions hoặc thư viện SentencePiece JNI — chốt sau spike).
+- **Android:** ONNX Runtime (encoder + decoder có KV-cache, export bằng `optimum`), int8, CPU 2 luồng (không GPU), giải mã greedy mặc định (beam 2 tùy chọn), vòng giải mã viết bằng Kotlin. Tokenizer SentencePiece (onnxruntime-extensions hoặc JNI — chốt sau spike). Tiêu chí spike: < ~300 ms/câu ~20 từ, RAM < 400 MB trên POCO X8 Pro. **Dự phòng** nếu không đạt: ML Kit Translation (en→vi offline, ~30 MB, chất lượng trung bình, không fine-tune được). CTranslate2 trên Android bị loại (không có bản build chính thức).
+- **Android tiết kiệm pin/nhiệt:** chỉ OCR/dịch khi chữ đổi; dừng chụp khi game không ở foreground; giãn `interval_ms` khi bật tiết kiệm pin. Phát hiện ảnh chụp toàn đen (game chặn chụp `FLAG_SECURE`) → báo người dùng.
 - **Model:** `vinai/vinai-translate-en2vi-v2` (chất lượng) và `Helsinki-NLP/opus-mt-en-vi` (nhanh). **Model mặc định mỗi nền tảng chốt bằng benchmark** theo ngân sách ở mục 7: dùng vinai nếu đạt, không thì opus-mt. *Dự kiến:* Windows = vinai, Android = opus-mt.
 - Interface `Translator.translate(list[str]) -> list[str]` (dịch theo batch). Mỗi model ứng với **một cặp ngôn ngữ → Việt**; thêm ngôn ngữ = thêm model + OCR tương ứng.
-- Model load một lần, chạy trên thread riêng; model chỉ chạy khi có chữ mới.
+- Model load một lần, ngầm ngay khi khởi động, rồi dịch một câu mẫu để làm nóng; chạy trên thread riêng; model chỉ chạy khi có chữ mới. Ước tính load: opus-mt < 1 s (laptop) / 1–2 s (điện thoại), vinai 1–3 s / 3–6 s.
+- **Engine từ xa tùy chọn (`remote`)** — người dùng chọn:
+  - Server: notebook `training/kaggle_serve.ipynb` chạy model (mặc định cùng API cho mọi model, kể cả LLM), mở qua ngrok. API: `POST /translate` `{"texts": [...], "glossary": {...}}` → `{"translations": [...]}`; `GET /health`. Bắt buộc header `Authorization: Bearer <token>` (token tự sinh khi chạy notebook) vì URL ngrok là public.
+  - Model server mặc định: LLM ~7B instruct 4-bit qua vLLM (~5 GB VRAM trên T4/P100 16 GB; ~1,5–3 s/câu kể cả mạng), prompt kèm ngữ cảnh vài câu trước + thuật ngữ. Tùy chọn LLM ~3B hoặc NLLB-200 3.3B khi cần nhanh hơn.
+  - Client: người dùng dán URL + token vào cài đặt. Timeout theo ngôn ngữ: `en` 1,5 s, `ja` 8 s (cấu hình được). Với `en`: lỗi / quá hạn → **tự quay về model trên máy**, hiện chấm trạng thái. Với `ja` (không có model local): overlay báo "Server dịch chưa bật / không phản hồi". Thử lại server sau 30 s.
+  - Tiếng Nhật cần thêm: OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？).
+  - Chỉ khi bật remote, câu chữ trong game mới được gửi ra ngoài.
 
 ### 5.3 Hậu xử lý văn bản
 - Sắp xếp dòng, nhóm đoạn theo khoảng cách dọc, nối dòng, sửa gạch nối cuối dòng, tách câu, bỏ dòng rác.
@@ -108,9 +115,8 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 - Tọa độ vùng lưu **tương đối theo cửa sổ game / màn hình** (tỉ lệ 0–1) để không lệch khi đổi độ phân giải hoặc DPI.
 
 ### 5.6 Chế độ Live
-- Chụp vùng mỗi `interval_ms` (mặc định 300 ms).
-- So ảnh thu nhỏ (grayscale 64 px chiều rộng, sai khác trung bình) với lần trước; dưới ngưỡng → bỏ qua (không OCR).
-- **Chờ chữ ổn định:** khi phát hiện thay đổi, đợi đến khi ảnh không đổi trong `settle_ms` (mặc định 250 ms) rồi mới OCR — xử lý hiệu ứng chữ hiện dần.
+- Chụp vùng mỗi `interval_ms` (mặc định 300 ms); so ảnh thu nhỏ (grayscale 64 px chiều rộng, sai khác trung bình) với ảnh ngay trước; dưới ngưỡng → bỏ qua (không OCR).
+- **Chờ chữ ổn định** (máy trạng thái ĐỨNG YÊN → ĐANG ĐỔI → ỔN ĐỊNH): khi ảnh đổi, chụp nhanh hơn (100 ms), mỗi lần còn khác thì đặt lại đồng hồ; đứng yên đủ `settle_ms` (250 ms) mới OCR. Giới hạn `max_wait_ms` (2 s) cho nền động liên tục. Kiểm tra thêm ở mức chữ: text mới chỉ là phần kéo dài của text trước → đợi tiếp. `ignore_regions` trong hồ sơ để bỏ qua mũi tên/hiệu ứng nhấp nháy. Đánh đổi: thêm ~250 ms sau khi chữ hiện xong (chỉnh theo game).
 - Text OCR giống lần trước → không dịch lại. Câu đã dịch → lấy từ cache.
 - Overlay Live **click-through** (Windows: `WS_EX_TRANSPARENT`; Android: `FLAG_NOT_TOUCHABLE`), có nút nhỏ để tạm ẩn / chuyển sang chế độ tương tác (sửa bản dịch).
 - **Vị trí: cạnh vùng thoại, không che chữ gốc** (mặc định phía trên khung thoại, như bản phác thảo đã thống nhất; không đủ chỗ thì đặt dưới). Overlay **không bao giờ nằm trong vùng chụp**, nếu không app sẽ OCR chính bản dịch của nó. Windows thêm `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` để chắc chắn. Android: nếu overlay buộc phải chồng lên vùng chụp (màn hình nhỏ) thì cắt vùng chụp tránh phần overlay.
@@ -125,7 +131,7 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 
 ## 6. Phân phối model & CI/CD
 
-- Model **không** nằm trong file cài đặt. Vì repo code là private (asset trong Release của repo private không tải được nếu không có token), **model được đăng lên một repo model public trên Hugging Face Hub** (*lựa chọn của Claude*), kèm `manifest.json` (tên, nền tảng, định dạng, URL, SHA-256, kích thước, phiên bản). App đọc manifest từ URL cố định, tải lần đầu, kiểm SHA-256, lưu vào thư mục dữ liệu app. Token ghi HF lưu trong GitHub Secrets (`HF_TOKEN`). Cần kiểm tra giấy phép từng model trước khi đăng lại (opus-mt: CC-BY 4.0; vinai: xem model card).
+- Model **không** nằm trong file cài đặt. Vì repo code là private (asset trong Release của repo private không tải được nếu không có token), **model được đăng lên một repo model public trên Hugging Face Hub** (*lựa chọn của Claude*), kèm `manifest.json` (tên, nền tảng, định dạng, URL, SHA-256, kích thước, phiên bản). App đọc manifest từ URL cố định, **chỉ tải model người dùng chọn**, kiểm SHA-256, lưu vào thư mục dữ liệu app; xóa / đổi model được trong cài đặt. Dung lượng ước tính: app Windows ~250–350 MB, `.apk` ~40–60 MB, opus-mt ~80–100 MB, vinai ~0,5–0,7 GB (đo lại ở Phase 0). Token ghi HF lưu trong GitHub Secrets (`HF_TOKEN`). Cần kiểm tra giấy phép từng model trước khi đăng lại (opus-mt: CC-BY 4.0; vinai: xem model card).
 - Workflow GitHub Actions:
   - `ci.yml` (mỗi push/PR): pytest (Windows runner), unit test Android (`./gradlew test`), chạy fixtures dùng chung.
   - `build-windows.yml`: PyInstaller `--noconsole` trên `windows-latest` → artifact `.zip`.
@@ -152,7 +158,7 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 2. **GUI Windows:** tray, phím tắt, chọn vùng (DPI, đa màn hình), overlay.
 3. **Live + hồ sơ game + sửa bản dịch** trên Windows. Release Windows đầu tiên qua CI.
 4. **App Android:** MediaProjection, ML Kit, ONNX, overlay, nút nổi, Live, hồ sơ, thuật ngữ. Release `.apk` qua CI.
-5. **Hoàn thiện:** màn hình cài đặt, tải/cập nhật model, xem/sửa bảng thuật ngữ.
+5. **Hoàn thiện:** màn hình cài đặt, tải/cập nhật/xóa model, xem/sửa bảng thuật ngữ, **engine từ xa** (notebook `kaggle_serve` + client có fallback) trên cả hai nền tảng, **hỗ trợ tiếng Nhật** qua engine từ xa.
 6. **Fine-tune trên Kaggle** (chỉ khi đã có đủ `corrections.jsonl`): train, đánh giá sacreBLEU/COMET, chỉ thay model nếu tốt hơn.
 
 ## 9. Để lại cho người triển khai

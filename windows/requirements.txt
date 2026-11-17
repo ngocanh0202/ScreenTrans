@@ -1,0 +1,1 @@
+# Runtime dependencies for the Windows app (filled in Phase 1).
