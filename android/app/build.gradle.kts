@@ -34,4 +34,5 @@ kotlin {
 dependencies {
     implementation(project(":mt-core"))
     implementation("com.microsoft.onnxruntime:onnxruntime-android:$ortVersion")
+    implementation("com.google.code.gson:gson:2.11.0")
 }
