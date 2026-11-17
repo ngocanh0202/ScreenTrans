@@ -109,7 +109,7 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 - Thứ tự áp dụng: `overrides` → cache → thuật ngữ + model.
 
 ### 5.5 Hồ sơ game
-- Một file JSON / game (schema trong `shared/`): định danh game (Windows: tên exe; Android: package name), các vùng (`dialogue`, `name`, `choices`, tùy chọn), engine OCR, thời gian chờ chữ ổn định, ngưỡng thay đổi, bảng thuật ngữ.
+- Một file JSON / game (schema trong `shared/`): định danh game (Windows: tên exe; Android: package name), `live.mode` (`dialogue` | `area`), các vùng (`dialogue`, `name`, `choices`, `area`, tùy chọn), engine OCR, thời gian chờ chữ ổn định, ngưỡng thay đổi, bảng thuật ngữ.
 - **Tự nhận game:** Windows theo process cửa sổ foreground; Android theo `UsageStatsManager` (cần quyền Usage Access), không có quyền thì cho chọn tay.
 - Game chưa có hồ sơ → tạo hồ sơ mặc định khi người dùng chọn vùng lần đầu.
 - Tọa độ vùng lưu **tương đối theo cửa sổ game / màn hình** (tỉ lệ 0–1) để không lệch khi đổi độ phân giải hoặc DPI.
@@ -120,6 +120,14 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 - Text OCR giống lần trước → không dịch lại. Câu đã dịch → lấy từ cache.
 - Overlay Live **click-through** (Windows: `WS_EX_TRANSPARENT`; Android: `FLAG_NOT_TOUCHABLE`), có nút nhỏ để tạm ẩn / chuyển sang chế độ tương tác (sửa bản dịch).
 - **Vị trí: cạnh vùng thoại, không che chữ gốc** (mặc định phía trên khung thoại, như bản phác thảo đã thống nhất; không đủ chỗ thì đặt dưới). Overlay **không bao giờ nằm trong vùng chụp**, nếu không app sẽ OCR chính bản dịch của nó. Windows thêm `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` để chắc chắn. Android: nếu overlay buộc phải chồng lên vùng chụp (màn hình nhỏ) thì cắt vùng chụp tránh phần overlay.
+
+### 5.6b Live vùng lớn (bong bóng thoại, chữ hiện nhiều chỗ)
+- Dành cho game có thoại dạng **bong bóng** hoặc chữ xuất hiện ở vị trí thay đổi. Chọn theo hồ sơ game: `live.mode: dialogue | area` (mặc định `dialogue`).
+- Người dùng chọn **một vùng lớn** (vd cả khu vực chơi) thay cho khung thoại. `ignore_regions` loại HUD/nút cố định.
+- Cùng máy trạng thái ĐỨNG YÊN → ĐANG ĐỔI → ỔN ĐỊNH như Live khung thoại, nhưng **giới hạn tần suất OCR**: tối đa 1 lần mỗi `area_min_interval_ms` (mặc định 1000 ms).
+- Sau OCR: nhóm **khối chữ** (như chế độ toàn màn hình) → so với các khối đang hiển thị theo (text chuẩn hóa, vị trí gần) → **chỉ dịch khối mới/đổi**, khối cũ giữ nguyên bản dịch; khối biến mất → gỡ overlay của nó. Tối đa `area_max_blocks` khối (mặc định 30).
+- Overlay: một ô **đè đúng vị trí từng khối**, click-through, không bao giờ nằm trong ảnh chụp (Windows `WDA_EXCLUDEFROMCAPTURE`; Android: ẩn overlay trong khung hình chụp hoặc chụp xong mới vẽ).
+- Ngân sách: màn hình đứng yên → không OCR; đang đổi liên tục → ≤ 1 OCR/giây. Tắt mặc định vì tốn CPU hơn Live khung thoại.
 
 ### 5.7 Chế độ một lần
 - Windows: phím tắt `Ctrl+Alt+T` → kéo chọn vùng → overlay bản dịch (Esc / click ngoài để đóng, nút copy, nút sửa). `Ctrl+Alt+L` bật/tắt Live.
@@ -157,6 +165,7 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 | Toàn màn hình: OCR cả màn hình | < 500 ms | < 500 ms |
 | Toàn màn hình: khối đầu tiên hiện / tất cả (~20 khối) | < 1 s / < 5 s | < 1 s / < 3 s |
 | CPU khi Live và màn hình không đổi | < 2% | không OCR/dịch |
+| Live vùng lớn khi màn hình đổi liên tục | ≤ 1 OCR/giây | ≤ 1 OCR/giây |
 | GPU dùng cho OCR/dịch | 0 | — |
 | RAM thêm của app | < 1.5 GB | < 600 MB |
 | FPS game | không giảm rõ rệt (đo trước/sau) | như Windows |

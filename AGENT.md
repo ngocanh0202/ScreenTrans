@@ -145,7 +145,7 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
 
 ## 10. Hồ sơ game
 
-- Mỗi game một file JSON (schema `shared/schemas/profile.schema.json`): định danh (Windows: tên exe; Android: package name), vùng `dialogue` / `name` / `choices` (tùy chọn), engine OCR, `interval_ms`, `settle_ms`, `change_threshold`, đường dẫn bảng thuật ngữ.
+- Mỗi game một file JSON (schema `shared/schemas/profile.schema.json`): định danh (Windows: tên exe; Android: package name), `live.mode` (`dialogue` | `area`), vùng `dialogue` / `name` / `choices` / `area` (tùy chọn), engine OCR, `interval_ms`, `settle_ms`, `change_threshold`, đường dẫn bảng thuật ngữ.
 - Tọa độ vùng lưu **tương đối (0–1) theo cửa sổ game** (Windows) / màn hình (Android) để không lệch khi đổi độ phân giải, DPI, xoay màn hình.
 - Tự nhận game: Windows theo process của cửa sổ foreground; Android theo `UsageStatsManager` (thiếu quyền → cho chọn tay).
 - Game chưa có hồ sơ → tạo mặc định khi người dùng chọn vùng lần đầu.
@@ -156,6 +156,7 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
   - ĐỨNG YÊN: chụp mỗi `interval_ms` (mặc định 300). So ảnh thu nhỏ grayscale (rộng 64 px, sai khác trung bình) với **ảnh ngay trước**; vượt `change_threshold` → ĐANG ĐỔI.
   - ĐANG ĐỔI: chụp mỗi `active_interval_ms` (mặc định 100); ảnh còn khác → đặt lại đồng hồ; không đổi đủ `settle_ms` (mặc định 250) → ỔN ĐỊNH. Quá `max_wait_ms` (mặc định 2000) vẫn chưa yên → coi như ỔN ĐỊNH.
   - ỔN ĐỊNH: OCR → nếu text mới bắt đầu bằng text OCR lần trước và dài hơn mà ảnh vẫn đổi (chữ đang chạy) thì quay lại ĐANG ĐỔI; nếu text giống bản đã dịch → không dịch; còn lại → dịch → ĐỨNG YÊN.
+- **Live vùng lớn** (`live.mode: area` trong hồ sơ game, mặc định `dialogue`): cho game thoại **bong bóng** / chữ ở vị trí thay đổi. Người dùng chọn một vùng lớn; `ignore_regions` loại HUD. Cùng máy trạng thái chờ ổn định, nhưng OCR tối đa 1 lần mỗi `area_min_interval_ms` (1000). Nhóm khối chữ → so với khối đang hiển thị (text chuẩn hóa + vị trí gần) → **chỉ dịch khối mới/đổi**, gỡ overlay khối biến mất; tối đa `area_max_blocks` (30). Overlay đè đúng vị trí từng khối, click-through, không nằm trong ảnh chụp. Test bằng chuỗi khung hình giả lập: bong bóng mới xuất hiện, bong bóng cũ biến mất, nền động liên tục (≤ 1 OCR/s).
 - Hồ sơ game có thể khai báo `ignore_regions` (vd góc có mũi tên ▼ nhấp nháy) — bị loại khỏi phép so ảnh.
 - Test `live` bằng chuỗi khung hình giả lập: chữ chạy, bấm skip, mũi tên nhấp nháy, nền động liên tục, fade-in.
 - Text giống lần trước → không dịch. Câu đã có → lấy từ cache.
@@ -197,6 +198,8 @@ live:
   active_interval_ms: 100
   settle_ms: 250
   max_wait_ms: 2000
+  area_min_interval_ms: 1000   # Live vùng lớn: tối đa 1 OCR mỗi giây
+  area_max_blocks: 30
   change_threshold: 5
 cache:
   max_items: 5000
@@ -216,6 +219,7 @@ models:
 | Toàn màn hình: OCR cả màn hình | < 500 ms | < 500 ms |
 | Toàn màn hình: khối đầu tiên hiện / tất cả (~20 khối) | < 1 s / < 5 s | < 1 s / < 3 s |
 | CPU khi Live và màn hình không đổi | < 2% | không OCR/dịch |
+| Live vùng lớn khi màn hình đổi liên tục | ≤ 1 OCR/giây | ≤ 1 OCR/giây |
 | GPU dùng cho OCR/dịch | 0 | — |
 | RAM thêm của app | < 1.5 GB | < 600 MB |
 | FPS game | không giảm rõ rệt (đo trước/sau) | như Windows |
@@ -253,6 +257,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 3 — Live + hồ sơ game (Windows)
 - [ ] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through.
+- [ ] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối.
 - [ ] `profiles` tự nhận game; tách tên / lựa chọn; tên riêng tự động; sửa bản dịch → thuật ngữ + `corrections.jsonl`.
 - [ ] Đo FPS trước/sau. `release.yml`, phát hành `v0.1.0` Windows.
 
