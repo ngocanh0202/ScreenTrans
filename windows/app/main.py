@@ -35,6 +35,7 @@ MODELS = ["vinai-en2vi", "opus-mt-en-vi"]
 HOTKEYS = [("translate_region", "translate_region"), ("translate_fullscreen", "translate_fullscreen"),
            ("toggle_live", "toggle_live"), ("edit_last", "edit_last")]
 LIVE_SCOPES = [("screen", "Toàn màn hình"), ("region", "Vùng")]
+LIVE_STYLES = [("match", "Giống game"), ("classic", "Dễ đọc (chữ trắng nền tối)")]
 TRANSLATING_DELAY_MS = 300
 CAPTURE_DELAY_MS = 80  # let the selector shade disappear from the screen before capturing
 QUIT_WAIT_MS = 3000
@@ -155,6 +156,15 @@ class TrayApp(QObject):
             action.triggered.connect(lambda checked=False, sc=scope: self.set_live_scope(sc))
             scope_group.addAction(action)
             self.live_scope_actions[scope] = action
+        styles = menu.addMenu("Kiểu bản dịch")
+        style_group = QActionGroup(menu)
+        self.live_style_actions: dict[str, QAction] = {}
+        for style, label in LIVE_STYLES:
+            action = styles.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, st=style: self.set_live_style(st))
+            style_group.addAction(action)
+            self.live_style_actions[style] = action
         regions = menu.addMenu("Vùng Live")
         regions.addAction("Chọn vùng Live…", self.select_live_region)
         regions.addAction("Thêm vùng Live", self.add_live_region)
@@ -438,9 +448,11 @@ class TrayApp(QObject):
         if gw is not None:
             self._game = gw
             self.game_action.setText(f"Game: {gw.title or gw.exe}")
-            scope = self._profile().scope
+            p = self._profile()
             for sc, action in self.live_scope_actions.items():
-                action.setChecked(sc == scope)
+                action.setChecked(sc == p.scope)
+            for st, action in self.live_style_actions.items():
+                action.setChecked(st == p.style)
         return self._game
 
     def _profile(self, gw=None) -> Profile:
@@ -525,6 +537,13 @@ class TrayApp(QObject):
         if self.live is not None and self.live.running:
             self.start_live()  # restart with the new scope
 
+    def set_live_style(self, style: str) -> None:
+        p = self._profile()
+        p.style = style
+        self.profiles.save(p)
+        if self.live is not None and self.live.running:
+            self.start_live()  # redraw with the new colours
+
     def start_live(self) -> None:
         gw = self._game
         p = self._profile(gw)
@@ -553,7 +572,8 @@ class TrayApp(QObject):
             params, capture=self._capture, submit=lambda job: self.worker.submit(job),
             next_id=lambda: next(self._ids), notify=self.notify, overlay_factory=self._live_overlay,
             scope=p.scope, area_min_interval_ms=lc.area_min_interval_ms,
-            area_max_blocks=lc.area_max_blocks, use_timer=self._live_timer_enabled, on_screen=self._on_screen)
+            area_max_blocks=lc.area_max_blocks, use_timer=self._live_timer_enabled, on_screen=self._on_screen,
+            style=p.style)
         rel = p.regions if p.scope == "region" else [(0.0, 0.0, 1.0, 1.0)]
         self.live.start_relative(rel, frame, p.ignore)
         self._live_game = p.id

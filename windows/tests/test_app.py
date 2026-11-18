@@ -458,3 +458,16 @@ def test_edit_last_saves_overrides_terms_and_tells_the_worker(qtbot, tmp_path):
     terms = json.loads((tmp_path / "glossary" / "games" / "game.exe.json").read_text(encoding="utf-8"))
     assert terms["entries"] == [{"source": "Arcanist", "type": "keep", "case_sensitive": True}]
     assert "Chào cậu." in app.region_overlay.text()
+
+
+def test_style_menu_is_saved_in_the_game_profile_and_used_by_live(qtbot, tmp_path):
+    from app.profiles import ProfileStore
+
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, _, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    app._remember_game()
+    assert app.live_style_actions["match"].isChecked()  # default: like the game
+    app.live_style_actions["classic"].trigger()
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").style == "classic"
+    hotkeys.triggered.emit("toggle_live")
+    assert app.live.style == "classic"

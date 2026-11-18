@@ -7,7 +7,8 @@
    "scope": "screen",
    "interval_ms": 400,
    "settle_ms": 300,
-   "change_threshold": 6.5
+   "change_threshold": 6.5,
+   "style": "classic"
   },
   "regions": [
    [
@@ -37,7 +38,8 @@
    "scope": "screen",
    "interval_ms": 400,
    "settle_ms": 300,
-   "change_threshold": 6.5
+   "change_threshold": 6.5,
+   "style": "classic"
   },
   "regions": [
    [

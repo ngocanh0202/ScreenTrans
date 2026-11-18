@@ -10,7 +10,8 @@
    "scope": "region",
    "interval_ms": 300,
    "settle_ms": 250,
-   "change_threshold": 5.0
+   "change_threshold": 5.0,
+   "style": "match"
   },
   "regions": [],
   "ignore_regions": [],

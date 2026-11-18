@@ -1,16 +1,62 @@
-"""Live overlay (4b): each text block's translation drawn over it; click-through, excluded from capture."""
+"""Live overlay (4b): each text block's translation drawn over it; click-through, excluded from capture.
+
+Font size follows the source text (its OCR line height); colours are sampled from the game ("match" style)
+or white on dark ("classic", or when sampling found no readable colours).
+"""
+from dataclasses import dataclass
+
 from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QWidget
 
 from app.config import Overlay as OverlayCfg
-from app.gui.fullscreen import MIN_FONT, PAD, Block, block_rect, fit_text
+from app.gui.fullscreen import PAD, block_rect
 from app.gui.overlay import FONT, physical_to_logical
 from app.gui.win32 import exclude_from_capture
-from app.pipeline import Segment
+from app.live.style import BlockStyle
 
 LIVE_FLAGS = (Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
+MIN_PX = 11     # smallest readable size (logical px)
+GROW = 1.5      # a translation may take 1.5x the source box height before the font shrinks
+NAME_COLOR = QColor(255, 220, 140)
+
+
+@dataclass
+class LiveBlock:
+    rect: QRect           # widget-local logical rect of the source text
+    kind: str
+    text: str
+    px: int               # font pixel size (logical)
+    draw_height: int
+    fg: QColor
+    bg: QColor
+
+
+def _font(px: int) -> QFont:
+    f = QFont(FONT)
+    f.setPixelSize(max(1, px))
+    return f
+
+
+def fit_px(text: str, width: int, height: int, base_px: int) -> tuple[int, str, int]:
+    """Largest pixel size from base_px down to MIN_PX whose wrapped text fits width x height*GROW;
+    else MIN_PX with trailing words dropped and an ellipsis. Returns (px, text, drawn height)."""
+    limit = int(height * GROW)
+    inner = max(width - 2 * PAD, 10)
+
+    def needed(px: int, t: str) -> int:
+        fm = QFontMetrics(_font(px))
+        return fm.boundingRect(QRect(0, 0, inner, 100000), Qt.TextWordWrap, t).height() + 2 * PAD
+
+    for px in range(max(base_px, MIN_PX), MIN_PX - 1, -1):
+        h = needed(px, text)
+        if h <= limit:
+            return px, text, max(h, height)
+    words = text.split()
+    while len(words) > 1 and needed(MIN_PX, " ".join(words) + "…") > limit:
+        words.pop()
+    return MIN_PX, " ".join(words) + "…", limit
 
 
 class AreaOverlay(QWidget):
@@ -21,23 +67,29 @@ class AreaOverlay(QWidget):
         self.cfg = cfg
         self.screen_geometry = screen_geometry
         self.dpr = dpr
-        self.blocks: dict[str, Block] = {}
+        self.blocks: dict[str, LiveBlock] = {}
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setGeometry(screen_geometry)
         self._shown_once = False
 
     def set_block(self, key: str, text: str, box: tuple[float, float, float, float], origin: tuple[int, int],
-                  kind: str = "text") -> None:
-        """`box`: left, top, right, bottom in the captured image; `origin`: its physical top-left."""
+                  kind: str = "text", font_px: float | None = None, colors: BlockStyle | None = None) -> None:
+        """`box`: left, top, right, bottom in the captured image; `origin`: its physical top-left;
+        `font_px`: the source text size in physical px (None: the configured size)."""
         r = physical_to_logical(block_rect(box, origin), self.screen_geometry, self.dpr)
         r.translate(-self.screen_geometry.left(), -self.screen_geometry.top())
-        seg = Segment(kind, text, None if kind == "name" else text, box)
-        if kind == "name":
-            self.blocks[key] = Block(r, seg, text, MIN_FONT, r.height())
+        base = round(font_px / self.dpr) if font_px else round(self.cfg.font_size * 4 / 3)  # pt -> px
+        if colors is not None:
+            fg, bg = QColor(*colors.text), QColor(*colors.bg)  # opaque: the translation replaces the source
         else:
-            size, fitted, h = fit_text(text, r.width(), r.height(), self.cfg.font_size)
-            self.blocks[key] = Block(r, seg, fitted, size, h)
+            fg, bg = QColor(255, 255, 255), QColor(20, 20, 24, round(255 * self.cfg.opacity))
+        if kind == "name":
+            fg = fg if colors is not None else NAME_COLOR
+            self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg)
+        else:
+            px, fitted, h = fit_px(text, r.width(), r.height(), base)
+            self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg)
         self._refresh()
 
     def remove_block(self, key: str) -> None:
@@ -54,16 +106,14 @@ class AreaOverlay(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        alpha = round(255 * self.cfg.opacity)
         for b in self.blocks.values():
             area = QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height)
-            p.setFont(QFont(FONT, b.font_size))
-            if b.segment.kind == "name":
-                p.setPen(QColor(255, 220, 140))
-                p.drawText(area, Qt.AlignLeft | Qt.AlignVCenter, b.text)
-                continue
+            p.setFont(_font(b.px))
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(20, 20, 24, alpha))
-            p.drawRoundedRect(area, 4, 4)
-            p.setPen(Qt.white)
-            p.drawText(area.adjusted(PAD, PAD, -PAD, -PAD), Qt.TextWordWrap, b.text)
+            p.setBrush(b.bg)
+            p.drawRoundedRect(area, 3, 3)
+            p.setPen(b.fg)
+            if b.kind == "name":
+                p.drawText(area.adjusted(PAD, 0, -PAD, 0), Qt.AlignLeft | Qt.AlignVCenter, b.text)
+            else:
+                p.drawText(area.adjusted(PAD, PAD, -PAD, -PAD), Qt.TextWordWrap, b.text)

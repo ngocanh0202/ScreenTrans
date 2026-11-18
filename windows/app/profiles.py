@@ -11,6 +11,7 @@ from pathlib import Path
 
 Rel = tuple[float, float, float, float]
 SCOPES = ("region", "screen")
+STYLES = ("match", "classic")  # Live colours: sampled from the game / white on dark (font size always matches)
 DEFAULT_ID = "_default"
 
 
@@ -54,6 +55,7 @@ class Profile:
     id: str
     name: str = ""
     scope: str = "region"
+    style: str = "match"
     regions: list[Rel] = field(default_factory=list)
     ignore: list[Rel] = field(default_factory=list)
     interval_ms: int = 300
@@ -80,6 +82,7 @@ class Profile:
             id=d["id"],
             name=d["name"] if isinstance(d.get("name"), str) else "",
             scope=live.get("scope") if live.get("scope") in SCOPES else "region",
+            style=live.get("style") if live.get("style") in STYLES else "match",
             regions=_rels(d.get("regions")),
             ignore=_rels(d.get("ignore_regions")),
             interval_ms=_positive(live.get("interval_ms"), 300, int),
@@ -93,7 +96,7 @@ class Profile:
     def to_json(self) -> dict:
         return {
             "id": self.id, "name": self.name,
-            "live": {"scope": self.scope, "interval_ms": self.interval_ms, "settle_ms": self.settle_ms,
+            "live": {"scope": self.scope, "style": self.style, "interval_ms": self.interval_ms, "settle_ms": self.settle_ms,
                      "change_threshold": self.change_threshold},
             "regions": [list(r) for r in self.regions], "ignore_regions": [list(r) for r in self.ignore],
             "glossary": self.glossary, "overrides": dict(self.overrides),

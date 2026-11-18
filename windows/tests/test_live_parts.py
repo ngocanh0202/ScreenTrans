@@ -76,3 +76,23 @@ def test_area_overlay_draws_and_removes_blocks(qtbot):
     assert ao.blocks["b1"].text == "Chào." and ao.isVisible()
     ao.remove_block("b1")
     assert list(ao.blocks) == ["b2"]
+
+
+def test_area_overlay_uses_the_source_size_and_colours(qtbot):
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import AreaOverlay
+    from app.live.style import BlockStyle
+
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.5)
+    qtbot.addWidget(ao)
+    ao.set_block("b1", "Chào.", (0, 0, 300, 45), (0, 0), font_px=36,
+                 colors=BlockStyle((20, 20, 20), (250, 250, 250)))
+    b = ao.blocks["b1"]
+    assert b.px == 24  # 36 physical px on a 150% screen
+    assert b.fg.getRgb()[:3] == (20, 20, 20) and b.bg.getRgb()[:3] == (250, 250, 250) and b.bg.alpha() == 255
+    ao.set_block("b2", "Một câu rất dài " * 30, (0, 100, 300, 145), (0, 0), font_px=36)
+    long = ao.blocks["b2"]
+    assert long.px < 24 and long.draw_height <= int(30 * 1.5) + 1  # shrinks only when 1.5x the box is not enough
+    assert long.fg.getRgb()[:3] == (255, 255, 255)  # no sampled colours: white on dark

@@ -31,8 +31,10 @@ class FakeOverlay:
         self.closed = False
         self.draws = 0
 
-    def set_block(self, key, text, box, origin, kind="text"):
+    def set_block(self, key, text, box, origin, kind="text", font_px=None, colors=None):
         self.blocks[key] = text
+        self.styles = getattr(self, "styles", {})
+        self.styles[key] = (font_px, colors)
         self.draws += 1
 
     def remove_block(self, key):
@@ -264,3 +266,42 @@ def test_shown_segments_and_apply_correction():
     assert [(s.source, s.translation) for s in c.shown_segments()] == [("Hello.", "VI Hello."), ("Bye.", "VI Bye.")]
     c.apply_correction("Hello.", "Chào.")
     assert list(overlays[0].blocks.values()) == ["Chào. VI Bye."]
+
+
+
+def _boxed(bg, fg):
+    """400x80 image: a 300x30 text box at (0, 0) with `fg` strokes on `bg`."""
+    img = Image.new("RGB", (400, 80), (90, 90, 90))
+    box = Image.new("RGB", (300, 30), bg)
+    for x in range(10, 290, 6):
+        box.paste(fg, (x, 8, x + 3, 22))
+    img.paste(box, (0, 0))
+    return img
+
+
+def test_match_style_uses_the_source_font_size_and_colours():
+    c, jobs, _, overlays = make([_boxed((250, 250, 250), (20, 20, 20))])
+    c.tick(0)
+    p = Paragraph("text", "Hello.", ["Hello."], 0, 0, 300, 30, line_height=30)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[p]])
+    translate(c, translate_jobs(jobs)[-1])
+    font_px, colors = overlays[0].styles[next(iter(overlays[0].blocks))]
+    assert font_px == 24
+    assert colors is not None and max(colors.text) < 40 and min(colors.bg) > 230
+
+
+def test_classic_style_keeps_the_font_size_but_not_the_colours():
+    jobs, overlays = [], []
+
+    def factory(r):
+        overlays.append(FakeOverlay())
+        return overlays[-1]
+
+    c = LiveController(PARAMS, capture=Script([_boxed((250, 250, 250), (20, 20, 20))]), submit=jobs.append,
+                       next_id=iter(range(1, 99)).__next__, notify=lambda m: None, overlay_factory=factory,
+                       use_timer=False, style="classic")
+    c.start([REGION])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[Paragraph("text", "Hi.", ["Hi."], 0, 0, 300, 30, line_height=30)]])
+    translate(c, translate_jobs(jobs)[-1])
+    assert overlays[0].styles[next(iter(overlays[0].blocks))] == (24, None)

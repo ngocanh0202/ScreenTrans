@@ -15,6 +15,7 @@ from app.live.blocks import BlockTracker, RateLimiter
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
 from app.live.sentences import SentenceGate
+from app.live.style import BlockStyle, font_px_for, sample_style
 from app.live.thumb import diff, gray_thumb
 from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
@@ -30,6 +31,9 @@ class _BlockState:
     done: int = 0                                         # leading sentences that are finished
     shown: dict[int, tuple[str, str]] = field(default_factory=dict)  # index -> (source, translation)
     drawn: str = ""
+    font_px: float | None = None        # the source text's size (always used)
+    colors: BlockStyle | None = None    # sampled colours ("match" style), None = white on dark
+    sampled: bool = False
 
 
 class LiveController(QObject):
@@ -47,6 +51,7 @@ class LiveController(QObject):
         clock: Callable[[], int] = lambda: int(time.monotonic() * 1000),
         use_timer: bool = True,
         on_screen: Callable[[Region], bool] = lambda r: True,
+        style: str = "match",
     ):
         super().__init__()
         self.params = params
@@ -61,6 +66,8 @@ class LiveController(QObject):
         self._clock = clock
         self._use_timer = use_timer
         self._on_screen = on_screen
+        self.style = style
+        self._ocr_images: dict[int, list] = {}  # OCR job -> region images, to sample the source colours
         self._rel: list[Rel] | None = None          # regions relative to the game window (4b)
         self._ignore_rel: list[Rel] = []
         self._frame_provider: Callable[[], tuple[int, int, int, int] | None] | None = None
@@ -144,6 +151,7 @@ class LiveController(QObject):
         self._overlays = []
         self.ocr_job = None
         self._ocr_final.clear()
+        self._ocr_images.clear()
         self._requests.clear()
         self._inflight.clear()
         self._blocks.clear()
@@ -207,6 +215,7 @@ class LiveController(QObject):
 
                 job_id = self._next_id()
                 self._ocr_final[job_id] = self._pending
+                self._ocr_images[job_id] = images
                 self.ocr_job, self._pending = job_id, None
                 self._submit(Job(job_id, "live_ocr", None, (0, 0), images=images))  # None keeps region slots
         self._schedule(self.machine.next_delay_ms())
@@ -214,6 +223,7 @@ class LiveController(QObject):
     # ---- worker results -------------------------------------------------------------------------
     def on_ocr_done(self, job_id: int, paragraphs_per_region: list) -> None:
         final = self._ocr_final.pop(job_id, None)
+        images = self._ocr_images.pop(job_id, None) or []
         if not self.running or final is None:
             return
         if job_id == self.ocr_job:
@@ -227,6 +237,7 @@ class LiveController(QObject):
                 self._blocks.pop((i, b.key), None)
                 self._overlays[i].remove_block(b.key)
             for b in d.added + d.grown + d.kept:
+                self._style_block(i, b.key, b.paragraph, images[i] if i < len(images) else None)
                 request += self._update_block(i, b.key, b.paragraph, final)
         if request:
             from app.gui.worker import Job
@@ -239,6 +250,19 @@ class LiveController(QObject):
                 st = self._blocks[(i, key)]
                 groups[i].append(Paragraph("text", src, [src], *st.box))
             self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups))
+
+    def _style_block(self, i: int, key: str, p: Paragraph, image) -> None:
+        """Font size from the source line height; colours sampled once from the block's pixels."""
+        st = self._blocks.setdefault((i, key), _BlockState())
+        size = font_px_for(getattr(p, "line_height", 0.0))
+        if size is not None:
+            st.font_px = size
+        if self.style == "match" and not st.sampled and image is not None:
+            st.sampled = True
+            crop = image.crop((int(p.left), int(p.top), int(p.right), int(p.bottom))).convert("RGB")
+            import numpy as np
+
+            st.colors = sample_style(np.asarray(crop))
 
     def _update_block(self, i: int, key: str, p: Paragraph, final: bool) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())
@@ -267,7 +291,7 @@ class LiveController(QObject):
         st.drawn = text
         if text:
             x, y = self.regions[i][0], self.regions[i][1]
-            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind)
+            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind, font_px=st.font_px, colors=st.colors)
         else:
             self._overlays[i].remove_block(key)
 
@@ -313,6 +337,7 @@ class LiveController(QObject):
 
     def on_job_failed(self, job_id: int, why: str) -> None:
         self._ocr_final.pop(job_id, None)
+        self._ocr_images.pop(job_id, None)
         if job_id == self.ocr_job:
             self.ocr_job = None
         self._finish(job_id)  # sentences not shown are requested again on the next OCR
