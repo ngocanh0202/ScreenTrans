@@ -313,20 +313,26 @@ def test_live_results_reach_the_controller_and_quit_stops_it(qtbot, tmp_path):
     w.ready.emit()
     hotkeys.triggered.emit("toggle_live")
     app.live.ocr_job = 900
-    w.ocr_done.emit(900, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)]])
+    app.live._ocr_final[900] = True
+    w.ocr_done.emit(900, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 300, 40)]])
     tr = w.jobs[-1]
     assert tr.mode == "live_translate"
     seg = Segment("text", "Hello.", "Xin chào.", (0, 0, 50, 10))
     w.partial.emit(tr.id, [[seg]])
-    assert "Xin chào." in app.live._overlays[0].text()
+    assert [b.text for b in app.live._overlays[0].blocks.values()] == ["Xin chào."]
+    w.job_done.emit(tr.id, [[seg]])
+    assert app.live.translate_job is None
     app._exit = lambda code: None
     app.quit()
     assert not app.live.running
 
 
-def test_live_mode_menu_persists_area(qtbot, tmp_path):
-    from app.live.regions import load_live_mode
+def test_live_scope_menu_persists_and_screen_needs_no_selection(qtbot, tmp_path):
+    from app.live.regions import load_live_scope
 
-    app, *_ = _live_app(qtbot, tmp_path)
-    app.live_mode_actions["area"].trigger()
-    assert load_live_mode(tmp_path) == "area" and app.live_mode == "area"
+    app, _, hotkeys, selector, _ = _live_app(qtbot, tmp_path)
+    app.live_scope_actions["screen"].trigger()
+    assert load_live_scope(tmp_path) == "screen" and app.live_scope == "screen"
+    hotkeys.triggered.emit("toggle_live")
+    assert selector.begun == 0 and app.live.running and app.live.regions == [(0, 0, 1920, 1080)]
+    assert app.live.scope == "screen"

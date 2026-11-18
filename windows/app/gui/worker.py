@@ -99,7 +99,8 @@ class TranslationWorker(QObject):
         self.job_started.emit(job.id)
         try:
             if job.mode == "live_ocr":
-                per_region = [postprocess(self._pipeline.ocr.recognize(img)) for img in job.images or []]
+                per_region = [postprocess(self._pipeline.ocr.recognize(img)) if img is not None else None
+                              for img in job.images or []]  # None: that region could not be captured
                 self.ocr_done.emit(job.id, per_region)
                 return
             if job.mode == "live_translate":

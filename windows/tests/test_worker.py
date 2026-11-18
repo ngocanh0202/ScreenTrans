@@ -155,3 +155,12 @@ def test_live_jobs_never_supersede_user_jobs(qtbot, run_worker):
     qtbot.waitUntil(lambda: len(rec.of("done")) == 2, timeout=10000)
     assert [e[1] for e in rec.of("job_failed")] == [3]
     assert sorted(e[1] for e in rec.of("done")) == [1, 2]
+
+
+def test_live_ocr_keeps_an_empty_slot_for_a_missing_image(qtbot, run_worker):
+    w, rec = run_worker()
+    got = []
+    w.ocr_done.connect(lambda i, per: got.append(per))
+    w.submit(Job(5, "live_ocr", None, (0, 0), images=[None, IMG]))
+    qtbot.waitUntil(lambda: bool(got), timeout=5000)
+    assert got[0][0] is None and len(got[0][1]) == 3

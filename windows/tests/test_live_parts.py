@@ -1,9 +1,8 @@
 from PIL import Image
-from PySide6.QtCore import QPoint, QRect, QSize
+
 
 from app.cache import TranslationCache
 from app.glossary import Glossary
-from app.gui.live_overlay import place_above
 from app.live.regions import load_live_regions, save_live_regions
 from app.live.thumb import diff, gray_thumb
 from app.pipeline import Pipeline
@@ -52,38 +51,28 @@ def test_thumb_diff():
     assert diff(a, gray_thumb(dot)) < 5
 
 
-def test_place_above_then_below():
-    screen = QRect(0, 0, 1920, 1080)
-    assert place_above(QRect(100, 500, 400, 80), QSize(400, 100), screen) == QPoint(100, 500 - 6 - 100)
-    assert place_above(QRect(100, 50, 400, 80), QSize(400, 100), screen) == QPoint(100, 50 + 80 + 6)
+def test_live_scope_persists_and_maps_old_modes_to_region(tmp_path):
+    from app.live.regions import load_live_scope, save_live_scope
+
+    assert load_live_scope(tmp_path) == "region"
+    save_live_scope(tmp_path, "screen")
+    assert load_live_scope(tmp_path) == "screen"
+    for old in ("dialogue", "area", "junk"):
+        (tmp_path / "live_mode.txt").write_text(old, encoding="utf-8")
+        assert load_live_scope(tmp_path) == "region"
 
 
-def test_live_mode_persists_and_defaults_to_dialogue(tmp_path):
-    from app.live.regions import load_live_mode, save_live_mode
-
-    assert load_live_mode(tmp_path) == "dialogue"
-    save_live_mode(tmp_path, "area")
-    assert load_live_mode(tmp_path) == "area"
-    (tmp_path / "live_mode.txt").write_text("junk", encoding="utf-8")
-    assert load_live_mode(tmp_path) == "dialogue"
-
-
-def test_live_overlays_show_and_remove(qtbot):
+def test_area_overlay_draws_and_removes_blocks(qtbot):
     from PySide6.QtCore import QRect, Qt
 
     from app.config import Overlay
-    from app.gui.live_overlay import AreaOverlay, LiveOverlay
-    from app.pipeline import Segment
+    from app.gui.live_overlay import AreaOverlay
 
-    screen = QRect(0, 0, 1920, 1080)
-    lo = LiveOverlay(Overlay(), QRect(100, 500, 400, 80), screen)
-    qtbot.addWidget(lo)
-    assert lo.windowFlags() & Qt.WindowTransparentForInput
-    lo.show_segments([Segment("text", "Hi.", "Chào.", (0, 0, 10, 10))])
-    assert "Chào." in lo.text() and lo.isVisible() and lo.geometry().bottom() < 500
-    ao = AreaOverlay(Overlay(), screen, 1.0)
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
     qtbot.addWidget(ao)
-    ao.set_block("b1", Segment("text", "Hi.", "Chào.", (0, 0, 100, 20)), (100, 100))
-    assert "b1" in ao.blocks and ao.isVisible()
+    assert ao.windowFlags() & Qt.WindowTransparentForInput
+    ao.set_block("b1", "Chào.", (0, 0, 100, 20), (100, 100))
+    ao.set_block("b2", "Druvis III", (0, 30, 100, 50), (100, 100), "name")
+    assert ao.blocks["b1"].text == "Chào." and ao.isVisible()
     ao.remove_block("b1")
-    assert ao.blocks == {}
+    assert list(ao.blocks) == ["b2"]

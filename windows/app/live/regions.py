@@ -20,18 +20,19 @@ def save_live_regions(data_dir: Path, regions: list[tuple[int, int, int, int]]) 
 
 
 MODE_FILE = "live_mode.txt"
-MODES = ("dialogue", "area")
+SCOPES = ("region", "screen")
 
 
-def load_live_mode(data_dir: Path) -> str:
+def load_live_scope(data_dir: Path) -> str:
+    """Live scope: "region" (default; old 4a modes dialogue/area too) or "screen"."""
     try:
-        mode = (Path(data_dir) / MODE_FILE).read_text(encoding="utf-8").strip()
+        scope = (Path(data_dir) / MODE_FILE).read_text(encoding="utf-8").strip()
     except OSError:
-        return "dialogue"
-    return mode if mode in MODES else "dialogue"
+        return "region"
+    return scope if scope in SCOPES else "region"
 
 
-def save_live_mode(data_dir: Path, mode: str) -> None:
+def save_live_scope(data_dir: Path, scope: str) -> None:
     path = Path(data_dir) / MODE_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(mode, encoding="utf-8")
+    path.write_text(scope, encoding="utf-8")

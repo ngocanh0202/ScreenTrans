@@ -51,6 +51,7 @@ class Live:
     area_min_interval_ms: int = 1000
     area_max_blocks: int = 30
     change_threshold: float = 5
+    partial_interval_ms: int = 500  # OCR while the text is typing: show each sentence as soon as it is done
 
 
 @dataclass
