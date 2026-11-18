@@ -58,6 +58,11 @@ class LiveMachine(private val p: LiveParams = LiveParams()) {
         return LiveAction.WAIT
     }
 
+    /** The last translation never reached the screen (superseded / failed): allow it again. */
+    fun forgetTranslation() {
+        lastTranslated = ""
+    }
+
     /** "translate", "skip" or "wait". */
     fun onText(nowMs: Int, text: String): String {
         val t = normalizeText(text)
@@ -115,6 +120,11 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
         }
         shown = now
         return BlockDiff(added, kept, free)
+    }
+
+    /** Blocks whose translation never arrived: they count as new on the next update. */
+    fun forget(keys: Collection<String>) {
+        shown = shown.filter { it.key !in keys }
     }
 }
 

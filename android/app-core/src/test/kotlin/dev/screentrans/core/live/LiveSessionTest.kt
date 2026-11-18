@@ -35,14 +35,14 @@ class LiveSessionTest {
         val h = Host()
         val s = LiveSession(LiveParams(), area = false, host = h)
         drive(s, { t -> if (t in 100..400) 255f else 0f }, 1500)
-        assertEquals(1, h.ocr.size)
+        assertEquals(2, h.ocr.size)  // initial + after typing settles
     }
 
     @Test
-    fun `still screen never ocrs`() {
+    fun `still screen ocrs once at start then never`() {
         val h = Host()
         drive(LiveSession(LiveParams(), area = false, host = h), { 0f }, 3000)
-        assertEquals(0, h.ocr.size)
+        assertEquals(1, h.ocr.size)
     }
 
     @Test
@@ -88,7 +88,7 @@ class LiveSessionTest {
         drive(s, { 255f }, 4000)
         assertTrue(h.ocr.size in 1..3, "ocr ${h.ocr.size}")
         val a = para("Bubble one.")
-        s.onOcrDone(h.ocr.first(), listOf(listOf(a)), 4100)
+        s.onOcrDone(h.ocr.last(), listOf(listOf(a)), 4100)
         val (trId, paras) = h.translate.single()
         assertEquals(listOf(listOf(a)), paras)
         s.onPartial(trId, listOf(listOf(seg("Bubble one.", "Bong bóng một."))))
@@ -99,5 +99,42 @@ class LiveSessionTest {
         s.debugSetOcrJob(501)
         s.onOcrDone(501, listOf(emptyList()), 6300)  // bubble gone
         assertTrue(h.blocks.isEmpty())
+    }
+
+    @Test
+    fun `superseded translation is retried on the next identical ocr`() {
+        val h = Host()
+        val s = LiveSession(LiveParams(), area = false, host = h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hello."))), 100)
+        val first = h.translate.single().first
+        s.onJobFailed(first)
+        s.debugSetOcrJob(77)
+        s.onOcrDone(77, listOf(listOf(para("Hello."))), 900)
+        assertEquals(2, h.translate.size)
+    }
+
+    @Test
+    fun `area failed translation makes its blocks new again`() {
+        val h = Host()
+        val s = LiveSession(LiveParams(), area = true, host = h)
+        s.onFrame(0, 0f)
+        val a = para("Bubble one.")
+        s.onOcrDone(h.ocr.last(), listOf(listOf(a)), 100)
+        s.onJobFailed(h.translate.single().first)
+        s.debugSetOcrJob(78)
+        s.onOcrDone(78, listOf(listOf(a)), 1200)
+        assertEquals(2, h.translate.size)
+    }
+
+    @Test
+    fun `dialogue redraw is not seen as a change`() {
+        val h = Host()
+        val s = LiveSession(LiveParams(), area = false, host = h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hi."))), 50)
+        s.onPartial(h.translate.single().first, listOf(listOf(seg("Hi.", "Chào."))))
+        s.onFrame(100, 255f)  // the frame showing our own card
+        assertEquals(false, s.machine.changing)
     }
 }

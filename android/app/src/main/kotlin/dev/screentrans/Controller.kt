@@ -119,11 +119,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
         }
         overlays.add(panel, p)
         menu = panel
+        syncLivePause()
     }
 
     private fun closeMenu() {
         overlays.remove(menu)
         menu = null
+        syncLivePause()
     }
 
     private fun closeResults() {
@@ -131,6 +133,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
         cards.clear()
         overlays.remove(layer)
         layer = null
+        syncLivePause()
+    }
+
+    /** Our menu and one-shot results are not hidden from Live frames: Live waits while they are shown. */
+    private fun syncLivePause() {
+        live.paused = menu != null || cards.isNotEmpty() || layer != null || selector != null
     }
 
     // ---- region ---------------------------------------------------------------------------------
@@ -232,6 +240,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             val l = FullScreenLayer(context, onBlockTapped = ::showDetail, onClose = ::closeResults)
             overlays.add(l, overlays.params(MATCH_PARENT, MATCH_PARENT))
             layer = l
+            syncLivePause()
             (engine.state.value as? EngineState.Failed)?.let { l.finish(); showCard(null, it.message, true) }
             engine.submit(EngineJob(fullJob, fullScreen = true, image = frame))
         }
@@ -273,7 +282,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     ) {
         if (replace) closeCards()
         lateinit var c: ResultCard
-        c = ResultCard(context) { overlays.remove(c); cards.remove(c) }
+        c = ResultCard(context) { overlays.remove(c); cards.remove(c); syncLivePause() }
         if (segments != null) c.showSegments(segments, showSource) else c.showMessage(message ?: "", error)
         val maxW = (capturer.width * 0.9f).toInt()
         val maxH = (capturer.height * 0.8f).toInt()  // long text scrolls inside the card
@@ -289,11 +298,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val p = overlays.params(width, minOf(c.measuredHeight, maxH)).apply { x = pos[0]; y = pos[1] }
         overlays.add(c, p)
         cards.add(c)
+        syncLivePause()
     }
 
     private fun closeCards() {
         cards.forEach { overlays.remove(it) }
         cards.clear()
+        syncLivePause()
     }
 
     private fun onEvent(e: EngineEvent) {

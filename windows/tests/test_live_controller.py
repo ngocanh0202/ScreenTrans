@@ -61,15 +61,15 @@ def test_typing_then_still_gives_one_ocr_job():
     c, jobs, _, _ = make(frames)
     c.start([REGION])
     drive(c, 1500)
-    assert [j.mode for j in jobs] == ["live_ocr"]
-    assert len(jobs[0].images) == 1
+    assert [j.mode for j in jobs] == ["live_ocr", "live_ocr"]  # initial + after typing settles
+    assert len(jobs[-1].images) == 1
 
 
-def test_still_screen_never_ocrs():
+def test_still_screen_ocrs_once_at_start_then_never():
     c, jobs, _, _ = make([BLACK])
     c.start([REGION])
     drive(c, 3000)
-    assert jobs == []
+    assert [j.mode for j in jobs] == ["live_ocr"]  # the line already on screen is translated (I4)
 
 
 def test_ocr_text_is_translated_progressively_into_the_overlay():
@@ -126,9 +126,35 @@ def test_area_mode_rate_limits_ocr_and_translates_only_new_blocks():
     ocr_times = [j for j in jobs if j.mode == "live_ocr"]
     assert 1 <= len(ocr_times) <= 3  # max_wait 2 s and at most one OCR per second
     a = Paragraph("text", "Bubble one.", ["Bubble one."], 0, 0, 100, 20)
-    c.on_ocr_done(ocr_times[0].id, [[a]])
+    c.on_ocr_done(ocr_times[-1].id, [[a]])
     first_tr = [j for j in jobs if j.mode == "live_translate"]
     assert len(first_tr) == 1 and first_tr[0].paragraphs == [[a]]
     c.ocr_job = 500
     c.on_ocr_done(500, [[a]])  # same bubble again: nothing new to translate
     assert len([j for j in jobs if j.mode == "live_translate"]) == 1
+
+
+def test_superseded_translation_is_retried_on_the_next_identical_ocr():
+    c, jobs, _, _ = make([BLACK, WHITE] + [WHITE] * 10)
+    c.start([REGION])
+    drive(c, 800)
+    para = Paragraph("text", "Hello.", ["Hello."], 0, 0, 100, 20)
+    c.on_ocr_done(jobs[-1].id, [[para]])
+    tr = jobs[-1]
+    c.on_job_failed(tr.id, "superseded")
+    c.ocr_job = 99
+    c.on_ocr_done(99, [[para]])
+    assert jobs[-1].mode == "live_translate" and jobs[-1].id != tr.id
+
+
+def test_area_failed_translation_makes_its_blocks_new_again():
+    c, jobs, _, _ = make([BLACK], area=True)
+    c.start([REGION])
+    drive(c, 0)
+    a = Paragraph("text", "Bubble one.", ["Bubble one."], 0, 0, 100, 20)
+    c.on_ocr_done(jobs[-1].id, [[a]])
+    tr = jobs[-1]
+    c.on_job_failed(tr.id, "superseded")
+    c.ocr_job = 500
+    c.on_ocr_done(500, [[a]])
+    assert jobs[-1].mode == "live_translate" and jobs[-1].id != tr.id

@@ -37,7 +37,7 @@ class LiveSession(
         private set
     var translateJob = -1
         private set
-    private var pendingOcr = false
+    private var pendingOcr = true  // translate what is already on screen
     private var pendingKeys: List<String> = emptyList()
 
     fun nextDelayMs(): Int = machine.nextDelayMs()
@@ -85,12 +85,26 @@ class LiveSession(
             return
         }
         host.showDialogue(perRegion)
+        machine.onOverlayChanged()  // our own card may show up in the next frame
     }
 
-    /** Done / failed / superseded: the job no longer counts as running. */
+    /** Done: the job no longer counts as running. */
     fun onJobEnded(jobId: Int) {
         if (jobId == ocrJob) ocrJob = -1
         if (jobId == translateJob) translateJob = -1
+    }
+
+    /** Failed / superseded: nothing was shown, so the same text / blocks are translated next time. */
+    fun onJobFailed(jobId: Int) {
+        if (jobId == translateJob) {
+            if (area) {
+                tracker.forget(pendingKeys)
+                pendingKeys = emptyList()
+            } else {
+                machine.forgetTranslation()
+            }
+        }
+        onJobEnded(jobId)
     }
 
     /** Tests only. */

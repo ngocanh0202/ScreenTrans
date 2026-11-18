@@ -165,4 +165,20 @@ class TranslationEngineTest {
         assertEquals(listOf(listOf("VI One."), listOf("VI Two.")), partials.last().segments.map { r -> r.map { it.translation } })
         assertTrue(events.indexOf(partials.last()) < events.indexOfFirst { it is EngineEvent.Done })
     }
+
+    @Test
+    fun `live jobs never supersede user jobs`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        testScheduler.runCurrent()
+        engine.submit(EngineJob(1, false, "a"))
+        engine.submit(EngineJob(2, false, "b", liveOcr = true))
+        engine.submit(EngineJob(3, false, "c", liveOcr = true))
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf(2), events.filterIsInstance<EngineEvent.JobFailed>().map { it.jobId })
+        assertEquals(listOf(1), events.filterIsInstance<EngineEvent.Done>().map { it.jobId })
+        assertEquals(listOf(3), events.filterIsInstance<EngineEvent.OcrDone>().map { it.jobId })
+    }
 }

@@ -58,6 +58,11 @@ class BlockTracker:
         self.shown = now
         return BlockDiff(added, kept, free)
 
+    def forget(self, keys) -> None:
+        """Blocks whose translation never arrived: they count as new on the next update."""
+        keys = set(keys)
+        self.shown = [b for b in self.shown if b.key not in keys]
+
 
 class RateLimiter:
     """At most one OCR per min_interval_ms (large-area Live)."""

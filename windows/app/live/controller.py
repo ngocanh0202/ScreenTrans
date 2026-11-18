@@ -69,6 +69,7 @@ class LiveController(QObject):
         self._overlays = [self._overlay_factory(r) for r in self.regions]
         self._reported_offscreen = False
         self.running = True
+        self._pending_ocr = True  # translate what is already on screen
         self._schedule(0)
 
     def stop(self) -> None:
@@ -166,3 +167,9 @@ class LiveController(QObject):
             self.ocr_job = None
         if job_id == self.translate_job:
             self.translate_job = None
+            # Nothing was shown: the same text / blocks must be translated on the next OCR.
+            if self.area:
+                self._tracker.forget(self._pending_keys)
+                self._pending_keys = []
+            else:
+                self.machine.forget_translation()

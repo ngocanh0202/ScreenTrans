@@ -42,6 +42,7 @@ class TranslationWorker(QObject):
         self._pipeline: Pipeline | None = None
         self._lock = threading.Lock()
         self._pending: Job | None = None
+        self._live_pending: Job | None = None  # Live jobs have their own slot: they never replace user jobs
         self.is_ready = False
         self.error: str | None = None
         self._wake.connect(self._process)
@@ -64,16 +65,23 @@ class TranslationWorker(QObject):
         self._process()
 
     def submit(self, job: Job) -> None:
-        """Thread-safe. Keeps only the newest waiting job; an older waiting one is superseded."""
+        """Thread-safe. Keeps only the newest waiting job of its kind (user / live); an older waiting
+        one of the same kind is superseded. User jobs run first."""
         with self._lock:
-            old, self._pending = self._pending, job
+            if job.mode.startswith("live_"):
+                old, self._live_pending = self._live_pending, job
+            else:
+                old, self._pending = self._pending, job
         if old is not None:
             self.job_failed.emit(old.id, SUPERSEDED)
         self._wake.emit()
 
     def _take(self) -> Job | None:
         with self._lock:
-            job, self._pending = self._pending, None
+            if self._pending is not None:
+                job, self._pending = self._pending, None
+            else:
+                job, self._live_pending = self._live_pending, None
         return job
 
     @Slot()

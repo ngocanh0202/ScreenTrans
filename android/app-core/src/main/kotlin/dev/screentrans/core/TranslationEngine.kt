@@ -61,7 +61,8 @@ sealed interface EngineEvent {
 
 /**
  * Runs OCR + translation on one dispatcher (a single thread in the app), so the Pipeline is never
- * used concurrently. Only the newest waiting job is kept; older waiting ones fail with [SUPERSEDED].
+ * used concurrently. Only the newest waiting job of each kind (user / Live) is kept; older waiting ones fail with
+ * [SUPERSEDED]. User jobs run first.
  * Same contract as the Windows TranslationWorker.
  */
 class TranslationEngine<I>(
@@ -76,6 +77,7 @@ class TranslationEngine<I>(
 
     private val lock = Any()
     private var pending: EngineJob<I>? = null
+    private var livePending: EngineJob<I>? = null  // Live jobs have their own slot: they never replace user jobs
     private var bundle: EngineBundle<I>? = null
 
     fun start() {
@@ -94,7 +96,10 @@ class TranslationEngine<I>(
 
     /** Thread-safe; call from the UI thread. */
     fun submit(job: EngineJob<I>) {
-        val old = synchronized(lock) { pending.also { pending = job } }
+        val live = job.liveOcr || job.liveParagraphs != null
+        val old = synchronized(lock) {
+            if (live) livePending.also { livePending = job } else pending.also { pending = job }
+        }
         if (old != null) _events.tryEmit(EngineEvent.JobFailed(old.id, SUPERSEDED))
         scope.launch(dispatcher) { process() }
     }
@@ -110,7 +115,9 @@ class TranslationEngine<I>(
         }
     }
 
-    private fun take(): EngineJob<I>? = synchronized(lock) { pending.also { pending = null } }
+    private fun take(): EngineJob<I>? = synchronized(lock) {
+        if (pending != null) pending.also { pending = null } else livePending.also { livePending = null }
+    }
 
     private fun process() {
         val s = _state.value

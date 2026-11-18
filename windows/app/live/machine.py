@@ -63,6 +63,10 @@ class LiveMachine:
             return Action.OCR
         return Action.WAIT
 
+    def forget_translation(self) -> None:
+        """The last translation never reached the screen (superseded / failed): allow it again."""
+        self._last_translated = ""
+
     def on_text(self, now_ms: int, text: str) -> Literal["translate", "skip", "wait"]:
         t = _norm(text)
         if not t:

@@ -51,6 +51,17 @@ class LiveController(
     private var capturing = false
     private var startedAt = 0L
 
+    /** Our menu / one-shot results are on screen: they would end up in the Live frames, so wait. */
+    var paused = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value) {
+                resetReference()
+                session?.overlayChanged()
+            }
+        }
+
     val running: Boolean get() = session?.running == true
 
     private fun now(): Int = (SystemClock.uptimeMillis() - startedAt).toInt()
@@ -70,7 +81,7 @@ class LiveController(
         events = scope.launch { engine.events.collect(::onEvent) }
         loop = scope.launch {
             while (isActive && s.running) {
-                if (!capturing) tick(s)
+                if (!capturing && !paused) tick(s)
                 delay(s.nextDelayMs().toLong())
             }
         }
@@ -92,10 +103,13 @@ class LiveController(
 
     /** One-shot translations hide Live windows so they are not captured. */
     fun setVisible(visible: Boolean) {
-        val v = if (visible) View.VISIBLE else View.INVISIBLE
+        setLiveWindows(if (visible) View.VISIBLE else View.INVISIBLE)
+        if (visible) resetReference()
+    }
+
+    private fun setLiveWindows(v: Int) {
         cards.values.forEach { it.visibility = v }
         areaLayer?.visibility = v
-        if (visible) resetReference()
     }
 
     private fun resetReference() {
@@ -119,25 +133,24 @@ class LiveController(
         val id = newId()
         val s = session ?: return id
         scope.launch {
-            val frame = if (s.area) {
-                capturing = true
-                areaLayer?.visibility = View.INVISIBLE
-                hideOthers(true)
-                val hiddenAt = SystemClock.uptimeMillis()
-                delay(50)
-                val f = capturer.capture(newerThan = hiddenAt)
-                areaLayer?.visibility = View.VISIBLE
-                hideOthers(false)
-                delay(120)  // let a frame with our layer back arrive: it becomes the new reference
-                resetReference()
-                s.overlayChanged()
-                capturing = false
-                f
-            } else {
-                capturer.capture()
+            // Android cannot exclude our windows from the capture: hide them (layer, cards, bubble).
+            capturing = true
+            setLiveWindows(View.INVISIBLE)
+            hideOthers(true)
+            val hiddenAt = SystemClock.uptimeMillis()
+            delay(50)
+            val frame = capturer.capture(newerThan = hiddenAt)
+            hideOthers(false)
+            if (session === s) {
+                setLiveWindows(View.VISIBLE)
+                delay(120)  // let a frame with our windows back arrive: it becomes the new reference
             }
+            if (session !== s) return@launch  // stopped / restarted meanwhile: leave the new session alone
+            resetReference()
+            s.overlayChanged()
+            capturing = false
             if (frame == null || !s.running) {
-                s.onJobEnded(id)
+                s.onJobFailed(id)
                 return@launch
             }
             engine.submit(EngineJob(id, fullScreen = false, image = frame, regions = regions, liveOcr = true))
@@ -166,9 +179,12 @@ class LiveController(
                 View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec((capturer.height * 0.5f).toInt(), View.MeasureSpec.AT_MOST),
             )
-            val pos = Layout.placeOverlay(region, width, card.measuredHeight, capturer.width, capturer.height)
+            // Outside every watched region; if that is impossible it may overlap, and it is hidden
+            // for each OCR capture anyway (requestOcr).
+            val pos = Layout.placeOutside(region, width, card.measuredHeight, capturer.width, capturer.height, regions)
+                ?: Layout.placeOverlay(region, width, card.measuredHeight, capturer.width, capturer.height)
             val p = overlays.params(width, WRAP_CONTENT, touchable = false).apply { x = pos[0]; y = pos[1] }
-            if (card.isAttachedToWindow) overlays.update(card, p) else overlays.add(card, p)
+            if (overlays.isAdded(card)) overlays.update(card, p) else overlays.add(card, p)
         }
     }
 
@@ -186,7 +202,7 @@ class LiveController(
             is EngineEvent.OcrDone -> s.onOcrDone(e.jobId, e.paragraphs, now())
             is EngineEvent.Partial -> s.onPartial(e.jobId, e.segments)
             is EngineEvent.Done -> s.onJobEnded(e.jobId)
-            is EngineEvent.JobFailed -> s.onJobEnded(e.jobId)
+            is EngineEvent.JobFailed -> s.onJobFailed(e.jobId)
             is EngineEvent.SegmentReady -> Unit
         }
     }

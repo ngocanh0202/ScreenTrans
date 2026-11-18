@@ -142,3 +142,16 @@ def test_live_translate_emits_partials_grouped_per_region(qtbot, run_worker):
     assert len(parts) >= 2 and all(len(p) == 2 for p in parts)
     final = rec.of("done")[0][2]
     assert [[s.translation for s in g] for g in final] == [["VI One."], ["VI Two."]]
+
+
+def test_live_jobs_never_supersede_user_jobs(qtbot, run_worker):
+    w, rec = run_worker(delay=0.3)
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: ("started", 1) in rec.events, timeout=5000)  # job 1 is now running
+    w.submit(Job(2, "region", IMG, (0, 0)))       # waits
+    w.submit(Job(3, "live_ocr", None, (0, 0), images=[IMG]))
+    w.submit(Job(4, "live_ocr", None, (0, 0), images=[IMG]))  # supersedes 3 only
+    qtbot.waitUntil(lambda: len(rec.of("done")) == 2, timeout=10000)
+    assert [e[1] for e in rec.of("job_failed")] == [3]
+    assert sorted(e[1] for e in rec.of("done")) == [1, 2]
