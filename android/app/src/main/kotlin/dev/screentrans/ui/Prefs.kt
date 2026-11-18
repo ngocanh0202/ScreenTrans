@@ -12,6 +12,11 @@ class Prefs(context: Context) {
         get() = RelRect.parseList(sp.getString("regions", null) ?: sp.getString("region", null))
         set(value) = sp.edit().putString("regions", RelRect.serializeList(value)).remove("region").apply()
 
+    /** Live mode: "dialogue" (translation next to the region) or "area" (over each text block). */
+    var liveMode: String
+        get() = sp.getString("live_mode", "dialogue").takeIf { it == "area" } ?: "dialogue"
+        set(v) = sp.edit().putString("live_mode", v).apply()
+
     var bubbleX: Int
         get() = sp.getInt("bubble_x", 0)
         set(v) = sp.edit().putInt("bubble_x", v).apply()

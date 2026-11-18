@@ -14,6 +14,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import dev.screentrans.core.live.Thumb
 import kotlinx.coroutines.delay
 
 /**
@@ -101,6 +102,40 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
             delay(16)
         }
         return synchronized(lock) { latest?.let { toBitmap(it) } }
+    }
+
+    /**
+     * Gray thumbnail ([Thumb.fromArgb], [width] px wide) of rect (l, t, r, b) read straight from the
+     * held frame — no full-screen Bitmap per Live tick. Null when there is no frame or the rect is empty.
+     */
+    fun thumbnail(rect: IntArray, width: Int = 64): FloatArray? = synchronized(lock) { thumbLocked(rect, width) }
+
+    private fun thumbLocked(rect: IntArray, width: Int): FloatArray? {
+        val img = latest ?: return null
+        val l = rect[0].coerceIn(0, img.width)
+        val t = rect[1].coerceIn(0, img.height)
+        val r = rect[2].coerceIn(0, img.width)
+        val b = rect[3].coerceIn(0, img.height)
+        if (r - l < 2 || b - t < 2) return null
+        val plane = img.planes[0]
+        val buf = plane.buffer
+        val ps = plane.pixelStride
+        val rs = plane.rowStride
+        val step = maxOf(1, (r - l) / (width * 4))  // ~4 samples per thumbnail pixel per axis is plenty
+        val sw = (r - l + step - 1) / step
+        val sh = (b - t + step - 1) / step
+        val px = IntArray(sw * sh)
+        for (j in 0 until sh) {
+            val row = (t + j * step) * rs
+            for (i in 0 until sw) {
+                val o = row + (l + i * step) * ps  // RGBA_8888
+                val red = buf.get(o).toInt() and 0xFF
+                val green = buf.get(o + 1).toInt() and 0xFF
+                val blue = buf.get(o + 2).toInt() and 0xFF
+                px[j * sw + i] = (0xFF shl 24) or (red shl 16) or (green shl 8) or blue
+            }
+        }
+        return Thumb.fromArgb(px, sw, sh, width)
     }
 
     private fun toBitmap(image: Image): Bitmap {
