@@ -78,6 +78,7 @@ class LiveController(QObject):
         self.machine = LiveMachine(params)
         self.ocr_job: int | None = None
         self._ocr_final: dict[int, bool] = {}
+        self._submitted_final: dict[int, bool] = {}  # every OCR job ever sent (tests / diagnostics)
         self._requests: dict[int, list[tuple[int, str, int, str]]] = {}  # translate job -> (region, key, idx, src)
         self._inflight: set[tuple[int, str, int, str]] = set()
         self._overlays: list = []
@@ -126,15 +127,17 @@ class LiveController(QObject):
         if frame is None or frame[2] <= 0 or frame[3] <= 0:
             if not self._reported_paused:
                 self._reported_paused = True
+                self._clear_blocks()  # never leave translations floating over the desktop
+                self.regions = []
                 self._notify("Game đã thu nhỏ hoặc đóng — Live tạm dừng.")
             return False
         self._reported_paused = False
         regions = [to_px(r, frame) for r in self._rel]
         if regions != self.regions:  # the window moved / resized: start over at the new place
-            for (i, key) in list(self._blocks):
-                if i < len(self._overlays):
-                    self._overlays[i].remove_block(key)
-            self._blocks.clear()
+            self._clear_blocks()
+            for o in self._overlays:  # the window may now be on another monitor
+                o.close()
+            self._overlays = [self._overlay_factory(r) for r in regions]
             self._trackers = [BlockTracker(self._area_max_blocks) for _ in regions]
             self._prev = [None] * len(regions)
             self._masks = [None] * len(regions)
@@ -142,6 +145,13 @@ class LiveController(QObject):
             self.regions = regions
             self._pending = True
         return True
+
+    def _clear_blocks(self) -> None:
+        for (i, key) in list(self._blocks):
+            if i < len(self._overlays):
+                self._overlays[i].remove_block(key)
+        self._blocks.clear()
+        self._trackers = [BlockTracker(self._area_max_blocks) for _ in self._trackers]
 
     def stop(self) -> None:
         self.running = False
@@ -207,6 +217,8 @@ class LiveController(QObject):
         action = self.machine.on_frame(now_ms, worst)
         if action is Action.OCR:
             self._pending = self.machine.final or bool(self._pending)
+            if not self.machine.final:
+                self.machine.rearm(now_ms)  # max_wait: a final read must still follow when it gets still
         elif action is Action.PARTIAL and self.ocr_job is None and self._pending is None:
             self._pending = False
         if self._pending is not None and any(img is not None for img in images):
@@ -215,6 +227,7 @@ class LiveController(QObject):
 
                 job_id = self._next_id()
                 self._ocr_final[job_id] = self._pending
+                self._submitted_final[job_id] = self._pending
                 self._ocr_images[job_id] = images
                 self.ocr_job, self._pending = job_id, None
                 self._submit(Job(job_id, "live_ocr", None, (0, 0), images=images))  # None keeps region slots
@@ -233,12 +246,17 @@ class LiveController(QObject):
             if paragraphs is None:
                 continue
             d = self._trackers[i].update(paragraphs)
+            carry: dict[str, str] = {}  # translations of blocks that only got a new key (moved / re-read)
             for b in d.removed:
-                self._blocks.pop((i, b.key), None)
+                old = self._blocks.pop((i, b.key), None)
+                if old is not None:
+                    carry.update({src: vi for src, vi in old.shown.values()})
                 self._overlays[i].remove_block(b.key)
+            kept = {b.key for b in d.kept}
             for b in d.added + d.grown + d.kept:
                 self._style_block(i, b.key, b.paragraph, images[i] if i < len(images) else None)
-                request += self._update_block(i, b.key, b.paragraph, final)
+                # a block read twice with the same text has stopped typing, even while the screen animates
+                request += self._update_block(i, b.key, b.paragraph, final or b.key in kept, carry)
         if request:
             from app.gui.worker import Job
 
@@ -264,7 +282,7 @@ class LiveController(QObject):
 
             st.colors = sample_style(np.asarray(crop))
 
-    def _update_block(self, i: int, key: str, p: Paragraph, final: bool) -> list:
+    def _update_block(self, i: int, key: str, p: Paragraph, final: bool, carry: dict | None = None) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())
         st.kind, st.box = p.kind, (p.left, p.top, p.right, p.bottom)
         if p.kind == "name":
@@ -274,6 +292,9 @@ class LiveController(QObject):
         st.done = SentenceGate.done(p.sentences, st.sentences or None, final)
         st.sentences = list(p.sentences)
         st.shown = {k: v for k, v in st.shown.items() if k < len(st.sentences) and st.sentences[k] == v[0]}
+        for k in range(st.done):
+            if k not in st.shown and carry and st.sentences[k] in carry:
+                st.shown[k] = (st.sentences[k], carry[st.sentences[k]])
         self._draw(i, key)
         return [(i, key, k, st.sentences[k]) for k in range(st.done)
                 if k not in st.shown and (i, key, k, st.sentences[k]) not in self._inflight]
@@ -336,7 +357,8 @@ class LiveController(QObject):
         self._finish(job_id)
 
     def on_job_failed(self, job_id: int, why: str) -> None:
-        self._ocr_final.pop(job_id, None)
+        if self._ocr_final.pop(job_id, None) and self.running:
+            self._pending = True  # the final read was lost (superseded / failed): read again
         self._ocr_images.pop(job_id, None)
         if job_id == self.ocr_job:
             self.ocr_job = None

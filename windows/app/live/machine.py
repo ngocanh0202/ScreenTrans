@@ -78,6 +78,11 @@ class LiveMachine:
         """The last translation never reached the screen (superseded / failed): allow it again."""
         self._last_translated = ""
 
+    def rearm(self, now_ms: int) -> None:
+        """After an OCR that was not final (max_wait): keep watching, so a final OCR follows once it is still."""
+        self.state = "changing"
+        self._changed_at = self._last_change = self._last_partial = now_ms
+
     def on_text(self, now_ms: int, text: str) -> Literal["translate", "skip", "wait"]:
         t = _norm(text)
         if not t:

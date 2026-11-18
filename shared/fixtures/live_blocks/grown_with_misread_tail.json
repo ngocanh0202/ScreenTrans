@@ -1,0 +1,72 @@
+{
+ "name": "the half-drawn last word may be misread: still the same block",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going? The sta",
+     "box": [
+      0,
+      0,
+      300,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going? The sta"
+    ],
+    "kept": [],
+    "grown": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going? The sla",
+     "box": [
+      0,
+      0,
+      300,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [],
+    "grown": [
+     "Where are you going? The sla"
+    ],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going? The station is closed.",
+     "box": [
+      0,
+      0,
+      420,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [],
+    "grown": [
+     "Where are you going? The station is closed."
+    ],
+    "removed": []
+   }
+  }
+ ]
+}

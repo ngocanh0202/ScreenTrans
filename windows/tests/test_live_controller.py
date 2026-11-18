@@ -305,3 +305,95 @@ def test_classic_style_keeps_the_font_size_but_not_the_colours():
     c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[Paragraph("text", "Hi.", ["Hi."], 0, 0, 300, 30, line_height=30)]])
     translate(c, translate_jobs(jobs)[-1])
     assert overlays[0].styles[next(iter(overlays[0].blocks))] == (24, None)
+
+
+# ---- final review fixes -------------------------------------------------------------------------------
+def test_c1_typing_that_stops_just_before_max_wait_still_gets_a_final_read():
+    frames = [BLACK, WHITE] * 10 + [WHITE] * 40  # changes until 1900 ms, then still
+    c, jobs, _, _ = make(frames)
+    for t in range(0, 4000, 100):
+        c.tick(t)
+        if c.ocr_job is not None:  # the worker answers at once with nothing new
+            c.on_ocr_done(c.ocr_job, [[]])
+    finals = [j for j in ocr_jobs(jobs) if c_final(c, j)]
+    assert finals, "after typing stops a final OCR must come"
+
+
+def c_final(c, job):
+    return c._submitted_final.get(job.id, False)
+
+
+def test_c1_a_lost_final_ocr_is_requested_again():
+    c, jobs, _, _ = make([BLACK])
+    c.tick(0)
+    first = ocr_jobs(jobs)[-1]
+    c.on_job_failed(first.id, "superseded")
+    c.tick(300)
+    assert len(ocr_jobs(jobs)) == 2
+
+
+def test_c2_a_block_read_twice_the_same_is_finished_even_while_the_screen_animates():
+    c, jobs, _, overlays = make([BLACK, WHITE] * 40, scope="screen")
+    c.ocr_job = 90
+    c._ocr_final[90] = False
+    c.on_ocr_done(90, [[para("Continue")]])
+    assert translate_jobs(jobs) == []
+    c.ocr_job = 91
+    c._ocr_final[91] = False
+    c.on_ocr_done(91, [[para("Continue")]])  # same text again: it has stopped typing
+    assert sources(translate_jobs(jobs)[-1]) == ["Continue"]
+
+
+def test_i1_overlays_are_recreated_when_the_window_moves():
+    made = []
+
+    def factory(r):
+        made.append(r)
+        return FakeOverlay()
+
+    win = Window((100, 50, 1000, 500))
+    c = LiveController(PARAMS, capture=Script([BLACK]), submit=lambda j: None, next_id=iter(range(1, 99)).__next__,
+                       notify=lambda m: None, overlay_factory=factory, use_timer=False)
+    c.start_relative([(0, 0, 1, 1)], win)
+    c.tick(0)
+    win.frame = (2000, 50, 1000, 500)  # dragged to the second monitor
+    c.tick(300)
+    assert made[-1] == (2000, 50, 1000, 500)
+
+
+def test_i2_minimizing_the_game_removes_the_translations():
+    win = Window((0, 0, 400, 80))
+    c, jobs, _, _ = make_rel([BLACK], win, [(0, 0, 1, 1)])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    overlay = c._overlays[0]
+    assert overlay.blocks
+    win.frame = None
+    c.tick(300)
+    assert overlay.blocks == {}
+
+
+def test_i6_a_misread_last_glyph_keeps_the_block_and_its_translation():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Where are you going? The sta")]])
+    translate(c, translate_jobs(jobs)[-1])
+    key = next(iter(overlays[0].blocks))
+    c.ocr_job = 99
+    c._ocr_final[99] = False
+    c.on_ocr_done(99, [[para("Where are you going? The sla")]])
+    assert list(overlays[0].blocks) == [key] and overlays[0].blocks[key] == "VI Where are you going?"
+
+
+def test_i6_translations_carry_over_to_a_block_that_got_a_new_key():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    n = len(translate_jobs(jobs))
+    c.ocr_job = 99
+    c._ocr_final[99] = True
+    c.on_ocr_done(99, [[para("Hello there.", top=200)]])  # same text, far away: new block
+    assert len(translate_jobs(jobs)) == n
+    assert list(overlays[0].blocks.values()) == ["VI Hello there."]

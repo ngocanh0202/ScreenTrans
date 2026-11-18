@@ -194,3 +194,14 @@ def test_correct_job_overrides_the_next_translation(qtbot, run_worker):
     qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
     segs = [e for e in rec.of("done") if e[1] == 2][0][2]
     assert segs[1].translation == "Chào cậu."
+
+
+def test_live_translate_does_not_supersede_a_waiting_live_ocr(qtbot, run_worker):
+    w, rec = run_worker(delay=0.3)
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: ("started", 1) in rec.events, timeout=5000)
+    w.submit(Job(2, "live_ocr", None, (0, 0), images=[IMG]))
+    w.submit(Job(3, "live_translate", None, (0, 0), paragraphs=[[]]))
+    qtbot.waitUntil(lambda: any(e[1] == 3 for e in rec.of("done")), timeout=10000)
+    assert rec.of("job_failed") == []

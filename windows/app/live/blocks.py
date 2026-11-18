@@ -10,6 +10,16 @@ def _norm(text: str) -> str:
     return " ".join(text.split())
 
 
+def _grows(old: str, new: str) -> bool:
+    """`new` continues `old`: same text up to old's last word (that word may have been half drawn / misread)."""
+    if new == old:
+        return False
+    if new.startswith(old):
+        return True
+    head = old.rsplit(" ", 1)[0] if " " in old else ""
+    return bool(head) and new.startswith(head + " ") and len(new) >= len(old) - 3
+
+
 @dataclass
 class Block:
     key: str
@@ -52,7 +62,7 @@ class BlockTracker:
                 free.remove(match)
                 block = Block(match.key, text, box, p)
                 kept.append(block)
-            elif (base := next((b for b in free if text.startswith(_norm(b.text)) and len(text) > len(_norm(b.text))
+            elif (base := next((b for b in free if _grows(_norm(b.text), text)
                                 and math.dist(b.box[:2], box[:2]) <= self.near_px), None)) is not None:
                 free.remove(base)
                 block = Block(base.key, text, box, p)

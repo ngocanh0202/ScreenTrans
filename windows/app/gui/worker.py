@@ -47,7 +47,7 @@ class TranslationWorker(QObject):
         self._pipeline: Pipeline | None = None
         self._lock = threading.Lock()
         self._pending: Job | None = None
-        self._live_pending: Job | None = None  # Live jobs have their own slot: they never replace user jobs
+        self._live_pending: dict[str, Job] = {}  # one waiting slot per Live job kind: never replace user jobs
         self._control: list[Job] = []
         self.is_ready = False
         self.error: str | None = None
@@ -78,7 +78,7 @@ class TranslationWorker(QObject):
                 self._control.append(job)
                 old = None
             elif job.mode.startswith("live_"):
-                old, self._live_pending = self._live_pending, job
+                old, self._live_pending[job.mode] = self._live_pending.get(job.mode), job
             else:
                 old, self._pending = self._pending, job
         if old is not None:
@@ -92,7 +92,11 @@ class TranslationWorker(QObject):
             if self._pending is not None:
                 job, self._pending = self._pending, None
             else:
-                job, self._live_pending = self._live_pending, None
+                job = None
+                for mode in ("live_translate", "live_ocr"):  # finish shown sentences first
+                    if mode in self._live_pending:
+                        job = self._live_pending.pop(mode)
+                        break
         return job
 
     @Slot()

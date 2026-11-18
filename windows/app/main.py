@@ -239,7 +239,7 @@ class TrayApp(QObject):
 
         self._thread, self.worker = self._worker_factory(pipeline_factory, connect=self._connect)
         if self.live is not None and self.live.running:
-            self._send_set_game(self._live_profile())
+            self.start_live()  # jobs of the retired worker never come back: start over on the new one
 
     def _connect(self, worker) -> None:
         # Connected before the worker thread starts, to bound methods of this UI-thread object.
@@ -398,6 +398,7 @@ class TrayApp(QObject):
 
     def _run_region(self, rect: tuple[int, int, int, int]) -> None:
         image = self._capture(*rect)
+        self._send_set_game(self._profile())  # the game's glossary and the user's corrections
         job = Job(next(self._ids), "region", image, (rect[0], rect[1]))
         self._region_job, self._region_rect = job.id, rect
         if self.region_overlay is None:
@@ -433,6 +434,7 @@ class TrayApp(QObject):
                                                     screen.devicePixelRatio())
         self.fullscreen_overlay.present()
         self._last_segments = []
+        self._send_set_game(self._profile())
         job = Job(next(self._ids), "fullscreen", image, (mon[0], mon[1]))
         self._fullscreen_job, self._fullscreen_origin = job.id, job.origin
         if self.error is not None:
@@ -474,8 +476,9 @@ class TrayApp(QObject):
         gw = self._remember_game()
         if gw is None or gw.exe == before:
             return
-        if self.live is not None and self.live.running and gw.exe != self._live_game \
-                and self.profiles.get(gw.exe) is not None:
+        p = self.profiles.get(gw.exe)
+        if self.live is not None and self.live.running and gw.exe != self._live_game and p is not None \
+                and (p.scope == "screen" or p.regions):  # never pop the region selector up mid-game
             self.start_live()
 
     # ---- live -------------------------------------------------------------------------------------
