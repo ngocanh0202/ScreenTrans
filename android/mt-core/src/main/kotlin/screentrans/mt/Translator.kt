@@ -19,6 +19,9 @@ class Translator(
         return vocab.decode(greedyDecode(model, src, model.startId, model.eosId, model.padId, maxLen))
     }
 
+    /** Source tokens the model would see (incl. </s>, capped at MarianVocab.MAX_SRC). */
+    fun countTokens(text: String): Int = vocab.ids(sp.encode(text)).size
+
     override fun close() = model.close()
 
     companion object {

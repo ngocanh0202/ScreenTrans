@@ -85,3 +85,33 @@ def test_degraded_retry_output_is_not_cached():
     p.run(IMG)
     p.run(IMG)
     assert len(tr.calls) == 4  # translated again: the no-glossary fallback is not remembered
+
+
+def test_iter_segments_translates_paragraph_by_paragraph():
+    from app.text.postprocess import Paragraph
+
+    paras = [
+        Paragraph("name", "Druvis III", [], 0, 0, 10, 10),
+        Paragraph("text", "One. Two.", ["One.", "Two."], 0, 20, 10, 30),
+        Paragraph("text", "Three.", ["Three."], 0, 40, 10, 50),
+    ]
+    tr = FakeTranslator(str.upper)
+    it = _pipeline([], tr).iter_segments(paras)
+    first = next(it)
+    assert (first.kind, first.translation) == ("name", None) and tr.calls == []
+    second = next(it)
+    assert second.translation == "ONE. TWO." and tr.calls == [["One.", "Two."]]
+    third = next(it)
+    assert third.translation == "THREE." and tr.calls == [["One.", "Two."], ["Three."]]
+    assert list(it) == []
+
+
+def test_iter_segments_uses_cache():
+    from app.text.postprocess import Paragraph
+
+    tr = FakeTranslator(str.upper)
+    p = _pipeline([], tr)
+    paras = [Paragraph("text", "Hi.", ["Hi."], 0, 0, 1, 1)]
+    list(p.iter_segments(paras))
+    list(p.iter_segments(paras))
+    assert tr.calls == [["Hi."]]

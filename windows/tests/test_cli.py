@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app import cli
+from app import cli, factory
 from app.cache import TranslationCache
 from app.glossary import Glossary
 from app.ocr.base import Line
@@ -117,7 +117,7 @@ def test_without_model_dir_downloads_from_manifest(image, tmp_path, monkeypatch,
         calls.append((model_id, Path(data_dir)))
         return tmp_path / "empty-model"
 
-    monkeypatch.setattr(cli, "ensure_model", fake_ensure)
+    monkeypatch.setattr(factory, "ensure_model", fake_ensure)
     assert cli.main(["--image", str(image), "--config", str(_cfg(tmp_path))]) == 2  # empty dir -> ModelNotFound
     assert calls == [("vinai-en2vi", tmp_path)]
 
@@ -128,6 +128,6 @@ def test_download_error_exit_2(image, tmp_path, monkeypatch, capsys):
     def fail(*a, **k):
         raise ModelDownloadError("network down, pass --model-dir")
 
-    monkeypatch.setattr(cli, "ensure_model", fail)
+    monkeypatch.setattr(factory, "ensure_model", fail)
     assert cli.main(["--image", str(image), "--config", str(_cfg(tmp_path))]) == 2
     assert "--model-dir" in capsys.readouterr().err

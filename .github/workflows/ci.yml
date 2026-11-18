@@ -7,6 +7,8 @@ on:
 jobs:
   python-tests:
     runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -29,4 +31,4 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: mt-core unit tests (golden tests skip without model)
         working-directory: android
-        run: ./gradlew :mt-core:test
+        run: ./gradlew :mt-core:test :text-core:test :app-core:test

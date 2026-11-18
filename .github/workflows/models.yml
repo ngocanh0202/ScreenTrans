@@ -1,17 +1,18 @@
 name: models
 
 # Manual: export the translation models, verify them, and publish them with manifest.json
-# to a public Hugging Face model repo. Needs the HF_TOKEN secret (write access to hf_repo).
+# as assets of the GitHub release models-v<version> (the repo is public, so the app downloads
+# them without a token).
 on:
   workflow_dispatch:
     inputs:
-      hf_repo:
-        description: "Hugging Face model repo, e.g. <owner>/screentrans-models"
-        required: true
       version:
-        description: "Model release version (folder name in the repo)"
+        description: "Model release version (release tag models-v<version>)"
         required: true
         default: "1"
+
+permissions:
+  contents: write
 
 jobs:
   publish:
@@ -26,7 +27,7 @@ jobs:
           uv python install 3.11
           uv venv --python 3.11 .venv
           uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv -r models/requirements.txt huggingface_hub
+          uv pip install --python .venv -r models/requirements.txt
 
       - uses: actions/cache@v4
         with:
@@ -48,21 +49,18 @@ jobs:
       - name: Stage + manifest
         run: >
           .venv/bin/python -m models.manifest
-          --base-url "https://huggingface.co/${{ inputs.hf_repo }}/resolve/main"
+          --github-release "${{ github.repository }}"
           --version "${{ inputs.version }}"
-          --stage models/out/hf
+          --stage models/out/release
 
-      - name: Upload to Hugging Face
+      - name: Publish GitHub release models-v${{ inputs.version }}
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          .venv/bin/python - <<'PY'
-          import os
-          from huggingface_hub import HfApi
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          repo = "${{ inputs.hf_repo }}"
-          api.create_repo(repo, repo_type="model", exist_ok=True, private=False)
-          api.upload_folder(folder_path="models/out/hf", repo_id=repo, repo_type="model",
-                            commit_message="ScreenTrans models v${{ inputs.version }}")
-          print(f"Manifest: https://huggingface.co/{repo}/resolve/main/manifest.json")
-          PY
+          TAG="models-v${{ inputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" models/out/release/* --clobber
+          else
+            gh release create "$TAG" models/out/release/* --title "Models v${{ inputs.version }}"               --notes "Translation models for ScreenTrans (opus-mt-en-vi: Apache-2.0, vinai-en2vi: AGPL-3.0). See NOTICE.md."
+          fi
+          echo "Manifest: https://github.com/${{ github.repository }}/releases/download/$TAG/manifest.json"

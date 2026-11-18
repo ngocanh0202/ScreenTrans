@@ -1,0 +1,48 @@
+{
+ "name": "rule 2: a line that fits two paragraphs with equal bottom joins the one created first",
+ "lines": [
+  {
+   "text": "First column",
+   "box": [
+    0,
+    10,
+    300,
+    30
+   ]
+  },
+  {
+   "text": "Second column",
+   "box": [
+    310,
+    10,
+    200,
+    30
+   ]
+  },
+  {
+   "text": "continues here.",
+   "box": [
+    290,
+    45,
+    200,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "First column continues here.",
+   "sentences": [
+    "First column continues here."
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "Second column",
+   "sentences": [
+    "Second column"
+   ]
+  }
+ ]
+}
