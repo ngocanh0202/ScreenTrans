@@ -164,3 +164,33 @@ def test_live_ocr_keeps_an_empty_slot_for_a_missing_image(qtbot, run_worker):
     w.submit(Job(5, "live_ocr", None, (0, 0), images=[None, IMG]))
     qtbot.waitUntil(lambda: bool(got), timeout=5000)
     assert got[0][0] is None and len(got[0][1]) == 3
+
+
+def test_correct_and_set_game_jobs_are_never_superseded_and_apply_to_later_jobs(qtbot, run_worker, tmp_path):
+    import json as _json
+
+    w, rec = run_worker(delay=0.2)
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: ("started", 1) in rec.events, timeout=5000)
+    w.submit(Job(2, "correct", None, (0, 0), payload={
+        "corrections": [["Hello there.", "VI Hello there.", "Chào cậu."]], "terms": [["Arcanist", None]]}))
+    gl = tmp_path / "g.json"
+    gl.write_text(_json.dumps({"entries": []}), encoding="utf-8")
+    w.submit(Job(3, "set_game", None, (0, 0), payload={
+        "game": "b.exe", "glossaries": [str(gl)], "overrides": {"Far below.": "Tít dưới."}}))
+    w.submit(Job(4, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 4 for e in rec.of("done")), timeout=10000)
+    assert rec.of("job_failed") == []
+    segs = [e for e in rec.of("done") if e[1] == 4][0][2]
+    assert [s.translation for s in segs[1:]] == ["VI Hello there.", "Tít dưới."]  # set_game replaced overrides
+
+
+def test_correct_job_overrides_the_next_translation(qtbot, run_worker):
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "correct", None, (0, 0), payload={"corrections": [["Hello there.", "x", "Chào cậu."]], "terms": []}))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    segs = [e for e in rec.of("done") if e[1] == 2][0][2]
+    assert segs[1].translation == "Chào cậu."

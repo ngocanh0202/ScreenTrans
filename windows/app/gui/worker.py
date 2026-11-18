@@ -17,11 +17,16 @@ PipelineFactory = Callable[[Callable[[int, int], None]], Pipeline]
 @dataclass
 class Job:
     id: int
-    mode: Literal["region", "fullscreen", "live_ocr", "live_translate"]
+    mode: Literal["region", "fullscreen", "live_ocr", "live_translate", "correct", "set_game"]
     image: Image.Image | None
     origin: tuple[int, int]  # physical top-left of the image on the virtual screen
     images: list | None = None       # live_ocr: one image per watched region
     paragraphs: list | None = None   # live_translate: list of paragraphs per region
+    payload: dict | None = None      # correct: {"corrections": [[src, machine, fixed]], "terms": [[src, target|None]]}
+                                     # set_game: {"game": id, "glossaries": [paths], "overrides": {src: fixed}}
+
+
+CONTROL = ("correct", "set_game")  # never superseded, run before anything else
 
 
 class TranslationWorker(QObject):
@@ -43,6 +48,7 @@ class TranslationWorker(QObject):
         self._lock = threading.Lock()
         self._pending: Job | None = None
         self._live_pending: Job | None = None  # Live jobs have their own slot: they never replace user jobs
+        self._control: list[Job] = []
         self.is_ready = False
         self.error: str | None = None
         self._wake.connect(self._process)
@@ -68,7 +74,10 @@ class TranslationWorker(QObject):
         """Thread-safe. Keeps only the newest waiting job of its kind (user / live); an older waiting
         one of the same kind is superseded. User jobs run first."""
         with self._lock:
-            if job.mode.startswith("live_"):
+            if job.mode in CONTROL:
+                self._control.append(job)
+                old = None
+            elif job.mode.startswith("live_"):
                 old, self._live_pending = self._live_pending, job
             else:
                 old, self._pending = self._pending, job
@@ -78,6 +87,8 @@ class TranslationWorker(QObject):
 
     def _take(self) -> Job | None:
         with self._lock:
+            if self._control:
+                return self._control.pop(0)
             if self._pending is not None:
                 job, self._pending = self._pending, None
             else:
@@ -98,6 +109,22 @@ class TranslationWorker(QObject):
     def _run(self, job: Job) -> None:
         self.job_started.emit(job.id)
         try:
+            if job.mode == "correct":
+                for src, machine, fixed in job.payload.get("corrections", []):
+                    self._pipeline.correct(src, machine, fixed)
+                for src, target in job.payload.get("terms", []):
+                    self._pipeline.glossary.add_entry(src, target)
+                self.job_done.emit(job.id, [])
+                return
+            if job.mode == "set_game":
+                from pathlib import Path
+
+                from app.glossary import Glossary
+
+                glossary = Glossary.load(*(Path(g) for g in job.payload.get("glossaries", [])))
+                self._pipeline.set_game(job.payload.get("game"), glossary, job.payload.get("overrides", {}))
+                self.job_done.emit(job.id, [])
+                return
             if job.mode == "live_ocr":
                 per_region = [postprocess(self._pipeline.ocr.recognize(img)) if img is not None else None
                               for img in job.images or []]  # None: that region could not be captured

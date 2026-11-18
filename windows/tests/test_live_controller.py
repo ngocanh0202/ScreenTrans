@@ -195,3 +195,72 @@ def test_name_line_is_shown_untranslated():
     c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[name, para("Hello.", 30)]])
     assert sources(translate_jobs(jobs)[-1]) == ["Hello."]
     assert "Druvis III" in overlays[0].blocks.values()
+
+
+# ---- 4b Task 5: regions relative to the game window, ignore regions ----------------------------------
+class Window:
+    def __init__(self, frame):
+        self.frame = frame
+
+    def __call__(self):
+        return self.frame
+
+
+def make_rel(frames, window, rel, ignore=(), on_screen=lambda r: True):
+    jobs, notes, shots = [], [], []
+    script = Script(frames)
+
+    def capture(x, y, w, h):
+        shots.append((x, y, w, h))
+        return script(x, y, w, h)
+
+    c = LiveController(PARAMS, capture=capture, submit=jobs.append, next_id=iter(range(1, 999)).__next__,
+                       notify=notes.append, overlay_factory=lambda r: FakeOverlay(), use_timer=False,
+                       on_screen=on_screen)
+    c.start_relative(list(rel), window, list(ignore))
+    return c, jobs, notes, shots
+
+
+def test_regions_follow_the_game_window():
+    win = Window((100, 50, 1000, 500))
+    c, jobs, _, shots = make_rel([BLACK], win, [(0.1, 0.8, 0.8, 0.2)])
+    c.tick(0)
+    assert shots[-1] == (200, 450, 800, 100)
+    win.frame = (400, 300, 1000, 500)
+    c.tick(300)
+    assert shots[-1] == (500, 700, 800, 100)
+    assert len(ocr_jobs(jobs)) == 2  # the window moved: what is there now is read again
+
+
+def test_minimized_game_pauses_live_and_reports_once():
+    win = Window(None)
+    c, jobs, notes, shots = make_rel([BLACK], win, [(0, 0, 1, 1)])
+    for t in range(0, 2000, 300):
+        c.tick(t)
+    assert jobs == [] and shots == [] and len(notes) == 1
+
+
+def test_ignore_region_covering_everything_means_no_change():
+    win = Window((0, 0, 400, 80))
+    c, jobs, _, _ = make_rel([BLACK, WHITE] * 30, win, [(0, 0, 1, 1)], ignore=[(0, 0, 1, 1)])
+    for t in range(0, 3000, 100):
+        c.tick(t)
+    assert len(ocr_jobs(jobs)) == 1  # the start-up read only: the blinking is ignored
+
+
+def test_region_outside_every_screen_is_reported_once():
+    win = Window((5000, 5000, 400, 80))
+    c, jobs, notes, shots = make_rel([BLACK], win, [(0, 0, 1, 1)], on_screen=lambda r: False)
+    for t in range(0, 1000, 300):
+        c.tick(t)
+    assert jobs == [] and shots == [] and len(notes) == 1
+
+
+def test_shown_segments_and_apply_correction():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello. Bye.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    assert [(s.source, s.translation) for s in c.shown_segments()] == [("Hello.", "VI Hello."), ("Bye.", "VI Bye.")]
+    c.apply_correction("Hello.", "Chào.")
+    assert list(overlays[0].blocks.values()) == ["Chào. VI Bye."]

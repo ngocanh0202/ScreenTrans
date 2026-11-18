@@ -13,8 +13,10 @@ from PySide6.QtCore import QObject, QTimer
 
 from app.live.blocks import BlockTracker, RateLimiter
 from app.live.machine import Action, LiveMachine, LiveParams
+from app.live.mask import ignore_mask
 from app.live.sentences import SentenceGate
 from app.live.thumb import diff, gray_thumb
+from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
 
 Region = tuple[int, int, int, int]  # x, y, w, h in physical pixels
@@ -44,6 +46,7 @@ class LiveController(QObject):
         area_max_blocks: int = 30,
         clock: Callable[[], int] = lambda: int(time.monotonic() * 1000),
         use_timer: bool = True,
+        on_screen: Callable[[Region], bool] = lambda r: True,
     ):
         super().__init__()
         self.params = params
@@ -57,6 +60,12 @@ class LiveController(QObject):
         self._area_max_blocks = area_max_blocks
         self._clock = clock
         self._use_timer = use_timer
+        self._on_screen = on_screen
+        self._rel: list[Rel] | None = None          # regions relative to the game window (4b)
+        self._ignore_rel: list[Rel] = []
+        self._frame_provider: Callable[[], tuple[int, int, int, int] | None] | None = None
+        self._masks: list = []
+        self._reported_paused = False
         self.running = False
         self.regions: list[Region] = []
         self.machine = LiveMachine(params)
@@ -84,11 +93,48 @@ class LiveController(QObject):
         self._trackers = [BlockTracker(self._area_max_blocks) for _ in self.regions]
         self._limiter = RateLimiter(self._area_min_interval_ms)
         self._prev = [None] * len(self.regions)
+        self._masks = [None] * len(self.regions)
+        self._ignore_px: list = []
+        self._rel, self._frame_provider = None, None
         self._overlays = [self._overlay_factory(r) for r in self.regions]
         self._reported_offscreen = False
         self.running = True
         self._pending = True  # translate what is already on screen
         self._schedule(0)
+
+    def start_relative(self, rel: list[Rel], frame_provider: Callable[[], tuple[int, int, int, int] | None],
+                       ignore: list[Rel] | None = None) -> None:
+        """Regions relative (0-1) to a frame that may move: the game window's client area (or its monitor)."""
+        frame = frame_provider()
+        self.start([to_px(r, frame) if frame else (0, 0, 1, 1) for r in rel])
+        self._rel, self._frame_provider, self._ignore_rel = list(rel), frame_provider, list(ignore or [])
+        self._ignore_px = [to_px(r, frame) for r in self._ignore_rel] if frame else []
+        self._reported_paused = False
+        if frame is None:
+            self.regions = []  # recomputed by the first tick that finds the window
+
+    def _follow_window(self) -> bool:
+        """Recompute regions from the game window; False while it is minimized / gone."""
+        frame = self._frame_provider()
+        if frame is None or frame[2] <= 0 or frame[3] <= 0:
+            if not self._reported_paused:
+                self._reported_paused = True
+                self._notify("Game đã thu nhỏ hoặc đóng — Live tạm dừng.")
+            return False
+        self._reported_paused = False
+        regions = [to_px(r, frame) for r in self._rel]
+        if regions != self.regions:  # the window moved / resized: start over at the new place
+            for (i, key) in list(self._blocks):
+                if i < len(self._overlays):
+                    self._overlays[i].remove_block(key)
+            self._blocks.clear()
+            self._trackers = [BlockTracker(self._area_max_blocks) for _ in regions]
+            self._prev = [None] * len(regions)
+            self._masks = [None] * len(regions)
+            self._ignore_px = [to_px(r, frame) for r in self._ignore_rel]
+            self.regions = regions
+            self._pending = True
+        return True
 
     def stop(self) -> None:
         self.running = False
@@ -120,9 +166,18 @@ class LiveController(QObject):
     def tick(self, now_ms: int) -> None:
         if not self.running:
             return
+        if self._frame_provider is not None and not self._follow_window():
+            self._schedule(self.params.interval_ms)
+            return
         images = []
         worst = 0.0
         for i, (x, y, w, h) in enumerate(self.regions):
+            if not self._on_screen((x, y, w, h)):
+                if not self._reported_offscreen:
+                    self._reported_offscreen = True
+                    self._notify("Vùng Live nằm ngoài màn hình — chọn lại vùng Live.")
+                images.append(None)
+                continue
             try:
                 img = self._capture(x, y, w, h)
             except Exception:  # monitor unplugged / region off screen: skip it, report once
@@ -133,8 +188,13 @@ class LiveController(QObject):
                 continue
             images.append(img)
             thumb = gray_thumb(img)
+            mask = None
+            if self._ignore_rel:
+                if self._masks[i] is None or self._masks[i].shape != thumb.shape:
+                    self._masks[i] = ignore_mask((x, y, w, h), self._ignore_px, thumb.shape[1], thumb.shape[0])
+                mask = self._masks[i]
             if self._prev[i] is not None:
-                worst = max(worst, diff(self._prev[i], thumb))
+                worst = max(worst, diff(self._prev[i], thumb, mask))
             self._prev[i] = thumb
         action = self.machine.on_frame(now_ms, worst)
         if action is Action.OCR:
@@ -227,6 +287,26 @@ class LiveController(QObject):
         for i, key in touched:
             self._draw(i, key)
         self.last_segments = flat
+
+    def shown_segments(self) -> list:
+        """Every translated sentence on screen now (for "edit the last translation")."""
+        from app.pipeline import Segment
+
+        out = []
+        for st in self._blocks.values():
+            for k in range(st.done):
+                if st.kind == "text" and k in st.shown:
+                    out.append(Segment("text", st.shown[k][0], st.shown[k][1], st.box))
+        return out
+
+    def apply_correction(self, source: str, corrected: str) -> None:
+        """The user fixed a sentence: redraw every block showing it."""
+        for (i, key), st in self._blocks.items():
+            hit = [k for k, (src, _) in st.shown.items() if src == source]
+            for k in hit:
+                st.shown[k] = (source, corrected)
+            if hit:
+                self._draw(i, key)
 
     def on_job_done(self, job_id: int, segments=None) -> None:
         self._finish(job_id)

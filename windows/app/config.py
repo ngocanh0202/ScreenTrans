@@ -20,6 +20,7 @@ class Hotkeys:
     translate_region: str = "ctrl+alt+t"
     translate_fullscreen: str = "ctrl+alt+f"
     toggle_live: str = "ctrl+alt+l"
+    edit_last: str = "ctrl+alt+e"
 
 
 @dataclass
