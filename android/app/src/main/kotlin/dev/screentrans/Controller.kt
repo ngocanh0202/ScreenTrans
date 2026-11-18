@@ -2,6 +2,8 @@ package dev.screentrans
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.os.Build
 import android.media.projection.MediaProjection
 import android.os.SystemClock
 import android.view.View
@@ -12,6 +14,7 @@ import dev.screentrans.capture.ScreenCapturer
 import dev.screentrans.core.EngineEvent
 import dev.screentrans.core.EngineJob
 import dev.screentrans.core.EngineState
+import dev.screentrans.core.CaptureProbe
 import dev.screentrans.core.Frames
 import dev.screentrans.core.Layout
 import dev.screentrans.core.RelRect
@@ -111,6 +114,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             "Chọn / sửa vùng" to { chooseRegion(null) },
             (if (live.running) "Tắt Live" else "Bật Live") to ::toggleLive,
             (if (prefs.liveMode == "area") "Live: Vùng lớn" else "Live: Khung thoại") to ::switchLiveMode,
+            "Kiểm tra chụp màn hình" to ::probeCapture,
         ), onClose = ::closeMenu)
         val bp = bubble.params ?: return
         val p = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -228,6 +232,45 @@ class Controller(private val context: Context, projection: MediaProjection) {
             return
         }
         live.start(px, area = prefs.liveMode == "area")
+    }
+
+    // ---- capture probe (debug) ------------------------------------------------------------------
+    /** Draw a magenta square, capture, and report whether our overlays appear in the captured frames. */
+    private fun probeCapture() {
+        scope.launch {
+            closeResults()
+            live.setVisible(false)
+            capturer.resize()
+            val size = context.dp(120)
+            val x = (capturer.width - size) / 2
+            val y = (capturer.height - size) / 2
+            val probe = View(context).apply { setBackgroundColor(Color.MAGENTA) }
+            overlays.add(probe, overlays.params(size, size, touchable = false).apply { this.x = x; this.y = y })
+            val shownAt = SystemClock.uptimeMillis()
+            delay(400)
+            val frame = capturer.capture(newerThan = shownAt)
+            overlays.remove(probe)
+            live.setVisible(true)
+            if (frame == null) return@launch showCard(null, "Không chụp được màn hình.", true)
+            val inset = size / 5  // look at the middle of the square only
+            val l = (x + inset).coerceIn(0, frame.width - 1)
+            val t = (y + inset).coerceIn(0, frame.height - 1)
+            val w = minOf(size - 2 * inset, frame.width - l)
+            val h = minOf(size - 2 * inset, frame.height - t)
+            val pixels = IntArray(w * h)
+            frame.getPixels(pixels, 0, w, l, t, w, h)
+            val verdict = CaptureProbe.verdict(pixels, Color.MAGENTA)
+            val what = when (verdict) {
+                CaptureProbe.Verdict.OVERLAY_HIDDEN ->
+                    "KHÔNG DÍNH: ảnh chụp không thấy ô hồng của app → bản dịch có thể đè lên chữ gốc mà không cần nháy."
+                CaptureProbe.Verdict.OVERLAY_CAPTURED ->
+                    "CÓ DÍNH: ảnh chụp thấy ô hồng của app → phải ẩn bản dịch khi chụp (nháy nhẹ)."
+                CaptureProbe.Verdict.BLACK ->
+                    "ẢNH ĐEN: app đang chụp chỉ một ứng dụng nhưng ứng dụng đó không ở trên màn hình (mở game đã chọn rồi thử lại), hoặc game chặn chụp."
+            }
+            showCard(null, "Kiểm tra chụp màn hình\n$what\n\nAndroid ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
+                "${Build.MANUFACTURER} ${Build.MODEL}\nẢnh ${frame.width}×${frame.height}, màn hình ${capturer.width}×${capturer.height}")
+        }
     }
 
     // ---- full screen ----------------------------------------------------------------------------

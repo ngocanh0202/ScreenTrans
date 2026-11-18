@@ -152,6 +152,12 @@ Test bằng fixtures trong `shared/fixtures/postprocess/`: nhiều đoạn, gạ
 
 ## 11. Chế độ Live & overlay
 
+> **Cập nhật 2026-11-18 (người dùng chọn) — Live đè lên chữ gốc, dịch realtime từng câu.** Thay cho Live khung thoại (thẻ cạnh vùng) / Live vùng lớn ở trên:
+> - Live có **hai phạm vi**: **Toàn màn hình** và **Vùng** (một hoặc nhiều vùng đã chọn). Cả hai **đè bản dịch lên đúng chỗ từng khối chữ gốc** (như chế độ toàn màn hình một lần), click-through. Bỏ kiểu thẻ đặt cạnh vùng. Thay quyết định cũ "không có Live toàn màn hình".
+> - Cùng một cơ chế cho cả hai phạm vi: máy trạng thái chờ chữ + theo dõi khối (chỉ dịch khối mới/đổi, gỡ khối biến mất, tối đa `area_max_blocks`), OCR tối đa 1 lần / `area_min_interval_ms` khi màn hình động liên tục.
+> - **Realtime từng câu:** khi chữ đang chạy, OCR mỗi `partial_interval_ms` (mặc định 500); câu nào đã **xong** (theo sau bởi câu khác, hoặc là câu cuối có `.`/`!`/`?`/`…` và giống hệt ở hai lần OCR liên tiếp) thì dịch và hiện ngay; câu đang gõ dở không hiện. Câu đã hiện không đổi nữa (trừ khi OCR đọc lại khác). Khi chữ dừng hẳn → dịch nốt phần còn lại (kể cả câu không có dấu kết thúc). Không dịch nháp từng chữ.
+> - Android không loại overlay khỏi ảnh chụp được: ẩn lớp bản dịch ~0,2 s mỗi lần chụp OCR (nháy nhẹ). Người dùng chọn thử trước **chụp "Một ứng dụng"** (Android 14+, chọn game trong hộp thoại cấp quyền): nếu overlay không lọt vào ảnh thì không cần ẩn, không nháy; kiểm tra bằng mục "Kiểm tra chụp màn hình" và bỏ qua thay đổi do chính overlay gây ra.
+
 - Máy trạng thái **ĐỨNG YÊN → ĐANG ĐỔI → ỔN ĐỊNH**:
   - ĐỨNG YÊN: chụp mỗi `interval_ms` (mặc định 300). So ảnh thu nhỏ grayscale (rộng 64 px, sai khác trung bình) với **ảnh ngay trước**; vượt `change_threshold` → ĐANG ĐỔI.
   - ĐANG ĐỔI: chụp mỗi `active_interval_ms` (mặc định 100); ảnh còn khác → đặt lại đồng hồ; không đổi đủ `settle_ms` (mặc định 250) → ỔN ĐỊNH. Quá `max_wait_ms` (mặc định 2000) vẫn chưa yên → coi như ỔN ĐỊNH.
@@ -274,7 +280,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 4 — Live + hồ sơ game (Windows + Android)
 
-> Chia hai kế hoạch: **4a — Live** ([plan](docs/superpowers/plans/2026-11-18-phase4a-live.md)): máy trạng thái + Live thoại + Live vùng lớn trên cả hai nền tảng; **4b — hồ sơ game + sửa bản dịch + release `v0.1.0`**.
+> Chia hai kế hoạch: **4a — Live** ([plan](docs/superpowers/plans/2026-11-18-phase4a-live.md)): máy trạng thái + Live thoại + Live vùng lớn trên cả hai nền tảng; **4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): **Live đè lên chữ gốc (toàn màn hình / vùng) + realtime từng câu**, hồ sơ game, sửa bản dịch, release `v0.1.0`.
 
 - [x] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s). Windows: `Ctrl+Alt+L`, CPU Live nhàn rỗi đo 0,15% (60 s, vùng 900×200). Android: menu nút nổi "Bật Live". *(4a — chờ người dùng nghiệm thu trên game thật.)*
 - [x] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối. Chế độ chọn trong tray / menu, nhớ giữa các lần chạy (hồ sơ theo game ở 4b).
