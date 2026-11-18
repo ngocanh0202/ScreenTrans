@@ -66,7 +66,7 @@ class Logging:
 
 @dataclass
 class Models:
-    manifest_url: str = "https://huggingface.co/<owner>/screentrans-models/resolve/main/manifest.json"
+    manifest_url: str = "https://github.com/ngocanh0202/ScreenTrans/releases/download/models-v1/manifest.json"
 
 
 @dataclass
