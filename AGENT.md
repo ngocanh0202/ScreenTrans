@@ -276,8 +276,8 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 > Chia hai kế hoạch: **4a — Live** ([plan](docs/superpowers/plans/2026-11-18-phase4a-live.md)): máy trạng thái + Live thoại + Live vùng lớn trên cả hai nền tảng; **4b — hồ sơ game + sửa bản dịch + release `v0.1.0`**.
 
-- [ ] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s).
-- [ ] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối.
+- [x] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s). Windows: `Ctrl+Alt+L`, CPU Live nhàn rỗi đo 0,15% (60 s, vùng 900×200). Android: menu nút nổi "Bật Live". *(4a — chờ người dùng nghiệm thu trên game thật.)*
+- [x] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối. Chế độ chọn trong tray / menu, nhớ giữa các lần chạy (hồ sơ theo game ở 4b).
 - [ ] `profiles` tự nhận game; tách tên / lựa chọn; sửa bản dịch → `overrides` + `corrections.jsonl`; xem lại khóa cache (thuật ngữ / phiên bản model).
 - [ ] Fixtures chuỗi khung hình dùng chung cho máy trạng thái Live (Python ↔ Kotlin). Đo FPS trước/sau. Release `v0.1.0`.
 

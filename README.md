@@ -31,15 +31,25 @@ uv pip install --python .venv -r windows/requirements-dev.txt
 # model: export một lần (cần models/requirements.txt + torch CPU), hoặc để app tải theo manifest
 .venv\Scripts\python -m models.export ct2 vinai-en2vi
 cd windows
-..\.venv\Scripts\python -m app.cli --image ..nh.png --model-dir ..\models\outinai-en2vi-ct2 `
-    --glossary ..\shared\glossary\gameseverse1999.json --show-source
-..\.venv\Scripts\python -m app.cli --screen 520,750,1180,160 --model-dir ..\models\outinai-en2vi-ct2
+..\.venv\Scripts\python -m app.cli --image ..\anh.png --model-dir ..\models\out\vinai-en2vi-ct2 `
+    --glossary ..\shared\glossary\games\reverse1999.json --show-source
+..\.venv\Scripts\python -m app.cli --screen 520,750,1180,160 --model-dir ..\models\out\vinai-en2vi-ct2
 ```
 
 Tùy chọn: `--json` (kết quả JSON), `--timings` (thời gian từng bước ra stderr), `--config` (mặc định `windows/config.yaml`).
 Mã thoát: 0 xong (kể cả không có chữ), 2 thiếu/không tải được model, 3 thiếu gói English OCR của Windows, 4 tham số sai.
 
 Benchmark: `.venv\Scripts\python windows/scripts/benchmark.py --model-dir models/out/vinai-en2vi-ct2`
+
+## Dùng app
+
+**Windows (tray):** `Ctrl+Alt+T` dịch một vùng · `Ctrl+Alt+F` dịch toàn màn hình · `Ctrl+Alt+L` bật/tắt **Live**.
+Lần đầu bật Live sẽ mở chọn vùng (kéo quanh khung thoại); đổi vùng bằng tray → "Chọn lại vùng Live".
+Tray → "Chế độ Live": **Khung thoại** (bản dịch hiện ngay trên vùng, từng câu) hoặc **Vùng lớn** (game thoại
+bong bóng: bản dịch đè lên từng khối chữ, chỉ dịch khối mới, tối đa 1 lần OCR/giây). Overlay Live không chặn chuột.
+
+**Android (nút nổi T):** Dịch vùng / Toàn màn hình / Chọn / sửa vùng / **Bật Live** (dùng các vùng đã lưu) /
+"Live: Khung thoại ↔ Vùng lớn". Thẻ bản dịch Live nằm ngoài vùng và không chặn chạm.
 
 ## Bản quyền
 
