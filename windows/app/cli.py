@@ -18,12 +18,13 @@ from app.datalog import PairLogger
 from app.models import ModelDownloadError, ensure_model
 from app.glossary import COMMON_GLOSSARY, Glossary, ProperNounTracker, load_common_words
 from app.ocr.base import OcrUnavailable
+from app.paths import default_config_path
 from app.ocr.windows_ocr import WindowsOcr
 from app.pipeline import Pipeline
 from app.translate.base import ModelNotFound
 from app.translate.ct2 import Ct2Translator
 
-DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config.yaml"
+DEFAULT_CONFIG = default_config_path()
 NO_TEXT = "(không tìm thấy chữ)"
 
 

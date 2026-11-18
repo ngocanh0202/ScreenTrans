@@ -5,9 +5,14 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-SHARED = Path(__file__).resolve().parents[2] / "shared"
-COMMON_GLOSSARY = SHARED / "glossary" / "common.json"
-COMMON_WORDS = SHARED / "glossary" / "common_words_en.txt"
+from app.paths import shared_dir
+
+COMMON_GLOSSARY = shared_dir() / "glossary" / "common.json"
+COMMON_WORDS = shared_dir() / "glossary" / "common_words_en.txt"
+
+
+def games_dir() -> Path:
+    return shared_dir() / "glossary" / "games"
 
 # Chosen in Task 4 Step 5 by measuring survival through the translator.
 PLACEHOLDER = "[{i}]"  # survived 10/10 through vinai, 7/10 opus; "⟦{i}⟧" 0/10
