@@ -31,6 +31,8 @@ jobs:
           # Kotlin errors -> GitHub annotations (readable through the public checks API)
           grep -E '^e: file:///' build.log | sed -E 's#^e: file://.*/(android/[^:]+):([0-9]+):([0-9]+) (.*)$#::error file=\1,line=\2,col=\3::\4#' | head -50
           grep -E 'FAILED|AssertionFailedError|expected:' build.log | head -30 | sed -E 's#^(.*)$#::error ::\1#'
+          # Gradle's own explanation of a failed task
+          grep -A 25 'What went wrong' build.log | grep -v '^ *$' | head -60 | sed -E 's#^(.*)$#::error ::\1#'
           exit $status
 
   apk:
