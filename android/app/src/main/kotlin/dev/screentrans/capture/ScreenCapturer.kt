@@ -31,6 +31,9 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
     private var latest: Image? = null
     private var latestAt = 0L  // SystemClock.uptimeMillis() when the held frame arrived
 
+    /** Uptime ms when the held frame arrived (0 = none yet). */
+    val lastFrameAt: Long get() = synchronized(lock) { latestAt }
+
     var width = 0
         private set
     var height = 0

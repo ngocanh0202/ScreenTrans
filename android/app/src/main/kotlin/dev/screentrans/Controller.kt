@@ -2,7 +2,9 @@ package dev.screentrans
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.content.ContentValues
 import android.graphics.Color
+import android.provider.MediaStore
 import android.os.Build
 import android.media.projection.MediaProjection
 import android.os.SystemClock
@@ -249,6 +251,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
             val shownAt = SystemClock.uptimeMillis()
             delay(400)
             val frame = capturer.capture(newerThan = shownAt)
+            val frameAge = SystemClock.uptimeMillis() - capturer.lastFrameAt
+            val frameNew = capturer.lastFrameAt > shownAt
             overlays.remove(probe)
             live.setVisible(true)
             if (frame == null) return@launch showCard(null, "Không chụp được màn hình.", true)
@@ -266,11 +270,37 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 CaptureProbe.Verdict.OVERLAY_CAPTURED ->
                     "CÓ DÍNH: ảnh chụp thấy ô hồng của app → phải ẩn bản dịch khi chụp (nháy nhẹ)."
                 CaptureProbe.Verdict.BLACK ->
-                    "ẢNH ĐEN: app đang chụp chỉ một ứng dụng nhưng ứng dụng đó không ở trên màn hình (mở game đã chọn rồi thử lại), hoặc game chặn chụp."
+                    "ẢNH ĐEN: chỗ ô hồng trong ảnh chụp bị đen (xem số liệu và ảnh đã lưu bên dưới)."
             }
+            val small = Bitmap.createScaledBitmap(frame, 160, maxOf(1, 160 * frame.height / maxOf(1, frame.width)), false)
+            val all = IntArray(small.width * small.height)
+            small.getPixels(all, 0, small.width, 0, 0, small.width, small.height)
+            val avg = pixels.fold(LongArray(3)) { acc, c ->
+                acc[0] += (c shr 16) and 0xFF; acc[1] += (c shr 8) and 0xFF; acc[2] += c and 0xFF; acc
+            }.map { it / maxOf(1, pixels.size) }
+            val saved = saveProbe(frame)
             showCard(null, "Kiểm tra chụp màn hình\n$what\n\nAndroid ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), " +
-                "${Build.MANUFACTURER} ${Build.MODEL}\nẢnh ${frame.width}×${frame.height}, màn hình ${capturer.width}×${capturer.height}")
+                "${Build.MANUFACTURER} ${Build.MODEL}\nẢnh ${frame.width}×${frame.height}, màn hình ${capturer.width}×${capturer.height}\n" +
+                "Cả ảnh đen: ${Frames.isMostlyBlack(all)} · màu giữa ô: rgb(${avg[0]}, ${avg[1]}, ${avg[2]})\n" +
+                "Khung hình mới sau khi vẽ ô: $frameNew (cũ ${frameAge} ms)\n" +
+                (saved?.let { "Đã lưu ảnh chụp: Ảnh › Pictures/ScreenTrans/$it" } ?: "Không lưu được ảnh chụp"))
         }
+    }
+
+    /** Save the probe frame to Pictures/ScreenTrans so the user can share what the app really captured. */
+    private suspend fun saveProbe(frame: Bitmap): String? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        runCatching {
+            val name = "probe-${System.currentTimeMillis()}.png"
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ScreenTrans")
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@runCatching null
+            resolver.openOutputStream(uri)?.use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: return@runCatching null
+            name
+        }.getOrNull()
     }
 
     // ---- full screen ----------------------------------------------------------------------------
