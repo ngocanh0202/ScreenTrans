@@ -92,7 +92,7 @@ def split_sentences(text: str) -> list[str]:
         rest = text[end:]
         if not (rest.startswith(" ") and len(rest) > 1 and (rest[1].isupper() or rest[1] in "\"“")):
             continue
-        token = text[:end].split(" ")[-1]
+        token = text[:end].split(" ")[-1].lstrip("\"“‘'(")  # opening quotes don't hide "Mr."
         if token.lower() in _NO_SPLIT or re.fullmatch(r"[A-Z]\.", token):
             continue
         out.append(text[start:end].strip())

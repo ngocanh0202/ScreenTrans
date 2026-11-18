@@ -1,0 +1,24 @@
+{
+ "name": "rule 6: leading quote is stripped before the abbreviation check",
+ "lines": [
+  {
+   "text": "\"Mr. Smith came.\" He left.",
+   "box": [
+    20,
+    10,
+    400,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "\"Mr. Smith came.\" He left.",
+   "sentences": [
+    "\"Mr. Smith came.\"",
+    "He left."
+   ]
+  }
+ ]
+}

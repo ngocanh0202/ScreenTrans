@@ -22,3 +22,12 @@ Mỗi file `*.json`:
 4. **Tên nhân vật:** đoạn chỉ 1 dòng, ≤ 3 token, mỗi token bắt đầu bằng chữ hoa hoặc khớp `^[IVXLl1|]{1,4}$`, **và** (text kết thúc bằng `:` **hoặc** (không kết thúc bằng dấu câu trong `.!?,;…"'”’` **và** có đoạn khác với `0 <= other.top - para.bottom <= 2h` và `other.left < para.right + h` và `other.right > para.left - h`)) → `kind = "name"`. Bỏ `:` cuối; token khớp `^[Il1|]{2,4}$` → `"I" * len` (`"Druvis Ill"` → `"Druvis III"`).
 5. **Thứ tự kết quả:** sắp đoạn theo `top`; hai đoạn liền nhau có `|top chênh| < 0.5h` thì đoạn có `left` nhỏ hơn đứng trước.
 6. **Tách câu** (đoạn `text`): cắt sau một chuỗi `[.!?…]+` (có thể kèm `"”’'` đóng) khi theo sau là khoảng trắng rồi chữ hoa hoặc `"“`. Không cắt khi token kết thúc ở đó là `Mr. Mrs. Ms. Dr. St. vs. etc.` hoặc là một chữ cái hoa đứng một mình + `.`.
+
+## Chi tiết bắt buộc cho bản port (Kotlin phải làm y hệt)
+
+- **Duyệt dòng:** sắp theo `(top, left)` tăng dần. Khi một dòng nối được vào nhiều đoạn có cùng `bottom` lớn nhất → chọn **đoạn được tạo trước** (fixture `tie_break_two_groups`).
+- **"Chữ hoa"** ở quy tắc 4 và 6 là **ASCII `A`–`Z`** — `Élise` không phải tên (fixture `accented_name`).
+- **"Chữ cái/chữ số"** ở quy tắc 1 theo Unicode (Python `str.isalpha()` / `str.isalnum()`; Kotlin `Char.isLetter()` / `Char.isLetterOrDigit()`). Khác biệt đã biết: Python coi chữ số mũ/phân số như `²`, `½` là `isalnum`, Kotlin `isLetterOrDigit` thì không — OCR game hiếm gặp, chấp nhận.
+- **Tách token** theo khoảng trắng Unicode (Python `str.split()`; Kotlin `split(Regex("\s+"))` sau `trim()`).
+- **Quy tắc 6:** trước khi so với danh sách viết tắt và quy tắc "một chữ hoa + `.`", bỏ các ký tự mở đầu token trong `"“‘'(` (fixture `quote_prefixed_abbrev`: `"Mr. Smith came."` không bị tách sau `"Mr.`).
+- **Quy tắc 4:** bỏ `:` cuối **trước** khi đếm token (fixture `name_with_colon_three_tokens`: `Old Man Tom:` → tên `Old Man Tom`).

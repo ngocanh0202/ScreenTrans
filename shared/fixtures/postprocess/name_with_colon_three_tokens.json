@@ -1,0 +1,37 @@
+{
+ "name": "rule 4: token count after removing the trailing colon",
+ "lines": [
+  {
+   "text": "Old Man Tom:",
+   "box": [
+    20,
+    10,
+    160,
+    30
+   ]
+  },
+  {
+   "text": "Sit down, please.",
+   "box": [
+    200,
+    10,
+    260,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "name",
+   "text": "Old Man Tom",
+   "sentences": []
+  },
+  {
+   "kind": "text",
+   "text": "Sit down, please.",
+   "sentences": [
+    "Sit down, please."
+   ]
+  }
+ ]
+}

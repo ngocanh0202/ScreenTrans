@@ -1,0 +1,39 @@
+{
+ "name": "rules 4/6: 'uppercase' means ASCII A-Z, so 'Élise' is not detected as a name",
+ "lines": [
+  {
+   "text": "Élise",
+   "box": [
+    20,
+    10,
+    80,
+    30
+   ]
+  },
+  {
+   "text": "We should go now.",
+   "box": [
+    20,
+    80,
+    300,
+    30
+   ]
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Élise",
+   "sentences": [
+    "Élise"
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "We should go now.",
+   "sentences": [
+    "We should go now."
+   ]
+  }
+ ]
+}
