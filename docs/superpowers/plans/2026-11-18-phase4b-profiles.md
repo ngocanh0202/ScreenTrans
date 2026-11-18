@@ -1,114 +1,120 @@
-# Phase 4b — Hồ sơ game + sửa bản dịch + release v0.1.0 — Implementation Plan
+# Phase 4b — Live đè lên chữ gốc + realtime từng câu, hồ sơ game, sửa bản dịch, release v0.1.0 — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Mỗi game có **hồ sơ riêng** (tự nhận game, vùng Live tên/thoại/lựa chọn/vùng lớn, vùng bỏ qua, tham số chờ chữ, thuật ngữ, bản sửa của người dùng), người dùng **sửa bản dịch** ngay trên overlay (lần sau dùng luôn + ghi `corrections.jsonl`), rồi phát hành **v0.1.0** cho Windows + Android.
+**Goal:** Live có hai phạm vi **Toàn màn hình** và **Vùng**, bản dịch **đè lên đúng chỗ chữ gốc** và hiện **từng câu ngay khi câu đó hiện xong** (cả Windows lẫn Android, Android không nháy nhờ chụp "Một ứng dụng"); mỗi game có **hồ sơ riêng**; người dùng **sửa bản dịch** (lần sau dùng luôn + `corrections.jsonl`); phát hành **v0.1.0**.
 
-**Architecture:** Hồ sơ game là **một file JSON / game** theo schema dùng chung `shared/schemas/profile.schema.json`; Python là chuẩn, Kotlin pass cùng fixtures `shared/fixtures/profiles/*.json` (giống postprocess/live). Pipeline hai nền tảng thêm bước **`overrides` → cache → thuật ngữ + model**, và khóa cache gồm **model id + phiên bản model + digest thuật ngữ**. Mỗi nền tảng lo: nhận game đang chạy, quy đổi vùng tương đối (0–1) ra pixel, UI chọn vùng nhiều loại, UI sửa bản dịch.
+**Architecture:** Logic dùng chung viết bằng Python (chuẩn) rồi port Kotlin, cùng pass fixtures: máy trạng thái Live thêm **OCR giữa chừng** khi chữ đang chạy, **cổng câu** (`SentenceGate`) quyết định câu nào đã xong, `BlockTracker` nhận ra **khối đang dài thêm**; hồ sơ game là JSON theo schema chung. Hai nền tảng dùng **một kiểu overlay** (lớp đè từng khối, click-through) cho cả hai phạm vi. Android dò một lần mỗi phiên ghi màn hình xem overlay có lọt vào ảnh chụp không (`CaptureProbe`) — không lọt (chụp "Một ứng dụng") thì không ẩn overlay khi chụp.
 
-**Tech Stack:** Python 3.11 + PySide6 + ctypes Win32 (Windows), Kotlin + `UsageStatsManager` (Android), pytest / JUnit 5, CI + workflow `release.yml` có sẵn.
+**Tech Stack:** Python 3.11 + PySide6 + ctypes Win32, Kotlin + MediaProjection + `UsageStatsManager`, pytest / JUnit 5, CI + `release.yml` có sẵn.
 
-**Spec:** [docs/superpowers/specs/2026-11-16-screentrans-design.md](../specs/2026-11-16-screentrans-design.md) §5.4, §5.5, §5.6, §5.8; [AGENT.md](../../../AGENT.md) §9 (sửa từ overlay), §10 (hồ sơ game), §11, §12, Phase 4.
+**Spec:** [docs/superpowers/specs/2026-11-16-screentrans-design.md](../specs/2026-11-16-screentrans-design.md) §5.5, **§5.6c** (Live đè lên + realtime từng câu, thay §5.6/5.6b), §5.8; [AGENT.md](../../../AGENT.md) §9, §10, §11, §12, Phase 4.
 
 ## Global Constraints
 
-- Hồ sơ: định danh Windows = **tên exe** (chữ thường, vd `reverse1999.exe`), Android = **package name**; `live.mode` ∈ `dialogue` | `area` (mặc định `dialogue`); vùng `dialogue` / `name` / `choices` / `area`, `ignore_regions`; tham số `interval_ms`, `settle_ms`, `change_threshold` (thiếu → mặc định AGENT.md §12: 300 / 250 / 5); `glossary` (tên file trong thư mục thuật ngữ game); `overrides` (câu nguồn **đã chuẩn hóa** → bản dịch người dùng).
-- Tọa độ vùng lưu **tương đối 0–1** theo **vùng client của cửa sổ game** (Windows) / **màn hình** (Android); `[x, y, w, h]`, giá trị kẹp trong [0, 1].
-- Game chưa có hồ sơ → tạo hồ sơ mặc định **khi người dùng chọn vùng lần đầu** cho game đó. Không nhận được game (desktop, thiếu quyền) → hồ sơ `_default`.
-- Thứ tự áp dụng khi dịch: **`overrides` → cache → thuật ngữ + model** (AGENT.md §9).
-- Khóa cache: `câu chuẩn hóa` + `"{model_id}@{model_version}#{glossary_digest}"`; `glossary_digest` = 12 ký tự hex đầu của SHA-1 trên các mục **từ file/người dùng** (không gồm mục `keep` tự động trong phiên).
-- `corrections.jsonl`: mỗi dòng `{"ts", "game", "model", "source", "machine", "corrected"}`; tắt được bằng `logging.save_corrections` (mặc định bật).
-- Overlay Live vẫn click-through; sửa bản dịch Live qua **phím tắt / mục menu "Sửa bản dịch gần nhất"** (không đổi overlay sang tương tác).
-- Android: nhận game qua `UsageStatsManager` (quyền Usage Access); thiếu quyền → **chọn game bằng tay** trong menu, không chặn tính năng nào.
-- Vùng Live cũ (Phase 4a: `data_dir/live_regions.json`, `live_mode.txt`; Android `Prefs.regions`, `Prefs.liveMode`) được **chuyển vào hồ sơ `_default`** lần chạy đầu, không mất.
-- Release `v0.1.0`: tag `v0.1.0` trên `main` → `release.yml` build và đăng exe zip + APK. **Đẩy tag chỉ khi người dùng xác nhận** (thao tác công khai).
-- Nhánh `phase-4b` từ `main`; xong merge vào `main` và push (không PR). Commit kết thúc `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **Live — phạm vi:** `screen` (màn hình chứa cửa sổ game / màn hình điện thoại) | `region` (một hoặc nhiều vùng). Cả hai: bản dịch **đè lên đúng khối chữ gốc**, click-through, overlay không lọt vào ảnh chụp. Bỏ thẻ cạnh vùng (`LiveOverlay` / `LiveCard` của 4a) và chế độ `dialogue`/`area`.
+- **Nhịp:** `interval_ms=300`, `active_interval_ms=100`, `settle_ms=250`, `max_wait_ms=2000`, `change_threshold=5`, **`partial_interval_ms=500`** (OCR giữa chừng khi chữ đang chạy, chỉ phạm vi `region`), `area_min_interval_ms=1000` (mọi OCR của phạm vi `screen`, kể cả giữa chừng), `area_max_blocks=30`.
+- **Câu xong** (`SentenceGate`): câu được theo sau bởi câu khác trong cùng khối; **hoặc** câu cuối kết thúc bằng `.` `!` `?` `…` (có thể kèm `"` `'` `)` `」`) **và** giống hệt ở hai lần OCR liên tiếp; **hoặc** chữ đã dừng hẳn (OCR do ổn định / `max_wait`) → mọi câu còn lại xong. Câu đã hiện không đổi nữa, trừ khi OCR đọc lại khác (→ dịch lại câu đó). Không dịch nháp câu dở.
+- **Khối đang dài thêm:** khối mới khớp khối đang hiện khi **góc trên-trái** cách nhau ≤ `near_px` (24) **và** text cũ (chuẩn hóa) là **tiền tố** của text mới → `grown` (giữ key); text giống hệt → `kept`.
+- **Android chụp:** mỗi phiên ghi màn hình chạy `CaptureProbe` một lần (ô hồng 24 dp ở góc trên-phải, ~0,3 s) khi bật Live lần đầu; `OVERLAY_HIDDEN` → không ẩn overlay khi chụp; `OVERLAY_CAPTURED` → ẩn overlay khi chụp (nháy nhẹ) và gợi ý một lần "chọn **Một ứng dụng** khi cấp quyền để hết nháy"; `BLACK` → Live tạm dừng ("Mở game đã chọn"). Màn hình bắt đầu app hướng dẫn chọn "Một ứng dụng → game".
+- **Hồ sơ game:** định danh Windows = tên exe (chữ thường), Android = package name; `live.scope` (`screen` | `region`, mặc định `region`), `regions` / `ignore_regions` tương đối 0–1 `[x, y, w, h]` theo **vùng client cửa sổ game** (Windows) / **màn hình** (Android); `interval_ms`, `settle_ms`, `change_threshold`; `glossary`; `overrides`. Thiếu trường → mặc định trên. Chưa có hồ sơ → tạo khi người dùng chọn vùng / bật Live lần đầu trong game đó; không nhận được game → `_default`.
+- Dữ liệu 4a chuyển sang hồ sơ `_default` lần chạy đầu (Windows `live_regions.json`, `live_mode.txt`; Android `Prefs.regions`, `Prefs.liveMode`) — `dialogue`/`area` đều thành `scope: region`.
+- Thứ tự khi dịch: **`overrides` → cache → thuật ngữ + model**. Khóa cache: câu chuẩn hóa + `"{model_id}@{model_version}#{glossary_digest}"` (digest 12 hex, không gồm mục `keep` tự động).
+- `corrections.jsonl`: `{"ts", "game", "model", "source", "machine", "corrected"}`; tắt bằng `logging.save_corrections` (mặc định bật).
+- Sửa bản dịch Live: phím `ctrl+alt+e` (Windows) / mục menu "Sửa bản dịch gần nhất" (Android); overlay Live vẫn click-through.
+- Release `v0.1.0`: tag trên `main` → `release.yml`; **chỉ đẩy tag khi người dùng xác nhận**.
+- Nhánh `phase-4b` từ `main`; xong merge vào `main`, push (không PR). Commit kết thúc `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
 
-1. **Cửa sổ game di chuyển / đổi kích thước / thu nhỏ khi Live đang chạy (Windows)** → vùng Live đi theo cửa sổ; cửa sổ thu nhỏ hoặc đóng → Live tạm dừng, không OCR desktop, không crash. Test ở Task 3.
-2. **File hồ sơ hỏng / thiếu trường / phiên bản lạ** → dùng mặc định cho trường thiếu, file hỏng được đổi tên `.bad` và tạo lại, app không crash. Fixtures `broken_*.json` ở Task 1.
-3. **Bản sửa của người dùng không bao giờ bị cache / model ghi đè**, kể cả khi câu OCR khác khoảng trắng; sửa xong thấy ngay ở lần OCR kế tiếp. Test ở Task 2.
-4. **Chuyển game giữa chừng (alt-tab sang game khác) khi Live đang chạy** → Live dừng ở game cũ, dùng hồ sơ + thuật ngữ game mới; bản dịch game cũ không hiện ở game mới. Test ở Task 3 / Task 5.
-5. **`ignore_regions` phủ toàn bộ vùng thoại** → không chia cho 0, không OCR liên tục; chỉ coi như "không có thay đổi". Test ở Task 1 (mask) và Task 3.
+1. **Câu cuối có dấu chấm nhưng chữ vẫn chạy tiếp** (`"Wait." … "Wait. Don't go."`; `"Mr."`, `"..."`) → không hiện câu sai rồi đổi liên tục; câu chỉ coi là xong khi giống hệt hai lần OCR hoặc có câu sau. Fixtures ở Task 1.
+2. **Khối dài thêm bị nhận là khối mới** (text dài ra làm tâm hộp dịch chuyển, xuống dòng mới) → giữ key, không vẽ chồng hai bản dịch. Fixture `grown_wraps_to_new_line` ở Task 1.
+3. **Live toàn màn hình trên game động liên tục** → ≤ 1 OCR/giây, khối không đổi không dịch lại, overlay không nhấp nháy. Test ở Task 2/3.
+4. **Android: người dùng chọn "Toàn màn hình" khi cấp quyền, hoặc chuyển sang app khác khi đang chụp "Một ứng dụng"** → không OCR bản dịch của chính app (ẩn khi chụp), ảnh đen → tạm dừng và báo, không crash. Test ở Task 3.
+5. **Cửa sổ game dời / đổi kích thước / thu nhỏ, chuyển sang game khác khi Live đang chạy (Windows)** → vùng đi theo cửa sổ; thu nhỏ → tạm dừng; game khác → hồ sơ + thuật ngữ game đó. Test ở Task 5.
 
 ---
 
-### Task 1: Hồ sơ game — schema, fixtures, Python + Kotlin
+### Task 1: Live realtime từng câu — logic dùng chung (Python + Kotlin)
 
-**Files:** Create `shared/schemas/profile.schema.json`, `shared/fixtures/profiles/{README.md, full.json, minimal.json, broken_regions.json, broken_json.txt}`, `windows/app/profiles.py`, `windows/app/live/mask.py`, `android/app-core/src/main/kotlin/dev/screentrans/core/profile/Profile.kt`; Modify `windows/app/live/thumb.py`, `android/app-core/.../live/Thumb.kt`; Test `windows/tests/test_profiles.py`, `android/app-core/src/test/kotlin/dev/screentrans/core/profile/ProfileFixturesTest.kt`
-
-**Interfaces:**
-- Python `@dataclass Profile(id: str, name: str, mode: str = "dialogue", regions: dict[str, list[Rel]], ignore: list[Rel], interval_ms=300, settle_ms=250, change_threshold=5.0, glossary: str | None, overrides: dict[str, str])` với `Rel = tuple[float, float, float, float]`; `Profile.from_json(dict) -> Profile` (trường thiếu → mặc định, vùng lỗi bị bỏ, giá trị kẹp 0–1), `Profile.to_json() -> dict`.
-- `ProfileStore(dir: Path)`: `get(game_id) -> Profile | None`, `get_or_default(game_id, name) -> Profile` (chưa lưu), `save(profile)` (ghi file tạm rồi đổi tên), file hỏng → đổi tên `<id>.json.bad`, trả `None`; `migrate_phase4a(data_dir)` → tạo `_default` từ `live_regions.json` + `live_mode.txt` (pixel → tương đối theo màn hình chính) rồi đổi tên file cũ `.migrated`.
-- `to_px(rel, frame: tuple[x, y, w, h]) -> tuple[int,int,int,int]`, `to_rel(px, frame) -> Rel`.
-- `mask.ignore_mask(region_px, ignore_px_list, thumb_w, thumb_h) -> np.ndarray[bool]`; `thumb.diff(a, b, mask=None)` — chỉ tính điểm `mask==True`; mask rỗng (toàn bộ bị bỏ) → `0.0`.
-- Kotlin: `Profile` (cùng trường, camelCase), `Profile.parse(json: String): Profile?` (JSON hỏng → null), `serialize()`, `RelRect` dùng lại; `Thumb.diff(a, b, mask: BooleanArray? = null)`.
-- [ ] **Step 1:** Fixtures: mỗi file `{"input": <json hồ sơ hoặc chuỗi>, "expected": <hồ sơ sau chuẩn hóa | null>}`; README ghi luật (mặc định, kẹp, bỏ vùng `w<=0`/`h<=0`, `mode` lạ → `dialogue`, key `overrides` được chuẩn hóa khoảng trắng).
-- [ ] **Step 2:** Test Python: fixtures; round-trip `to_json`/`from_json`; `ProfileStore` lưu/đọc, file hỏng → `.bad` + `None`; migrate 4a; `to_px`/`to_rel` (cửa sổ ở `(100, 50, 1280, 720)`); `diff` với mask che nửa ảnh chỉ thấy thay đổi ở nửa còn lại; mask che hết → `0.0`. FAIL → implement → PASS.
-- [ ] **Step 3:** Test Kotlin cùng fixtures + `Thumb.diff` có mask. FAIL → implement → PASS (`./gradlew :app-core:test`).
-- [ ] **Step 4:** Commit `feat(profiles): per-game profile schema, python + kotlin`.
-
-### Task 2: Bản sửa (overrides) + khóa cache + corrections.jsonl
-
-**Files:** Modify `windows/app/pipeline.py`, `windows/app/glossary.py`, `windows/app/datalog.py`, `windows/app/config.py`, `windows/app/factory.py`, `android/text-core/.../Pipeline.kt`, `android/text-core/.../Glossary.kt`; Test `windows/tests/test_pipeline.py`, `windows/tests/test_glossary.py`, `android/text-core/src/test/.../PipelineTest.kt`
+**Files:** Create `shared/fixtures/live_sentences/{README.md, *.json}`, `windows/app/live/sentences.py`; Modify `windows/app/live/machine.py`, `windows/app/live/blocks.py`, `shared/fixtures/live/README.md` (+ fixtures mới), `shared/fixtures/live_blocks/README.md` (+ fixtures mới), `android/app-core/.../live/LiveMachine.kt`, Create `android/app-core/.../live/SentenceGate.kt`; Test `windows/tests/test_live_machine.py`, `windows/tests/test_live_blocks.py`, `windows/tests/test_live_sentences.py`, `android/app-core/src/test/.../live/LiveFixturesTest.kt`
 
 **Interfaces:**
-- `Glossary.digest() -> str` (12 hex, bỏ qua mục `keep` thêm bởi `add_keep`); `Glossary.add_entry(source, target | None)` (mục người dùng, có tính vào digest).
-- `Pipeline(..., model_version: str = "0", overrides: dict[str, str] | None = None)`; `Pipeline.cache_ns` = `f"{model_id}@{model_version}#{glossary.digest()}"` dùng thay `model_id` khi gọi cache; `Pipeline.set_game(game, glossary, overrides)`; `Pipeline.correct(source, machine, corrected) -> None` — ghi `overrides[normalize(source)]`, `CorrectionLogger.log(...)`.
-- `CorrectionLogger(path, enabled)` trong `datalog.py`, `logging.save_corrections: bool = True` trong config.
-- Kotlin: `Glossary.digest()`, `Pipeline(..., modelVersion: String = "0", overrides: MutableMap<String, String> = mutableMapOf())`, `setGame(...)`, override trước cache.
-- [ ] **Step 1:** Test: câu có override → không gọi translator, không đọc cache; override khớp dù OCR khác khoảng trắng; `correct()` rồi dịch lại câu đó → bản sửa; đổi thuật ngữ (thêm `map`) → cache cũ không dùng (namespace đổi); `add_keep` tự động không đổi digest; `corrections.jsonl` đúng 6 trường; `save_corrections=False` → không ghi. Kotlin: override + digest. FAIL → implement → PASS.
-- [ ] **Step 2:** Commit `feat(pipeline): user overrides, versioned cache key, corrections log`.
+- `LiveParams.partial_interval_ms = 500`; `Action.PARTIAL` — `on_frame` trả `PARTIAL` khi đang ĐANG ĐỔI và đã ≥ `partial_interval_ms` kể từ lúc bắt đầu đổi / lần `PARTIAL` trước (không đổi trạng thái); `OCR` như cũ khi ổn định / `max_wait`. `partial_interval_ms=0` → không bao giờ `PARTIAL`.
+- `SentenceGate.done(sentences: list[str], previous: list[str] | None, final: bool) -> int` — số câu đầu đã xong theo luật ở Global Constraints (`previous` = danh sách câu của khối đó ở lần OCR trước).
+- `BlockDiff(added, kept, grown, removed)`; `Block` giữ `sentences_done: int` và `shown: list[str]` (bản dịch đã hiện theo câu); `BlockTracker.forget(keys)` (từ 4a review).
+- Kotlin: `LiveAction.PARTIAL`, `SentenceGate.done(...)`, `BlockDiff.grown` — cùng fixtures.
+- [ ] **Step 1:** Fixtures: `live/typewriter_partial.json` (PARTIAL lúc 600, 1100 ms… rồi OCR khi yên), `live_blocks/grown_same_line.json`, `grown_wraps_to_new_line.json`, `shrunk_is_new.json`; `live_sentences/{two_sentences_typing, last_sentence_needs_two_reads, abbreviation_mr, ellipsis_then_more, quote_after_period, final_flushes_all, ocr_misread_changes_done_sentence}.json`.
+- [ ] **Step 2:** Test Python cả ba bộ fixtures + fixtures 4a vẫn pass. FAIL → implement → PASS. Commit `feat(live): partial ocr, sentence gate, growing blocks`.
+- [ ] **Step 3:** Port Kotlin, cùng fixtures. FAIL → implement → PASS (`./gradlew :app-core:test`). Commit `feat(live): kotlin port of sentence gate`.
 
-### Task 3: Windows — nhận game, Live theo hồ sơ (nhiều vùng, vùng bỏ qua)
+### Task 2: Windows — Live đè lên (toàn màn hình / vùng) + realtime từng câu
 
-**Files:** Create `windows/app/gui/foreground.py`, `windows/app/gui/region_kinds.py`; Modify `windows/app/main.py`, `windows/app/live/controller.py`, `windows/app/gui/worker.py`, `windows/app/gui/live_overlay.py`, `windows/app/gui/selector.py`; Delete use of `windows/app/live/regions.py` (giữ cho migrate); Test `windows/tests/test_foreground.py`, `windows/tests/test_live_controller.py`, `windows/tests/test_app.py`
-
-**Interfaces:**
-- `foreground.current_game() -> GameWindow | None` — `GameWindow(exe: str, title: str, client: tuple[x, y, w, h] physical, minimized: bool)` (Win32: `GetForegroundWindow`, `GetWindowThreadProcessId`, `QueryFullProcessImageNameW`, `GetClientRect` + `ClientToScreen`, `IsIconic`); bỏ qua cửa sổ của chính app; `game_window(exe) -> GameWindow | None` tìm lại cửa sổ theo exe (cho tick).
-- `LiveController.start(profile, window_provider)`: mỗi tick lấy lại `client` của cửa sổ → quy đổi vùng tương đối ra pixel; cửa sổ thu nhỏ / mất → bỏ qua tick (không OCR, báo tray 1 lần "Game đã thu nhỏ/đóng — Live tạm dừng"); vùng `ignore` → mask trong `diff`. Vùng theo loại: job `live_ocr` gửi ảnh **theo thứ tự cố định** `dialogue..., name..., choices...` kèm `kinds: list[str]` (sửa luôn lỗi lệch chỉ số khi một vùng chụp lỗi — giữ `None` chỗ trống).
-- Hiển thị: một `LiveOverlay` cạnh vùng `dialogue` đầu tiên: `[Tên]` (từ vùng `name`, không dịch) + bản dịch thoại + các lựa chọn (mỗi dòng `▸ …`).
-- Chọn vùng: tray "Chọn vùng Live…" → chọn **thoại** (bắt buộc), rồi **tên** và **lựa chọn** (Esc để bỏ qua từng bước, chữ hướng dẫn trên lớp chọn); chế độ Vùng lớn → một vùng `area` + tùy chọn vùng bỏ qua. Lưu vào hồ sơ game đang ở foreground (tạo mới nếu chưa có, `name` = tiêu đề cửa sổ).
-- Đổi game: tray hiện "Game: <tên>"; khi cửa sổ foreground đổi sang exe khác có hồ sơ và Live đang bật → `start` lại với hồ sơ đó + gửi job `set_game` cho worker (thuật ngữ + overrides của game).
-- Vùng ngoài màn hình (4a M3): kiểm tra pixel vùng nằm trong `QGuiApplication.screens()` → không thì báo 1 lần, không OCR.
-- [ ] **Step 1:** Test (`foreground` tách phần Win32 sau một hàm giả được): cửa sổ dời `(100,50)→(400,300)` → ảnh chụp đúng vị trí mới; thu nhỏ → 0 job, `notify` 1 lần; `ignore` phủ toàn vùng → 0 job trong 3 s khi ảnh nhấp nháy; một vùng `name` chụp lỗi → chỉ số vùng `dialogue` không lệch; chuyển foreground sang game B có hồ sơ → `set_game` gửi đi, overlay game A đóng; migrate 4a giữ vùng cũ; chọn vùng ba bước lưu đủ `dialogue`/`name`/`choices`. FAIL → implement → PASS.
-- [ ] **Step 2:** Commit `feat(windows): per-game live profiles`.
-
-### Task 4: Windows — sửa bản dịch
-
-**Files:** Create `windows/app/gui/correct_dialog.py`; Modify `windows/app/gui/overlay.py` (nút "Sửa"), `windows/app/main.py` (phím `edit_last` mặc định `ctrl+alt+e`, tray "Sửa bản dịch gần nhất"), `windows/app/config.py` (`hotkeys.edit_last`), `windows/app/gui/worker.py` (job `correct`); Test `windows/tests/test_correct_dialog.py`, `windows/tests/test_app.py`
+**Files:** Modify `windows/app/live/controller.py`, `windows/app/gui/live_overlay.py` (bỏ `LiveOverlay`, `place_above`; `AreaOverlay` thành overlay duy nhất, thêm `set_block(key, text_lines, box, origin)`), `windows/app/gui/worker.py`, `windows/app/main.py` (tray "Live: Toàn màn hình / Vùng" thay "Chế độ Live"); Test `windows/tests/test_live_controller.py`, `windows/tests/test_app.py`, `windows/tests/test_live_parts.py`
 
 **Interfaces:**
-- `CorrectDialog(segments: list[Segment])` — mỗi câu: bản gốc (chỉ đọc) + ô sửa bản dịch; ô "Thuật ngữ" dạng `nguồn = đích` (đích trống → `keep`); `accepted -> list[Correction]`, `Correction(source, machine, corrected)` chỉ gồm câu đã đổi, `terms: list[tuple[str, str | None]]`.
-- Job `correct` (worker thread): `pipeline.correct(...)` từng câu, `glossary.add_entry(...)`, ghi hồ sơ (`overrides`) và file thuật ngữ game (`data_dir/glossary/games/<id>.json`, tạo nếu chưa có — không ghi vào thư mục cài đặt).
-- Sửa xong: overlay đang hiện cập nhật ngay; Live dùng bản sửa ở lần dịch sau.
-- [ ] **Step 1:** Test: dialog chỉ trả câu đã đổi; thuật ngữ `Arcanist =` → `keep`; `Ctrl+Alt+E` khi chưa có kết quả → báo "Chưa có bản dịch nào để sửa"; sửa → hồ sơ có override, `corrections.jsonl` có dòng, overlay hiện bản sửa. FAIL → implement → PASS.
-- [ ] **Step 2:** Commit `feat(windows): correct translations from the overlay`.
+- `LiveController(..., scope: "screen" | "region")`: `screen` → một "vùng" = màn hình chứa con trỏ khi bật Live (4b Task 5 đổi thành màn hình của cửa sổ game); `region` → các vùng đã chọn. Mỗi vùng: một job `live_ocr`; kết quả theo khối → `BlockTracker` → mỗi khối `added`/`grown`: `SentenceGate` → gửi `live_translate` **chỉ các câu mới xong**; overlay vẽ cho mỗi khối các câu đã dịch (câu chưa xong không vẽ); khối `removed` → gỡ.
+- `PARTIAL` → job `live_ocr` như `OCR` nhưng `final=False` cho `SentenceGate`. Phạm vi `screen`: mọi OCR qua `RateLimiter(area_min_interval_ms)`.
+- Job ids, một khe Live trong worker, rollback khi job hỏng giữ như 4a.
+- [ ] **Step 1:** Test (chụp giả trả chuỗi ảnh + OCR giả trả chuỗi text): chữ chạy `"Where are"` → `"Where are you going? The"` → `"…? The station is closed today."` → câu 1 được gửi dịch sau OCR giữa chừng thứ 2 (trước khi chữ dừng), câu 2 sau khi yên; overlay khối không bị vẽ lại câu 1; toàn màn hình đổi liên tục 4 s → ≤ 5 OCR; khối giữ nguyên → không job dịch; tắt Live giữa job → overlay đóng, kết quả muộn bị bỏ. FAIL → implement → PASS.
+- [ ] **Step 2:** Đo CPU nhàn rỗi 60 s ở phạm vi `screen` (màn hình đứng yên) → < 2%. Commit `feat(windows): live overlays on top, sentence by sentence`.
 
-### Task 5: Android — nhận game, hồ sơ, sửa bản dịch
+### Task 3: Android — Live đè lên + realtime từng câu + chụp "Một ứng dụng"
 
-**Files:** Create `android/app/src/main/kotlin/dev/screentrans/profile/{GameDetector.kt, ProfileRepo.kt}`, `android/app/src/main/kotlin/dev/screentrans/ui/CorrectView.kt`; Modify `Controller.kt`, `live/LiveController.kt`, `ui/RegionEditView.kt` (chọn loại vùng), `ui/Results.kt` (nút "Sửa"), `MainActivity.kt` (nút cấp quyền Usage Access), `AndroidManifest.xml` (`PACKAGE_USAGE_STATS`), `engine/AppEngine.kt` (thuật ngữ + overrides theo game); app-core `ProfileLogic.kt`; Test `android/app-core/src/test/.../profile/ProfileLogicTest.kt`
+**Files:** Modify `android/app-core/.../live/LiveSession.kt` (khối, câu, phạm vi), `android/app/.../live/LiveController.kt`, `android/app/.../live/LiveLayer.kt` (bỏ `LiveCard`), `Controller.kt` (menu "Live: Toàn màn hình / Vùng", gỡ "Kiểm tra chụp màn hình" khỏi menu chính → giữ trong màn hình app), `MainActivity.kt` (hướng dẫn chọn "Một ứng dụng"), `ui/Prefs.kt` (`liveScope`); Test `android/app-core/src/test/.../live/LiveSessionTest.kt`
 
 **Interfaces:**
-- app-core `ProfileLogic`: `pickGame(foreground: String?, manual: String?, own: String) -> String` (thủ công > foreground; app của mình / null → `_default`); `migratePrefs(regions: List<RelRect>, liveMode: String): Profile`; `orderedRegions(profile, mode): List<Pair<String, RelRect>>` (thứ tự `dialogue, name, choices` hoặc `area`).
-- `GameDetector.current(): String?` — `UsageStatsManager.queryEvents` 10 s gần nhất, sự kiện `ACTIVITY_RESUMED` cuối cùng; không có quyền → `null`.
-- `ProfileRepo` (filesDir/profiles/<package>.json) dùng `Profile.parse/serialize`.
-- Menu nút nổi: "Game: <tên> ▸" (chọn tay trong danh sách hồ sơ + "Tự nhận"), "Sửa bản dịch gần nhất"; `RegionEditView` có nút chọn loại vùng (Thoại / Tên / Lựa chọn / Bỏ qua).
-- `CorrectView`: overlay **focusable** (bàn phím) với một ô sửa mỗi câu + ô thuật ngữ; lưu → `engine.submit` job sửa (cùng luồng engine) → hồ sơ + `corrections.jsonl` trong filesDir.
-- Live FLAG_SECURE (4a M7): khung Live đen + OCR rỗng → báo một lần như chế độ một lần.
-- [ ] **Step 1:** Test JVM `ProfileLogic` (chọn game, migrate, thứ tự vùng) + engine job sửa ghi override và dùng ngay ở job sau. FAIL → implement → PASS.
-- [ ] **Step 2:** Implement glue; CI `build-android` xanh. Commit `feat(android): per-game profiles and corrections`.
+- `LiveSession(params, scope, host)` — cùng hành vi Task 2 (port), `LiveHost.setBlock(key, lines: List<String>, box)` / `removeBlock(key)`; `requestOcr(final: Boolean)`.
+- `LiveController.captureMode`: `UNKNOWN` → chạy `CaptureProbe` (ô 24 dp góc trên-phải) lần bật Live đầu tiên của phiên ghi màn hình → `HIDDEN` (không ẩn layer khi chụp, không `overlayChanged`) | `CAPTURED` (ẩn khi chụp như 4a, báo gợi ý một lần) | `BLACK` (tạm dừng, báo "Mở game đã chọn rồi bật lại Live").
+- Khung đen giữa chừng (người dùng rời game khi chụp "Một ứng dụng") → bỏ tick, không OCR; quay lại game → chạy tiếp.
+- [ ] **Step 1:** Test JVM `LiveSession`: kịch bản chữ chạy của Task 2 cho kết quả giống hệt; phạm vi `screen` ≤ 1 OCR/s; `HIDDEN` thì vẽ khối không gọi `overlayChanged`. FAIL → implement → PASS.
+- [ ] **Step 2:** Glue + CI `build-android` xanh. Commit `feat(android): live overlays on top, sentence by sentence, single-app capture`.
+- [ ] **Step 3 — cùng người dùng:** cài APK nightly, chụp "Một ứng dụng → Reverse: 1999", bật Live vùng + toàn màn hình: không nháy, câu hiện dần theo chữ.
 
-### Task 6: Nghiệm thu, đo FPS, tài liệu, release v0.1.0
+### Task 4: Hồ sơ game — schema, fixtures, Python + Kotlin; bản sửa + khóa cache
 
-**Files:** Create `CHANGELOG.md`; Modify `AGENT.md` (tick Phase 4, số đo), `README.md`, `windows/app/__init__.py` (`__version__ = "0.1.0"`), `.github/workflows/release.yml` (ghi chú phát hành lấy từ `CHANGELOG.md`)
+**Files:** Create `shared/schemas/profile.schema.json`, `shared/fixtures/profiles/{README.md, full.json, minimal.json, broken_regions.json, broken_json.txt, legacy_4a.json}`, `windows/app/profiles.py`, `windows/app/live/mask.py`, `android/app-core/.../profile/Profile.kt`; Modify `windows/app/live/thumb.py`, `android/app-core/.../live/Thumb.kt`, `windows/app/pipeline.py`, `windows/app/glossary.py`, `windows/app/datalog.py`, `windows/app/config.py`, `windows/app/factory.py`, `android/text-core/.../{Pipeline.kt, Glossary.kt}`; Test `windows/tests/{test_profiles.py, test_pipeline.py, test_glossary.py}`, `android/app-core/src/test/.../profile/ProfileFixturesTest.kt`, `android/text-core/src/test/.../PipelineTest.kt`
 
-- [ ] **Step 1 — cùng người dùng** (Reverse: 1999 trên cả hai máy):
-  - [ ] Hồ sơ tự tạo khi chọn vùng lần đầu; mở lại app → tự nhận game, Live dùng đúng vùng.
-  - [ ] Dời / phóng to cửa sổ game (Windows) → Live vẫn đúng vùng.
-  - [ ] Sửa một câu → lần sau hiện bản sửa; `corrections.jsonl` có dòng.
-  - [ ] Thêm thuật ngữ `keep`/`map` → câu sau dùng đúng.
-  - [ ] **FPS** game: tắt Live / bật Live đứng yên / bật Live khi thoại chạy (Windows: bộ đếm FPS của Xbox Game Bar; Android: tùy chọn nhà phát triển "Hiển thị tốc độ khung hình" hoặc bộ đếm của game). Mục tiêu: giảm ≤ 5%.
+**Interfaces:**
+- `Profile(id, name, scope="region", regions: list[Rel], ignore: list[Rel], interval_ms=300, settle_ms=250, change_threshold=5.0, glossary: str | None, overrides: dict[str, str])`, `Rel = tuple[float, float, float, float]`; `from_json` (thiếu → mặc định, vùng `w<=0`/`h<=0` bỏ, kẹp 0–1, `scope` lạ → `region`, key `overrides` chuẩn hóa khoảng trắng), `to_json`.
+- `ProfileStore(dir)`: `get`, `get_or_default(game_id, name)`, `save` (ghi tạm rồi đổi tên), file hỏng → `<id>.json.bad` + `None`; `migrate_phase4a(data_dir)`. `to_px(rel, frame)`, `to_rel(px, frame)`.
+- `mask.ignore_mask(...)`; `thumb.diff(a, b, mask=None)` (mask che hết → `0.0`). Kotlin tương ứng.
+- `Glossary.digest()`, `Glossary.add_entry(source, target | None)`; `Pipeline(..., model_version="0", overrides=None)`, `Pipeline.cache_ns`, `Pipeline.set_game(game, glossary, overrides)`, `Pipeline.correct(source, machine, corrected)`; `CorrectionLogger(path, enabled)`; config `logging.save_corrections`. Kotlin: `digest()`, `Pipeline(modelVersion, overrides)`, `setGame`.
+- [ ] **Step 1:** Test hồ sơ: fixtures (Python + Kotlin), round-trip, `.bad`, migrate 4a, `to_px`/`to_rel` (cửa sổ `(100, 50, 1280, 720)`), mask nửa ảnh / che hết. FAIL → implement → PASS. Commit `feat(profiles): per-game profile schema, python + kotlin`.
+- [ ] **Step 2:** Test bản sửa: override → không gọi translator / cache; khớp dù khác khoảng trắng; `correct()` dùng ngay lần sau; thêm `map` → namespace cache đổi; `add_keep` tự động không đổi digest; `corrections.jsonl` 6 trường; tắt thì không ghi. FAIL → implement → PASS. Commit `feat(pipeline): user overrides, versioned cache key, corrections log`.
+
+### Task 5: Windows — nhận game, Live theo hồ sơ, sửa bản dịch
+
+**Files:** Create `windows/app/gui/foreground.py`, `windows/app/gui/correct_dialog.py`; Modify `windows/app/main.py`, `windows/app/live/controller.py`, `windows/app/gui/worker.py` (jobs `set_game`, `correct`), `windows/app/gui/overlay.py` (nút "Sửa"), `windows/app/gui/selector.py` (chọn nhiều vùng: kéo nhiều lần, Enter xong, Esc hủy; phím `I` đổi sang vẽ vùng bỏ qua), `windows/app/config.py` (`hotkeys.edit_last`); Test `windows/tests/{test_foreground.py, test_correct_dialog.py, test_live_controller.py, test_app.py}`
+
+**Interfaces:**
+- `foreground.current_game() -> GameWindow | None` (`exe`, `title`, `client` vật lý, `minimized`; bỏ qua cửa sổ của app), `game_window(exe)`.
+- Live mỗi tick lấy lại `client` → quy vùng tương đối ra pixel; phạm vi `screen` = màn hình chứa cửa sổ game; thu nhỏ / mất cửa sổ → bỏ tick, báo 1 lần; vùng ngoài mọi màn hình → báo 1 lần (4a M3); `ignore` → mask.
+- Đổi foreground sang exe khác có hồ sơ khi Live bật → `start` lại + job `set_game`. Tray "Game: <tên>".
+- `CorrectDialog(segments)` → `Correction(source, machine, corrected)` (chỉ câu đã đổi) + `terms` (`nguồn = đích`, đích trống → `keep`); job `correct` ghi override vào hồ sơ + thuật ngữ vào `data_dir/glossary/games/<id>.json`; `Ctrl+Alt+E` sửa kết quả gần nhất (Live hoặc một lần), chưa có → báo "Chưa có bản dịch nào để sửa".
+- [ ] **Step 1:** Test: cửa sổ dời `(100,50)→(400,300)` → ảnh chụp đúng chỗ mới; thu nhỏ → 0 job, báo 1 lần; `ignore` phủ hết → 0 job khi nhấp nháy; chuyển sang game B → `set_game`, overlay game A đóng; chọn 2 vùng + 1 vùng bỏ qua → hồ sơ lưu đủ; dialog chỉ trả câu đã đổi; `Arcanist =` → `keep`; sửa → override + `corrections.jsonl` + overlay cập nhật. FAIL → implement → PASS.
+- [ ] **Step 2:** Commit `feat(windows): game profiles and corrections`.
+
+### Task 6: Android — nhận game, hồ sơ, sửa bản dịch
+
+**Files:** Create `android/app/.../profile/{GameDetector.kt, ProfileRepo.kt}`, `android/app/.../ui/CorrectView.kt`, app-core `profile/ProfileLogic.kt`; Modify `Controller.kt`, `live/LiveController.kt`, `ui/RegionEditView.kt` (nút "Vùng bỏ qua"), `ui/Results.kt` (nút "Sửa"), `MainActivity.kt` (cấp Usage Access), `AndroidManifest.xml` (`PACKAGE_USAGE_STATS`), `engine/AppEngine.kt` (thuật ngữ + overrides theo game), app-core `TranslationEngine.kt` (job sửa); Test `android/app-core/src/test/.../profile/ProfileLogicTest.kt`, `TranslationEngineTest.kt`
+
+**Interfaces:**
+- `ProfileLogic.pickGame(foreground: String?, manual: String?, own: String) -> String` (thủ công > foreground; app mình / null → `_default`), `migratePrefs(regions, liveMode) -> Profile`.
+- `GameDetector.current(): String?` (`UsageStatsManager.queryEvents` 10 s gần nhất, `ACTIVITY_RESUMED` cuối; thiếu quyền → `null`). Khi chụp "Một ứng dụng", game đã chọn lúc cấp quyền là game hiện tại nếu không đọc được Usage Access.
+- `ProfileRepo` (filesDir/profiles/<package>.json). Menu: "Game: <tên> ▸" (chọn tay / "Tự nhận"), "Sửa bản dịch gần nhất". `CorrectView` overlay focusable (ô sửa mỗi câu + ô thuật ngữ) → job sửa trên luồng engine → hồ sơ + `corrections.jsonl`.
+- Live FLAG_SECURE (4a M7): khung đen + OCR rỗng → báo một lần.
+- [ ] **Step 1:** Test JVM `ProfileLogic` + job sửa ghi override và dùng ngay ở job sau. FAIL → implement → PASS.
+- [ ] **Step 2:** Glue; CI xanh. Commit `feat(android): game profiles and corrections`.
+
+### Task 7: Nghiệm thu, FPS, tài liệu, release v0.1.0
+
+**Files:** Create `CHANGELOG.md`; Modify `AGENT.md`, `README.md`, `windows/app/__init__.py` (`__version__ = "0.1.0"`), `.github/workflows/release.yml` (ghi chú phát hành từ `CHANGELOG.md`)
+
+- [ ] **Step 1 — cùng người dùng** (Reverse: 1999, Windows + Android):
+  - [ ] Live vùng và toàn màn hình: bản dịch đè đúng chỗ, câu hiện dần theo chữ chạy, câu đã hiện không nhảy; Android không nháy (chụp "Một ứng dụng").
+  - [ ] Hồ sơ tự tạo; mở lại app → tự nhận game; dời / phóng to cửa sổ game (Windows) → vẫn đúng vùng.
+  - [ ] Sửa một câu → lần sau hiện bản sửa; thêm thuật ngữ → câu sau dùng đúng.
+  - [ ] **FPS**: tắt Live / Live đứng yên / Live khi thoại chạy (Windows: Xbox Game Bar; Android: "Hiển thị tốc độ khung hình" trong tùy chọn nhà phát triển) → giảm ≤ 5%.
 - [ ] **Step 2:** Ghi số đo vào AGENT.md, cập nhật README + CHANGELOG; chạy toàn bộ test; merge `phase-4b` vào `main`, push.
 - [ ] **Step 3 — người dùng xác nhận trước:** `git tag v0.1.0 && git push origin v0.1.0` → workflow `release` xanh → release `v0.1.0` có `ScreenTrans-windows.zip` + `ScreenTrans-android.apk`.

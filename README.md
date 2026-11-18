@@ -29,7 +29,7 @@ cấu hình ở [windows/config.yaml](windows/config.yaml).
 
 ## Sắp làm
 
-- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): hồ sơ theo game, sửa bản dịch, Live nhiều vùng trên Windows, release v0.1.0.
+- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): Live toàn màn hình / vùng đè lên chữ gốc và dịch từng câu ngay khi hiện xong, hồ sơ theo game, sửa bản dịch, release v0.1.0.
 - **Phase 5:** màn hình cài đặt, dịch từ xa qua Kaggle, tiếng Nhật.
 - **Phase 6:** fine-tune model.
 
