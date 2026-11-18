@@ -14,37 +14,24 @@ Bản build mới nhất từ `main`: [Releases → nightly](https://github.com/
 
 ## Tính năng hiện có
 
-| Tính năng | Windows | Android |
-|---|---|---|
-| **Dịch một vùng** — kéo chọn vùng, bản dịch hiện cạnh vùng (nút Copy) | `Ctrl+Alt+T` | Nút nổi → "Dịch vùng" |
-| **Nhiều vùng** — dịch nhiều vùng cùng lúc, kéo để dời / đổi kích thước | — | Nút nổi → "Chọn / sửa vùng" |
-| **Toàn màn hình (một lần)** — bản dịch đè đúng chỗ từng khối chữ, khối nào xong hiện trước; chạm/bấm một khối để xem bản gốc | `Ctrl+Alt+F` | Nút nổi → "Toàn màn hình" |
-| **Live — Khung thoại** — tự dịch mỗi khi chữ trong vùng đổi, **chờ chữ chạy xong** rồi mới dịch, hiện **từng câu**; bản dịch đặt ngoài vùng, không che chữ gốc | `Ctrl+Alt+L` | Nút nổi → "Bật Live" |
-| **Live — Vùng lớn** — cho game thoại bong bóng: bản dịch đè lên từng bong bóng, chỉ dịch bong bóng mới, tối đa 1 lần OCR/giây | Tray → "Chế độ Live" | Nút nổi → "Live: Vùng lớn" |
-| Overlay Live không chặn chuột / chạm vào game | ✓ | ✓ |
-| Overlay không lọt vào ảnh chụp (không OCR chính bản dịch) | ✓ (loại khỏi ảnh chụp) | ✓ (đặt ngoài vùng / ẩn khi chụp) |
-| Đổi model dịch | Tray → "Model": `vinai-en2vi` (mặc định, chất lượng cao) / `opus-mt-en-vi` | `opus-mt-en-vi` |
+| Tính năng | Dùng để | Windows | Android |
+|---|---|---|---|
+| Dịch vùng | Dịch chữ trong vùng vừa chọn | `Ctrl+Alt+T` | Nút nổi → "Dịch vùng" |
+| Nhiều vùng | Lưu và dịch nhiều vùng cùng lúc | — | Nút nổi → "Chọn / sửa vùng" |
+| Toàn màn hình | Dịch mọi chữ trên màn hình, bản dịch đè đúng chỗ | `Ctrl+Alt+F` | Nút nổi → "Toàn màn hình" |
+| Live — Khung thoại | Tự dịch mỗi khi chữ trong vùng đổi, bản dịch hiện cạnh vùng | `Ctrl+Alt+L` | Nút nổi → "Bật Live" |
+| Live — Vùng lớn | Tự dịch chữ mới xuất hiện ở bất kỳ đâu trong một vùng lớn, bản dịch đè đúng chỗ | Tray → "Chế độ Live" | Nút nổi → "Live: Vùng lớn" |
+| Bảng thuật ngữ | Giữ nguyên hoặc dịch cố định tên riêng, thuật ngữ | ✓ | ✓ |
+| Đổi model | Chọn `vinai-en2vi` (mặc định) hoặc `opus-mt-en-vi` | Tray → "Model" | `opus-mt-en-vi` |
 
-**Live chạy thế nào:** chọn vùng **một lần** (Windows: lần đầu bấm `Ctrl+Alt+L` sẽ mở chọn vùng, đổi bằng tray → "Chọn lại vùng Live";
-Android: dùng các vùng đã lưu). App so ảnh thu nhỏ của vùng theo nhịp 300 ms; chữ đổi → chụp nhanh hơn (100 ms) và chờ chữ đứng yên
-250 ms mới OCR (nền động liên tục: tối đa 2 s). Màn hình đứng yên → không OCR (Windows đo CPU ~0,15%). Câu đã dịch được lấy từ cache.
-Bật Live là dịch luôn câu đang hiện trong vùng.
-
-**Xử lý văn bản:**
-- Ghép dòng thành đoạn, tách câu, nhận dòng **tên nhân vật** (giữ nguyên, không dịch), sửa lỗi OCR hay gặp (`Ill` → `III`…), bỏ khối chỉ có số / ký hiệu.
-- **Bảng thuật ngữ**: bảng chung + bảng riêng từng game (`shared/glossary/games/*.json`), `keep` (giữ nguyên) hoặc `map` (dịch cố định).
-- **Tên riêng tự động**: từ viết hoa lặp lại ≥ 3 lần trong phiên, không phải từ tiếng Anh thông dụng → tự giữ nguyên.
-- Game chặn chụp màn hình (FLAG_SECURE, Android) → báo rõ thay vì hiện kết quả rỗng.
-
-**Dữ liệu (Windows `%LOCALAPPDATA%\ScreenTrans`):** model đã tải, `cache.sqlite` (cache bản dịch giữ giữa các lần chạy),
-`translations.jsonl` (cặp gốc–dịch, tắt bằng `logging.save_pairs`), vùng và chế độ Live. Tray → "Mở thư mục dữ liệu".
-Cấu hình: [windows/config.yaml](windows/config.yaml) (phím tắt, cỡ chữ / độ trong overlay, hiện bản gốc, tham số Live).
+Overlay Live không chặn chuột / chạm. Dữ liệu Windows nằm ở `%LOCALAPPDATA%\ScreenTrans` (tray → "Mở thư mục dữ liệu"),
+cấu hình ở [windows/config.yaml](windows/config.yaml).
 
 ## Sắp làm
 
-- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): hồ sơ theo game (tự nhận game; vùng tên / thoại / lựa chọn; vùng bỏ qua; thuật ngữ và tham số riêng), **sửa bản dịch** trên overlay (lần sau dùng luôn, ghi `corrections.jsonl`), Live nhiều vùng trên Windows, đo FPS, release **v0.1.0**.
-- **Phase 5:** màn hình cài đặt, engine dịch từ xa trên Kaggle (tùy chọn), **tiếng Nhật**.
-- **Phase 6:** fine-tune model bằng dữ liệu đã sửa.
+- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): hồ sơ theo game, sửa bản dịch, Live nhiều vùng trên Windows, release v0.1.0.
+- **Phase 5:** màn hình cài đặt, dịch từ xa qua Kaggle, tiếng Nhật.
+- **Phase 6:** fine-tune model.
 
 ## Cấu trúc
 
