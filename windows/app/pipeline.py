@@ -1,7 +1,7 @@
 """OCR -> postprocess -> cache -> glossary -> translator -> segments."""
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Iterator, Literal
 
 from PIL import Image
 
@@ -93,18 +93,29 @@ class Pipeline:
                 self.pair_logger.log(s, done[s], model, self.game)
         return done
 
-    def translate_paragraphs(self, paragraphs: list[Paragraph]) -> list[Segment]:
-        sentences = [s for p in paragraphs if p.kind == "text" for s in p.sentences]
+    def _observe(self, sentences: list[str]) -> None:
         if self.tracker is not None:
             for s in sentences:
                 for term in self.tracker.observe(s):
                     self.glossary.add_keep(term)
+
+    @staticmethod
+    def _segment(p: Paragraph, translated: dict[str, str]) -> Segment:
+        box = (p.left, p.top, p.right, p.bottom)
+        if p.kind == "name":
+            return Segment("name", p.text, None, box)
+        return Segment("text", p.text, " ".join(translated[s] for s in p.sentences), box)
+
+    def translate_paragraphs(self, paragraphs: list[Paragraph]) -> list[Segment]:
+        """One translator batch for every sentence (one-shot region mode)."""
+        sentences = [s for p in paragraphs if p.kind == "text" for s in p.sentences]
+        self._observe(sentences)
         translated = self._translate_sentences(sentences) if sentences else {}
-        segments = []
+        return [self._segment(p, translated) for p in paragraphs]
+
+    def iter_segments(self, paragraphs: list[Paragraph]) -> Iterator[Segment]:
+        """Yield each paragraph as soon as it is translated (full-screen mode shows blocks progressively)."""
+        self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
         for p in paragraphs:
-            box = (p.left, p.top, p.right, p.bottom)
-            if p.kind == "name":
-                segments.append(Segment("name", p.text, None, box))
-            else:
-                segments.append(Segment("text", p.text, " ".join(translated[s] for s in p.sentences), box))
-        return segments
+            translated = self._translate_sentences(p.sentences) if p.kind == "text" and p.sentences else {}
+            yield self._segment(p, translated)
