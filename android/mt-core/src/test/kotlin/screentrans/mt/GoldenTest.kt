@@ -102,6 +102,14 @@ class GoldenTest {
     }
 
     @Test
+    fun `count tokens equals source ids length`() {
+        val items = golden()
+        Translator(modelDir).use { tr ->
+            for (g in items) assertEquals(g.srcIds.size, tr.countTokens(g.text), g.text)
+        }
+    }
+
+    @Test
     fun `fake model stops at maxLen`() {
         val fake = object : Seq2SeqModel {
             override fun start(srcIds: IntArray): DecoderState = DecoderState.NONE
