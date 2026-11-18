@@ -1,0 +1,35 @@
+{
+ "name": "OCR finds nothing: skip",
+ "events": [
+  {
+   "t": 0,
+   "diff": 50.0
+  },
+  {
+   "t": 100,
+   "diff": 0.0
+  },
+  {
+   "t": 200,
+   "diff": 0.0
+  },
+  {
+   "t": 300,
+   "diff": 0.0
+  },
+  {
+   "t": 350,
+   "ocr_text": "   "
+  }
+ ],
+ "expected": [
+  {
+   "t": 300,
+   "action": "ocr"
+  },
+  {
+   "t": 350,
+   "action": "skip"
+  }
+ ]
+}

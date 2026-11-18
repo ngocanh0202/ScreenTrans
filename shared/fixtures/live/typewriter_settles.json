@@ -1,0 +1,71 @@
+{
+ "name": "text typed for 900 ms, then still: OCR once it settled, translate",
+ "events": [
+  {
+   "t": 0,
+   "diff": 20.0
+  },
+  {
+   "t": 100,
+   "diff": 20.0
+  },
+  {
+   "t": 200,
+   "diff": 20.0
+  },
+  {
+   "t": 300,
+   "diff": 20.0
+  },
+  {
+   "t": 400,
+   "diff": 20.0
+  },
+  {
+   "t": 500,
+   "diff": 20.0
+  },
+  {
+   "t": 600,
+   "diff": 20.0
+  },
+  {
+   "t": 700,
+   "diff": 20.0
+  },
+  {
+   "t": 800,
+   "diff": 20.0
+  },
+  {
+   "t": 900,
+   "diff": 20.0
+  },
+  {
+   "t": 1000,
+   "diff": 0.0
+  },
+  {
+   "t": 1100,
+   "diff": 0.0
+  },
+  {
+   "t": 1200,
+   "diff": 0.0
+  },
+  {
+   "t": 1250,
+   "ocr_text": "We have to leave right now."
+  }
+ ],
+ "expected": [
+  {
+   "t": 1200,
+   "action": "ocr"
+  },
+  {
+   "t": 1250,
+   "action": "translate"
+  }
+ ]
+}

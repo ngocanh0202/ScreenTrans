@@ -1,0 +1,38 @@
+{
+ "name": "our own overlay redraw must not trigger OCR",
+ "events": [
+  {
+   "t": 0,
+   "diff": 0.0
+  },
+  {
+   "t": 50,
+   "overlay_changed": true
+  },
+  {
+   "t": 100,
+   "diff": 40.0
+  },
+  {
+   "t": 200,
+   "diff": 0.0
+  },
+  {
+   "t": 300,
+   "diff": 0.0
+  },
+  {
+   "t": 400,
+   "diff": 0.0
+  },
+  {
+   "t": 500,
+   "diff": 0.0
+  },
+  {
+   "t": 600,
+   "diff": 0.0
+  }
+ ],
+ "expected": []
+}
