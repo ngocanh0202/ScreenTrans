@@ -3,138 +3,150 @@ package dev.screentrans.core.live
 import org.junit.jupiter.api.Test
 import screentrans.text.Kind
 import screentrans.text.Paragraph
+import screentrans.text.Postprocess
 import screentrans.text.Segment
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Same cases as windows/tests/test_live_controller.py, without capture (diffs are given directly). */
+/** Same cases as windows/tests/test_live_controller.py (4b), without capture (diffs are given directly). */
 class LiveSessionTest {
     private class Host : LiveHost {
         var ids = 0
-        val ocr = mutableListOf<Int>()
+        val ocr = mutableListOf<Pair<Int, Boolean>>()
         val translate = mutableListOf<Pair<Int, List<List<Paragraph>>>>()
-        var shown: List<List<Segment>>? = null
-        val blocks = LinkedHashMap<String, Segment>()
-        override fun requestOcr(): Int = (++ids).also { ocr.add(it) }
+        val blocks = LinkedHashMap<String, String>()
+        override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
         override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
-        override fun showDialogue(segments: List<List<Segment>>) { shown = segments }
-        override fun setBlock(key: String, segment: Segment) { blocks[key] = segment }
-        override fun removeBlock(key: String) { blocks.remove(key) }
+        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind) {
+            blocks["$region:$key"] = text
+        }
+        override fun removeBlock(region: Int, key: String) {
+            blocks.remove("$region:$key")
+        }
     }
 
-    private fun para(text: String, top: Float = 0f) = Paragraph(Kind.TEXT, text, listOf(text), 0f, top, 100f, top + 20f)
-    private fun seg(src: String, vi: String) = Segment(Kind.TEXT, src, vi, 0f, 0f, 100f, 20f)
+    private val params = LiveParams(partialIntervalMs = 500)
+    private fun para(text: String, top: Float = 0f) =
+        Paragraph(Kind.TEXT, text, Postprocess.splitSentences(text), 0f, top, 300f, top + 20f)
 
-    private fun drive(s: LiveSession, diffs: (Int) -> Float, untilMs: Int, step: Int = 100) {
-        var t = 0
-        while (t <= untilMs) { s.onFrame(t, diffs(t)); t += step }
+    private fun session(h: Host, scope: String = "region", regions: Int = 1) = LiveSession(params, scope, regions, host = h)
+
+    private fun drive(s: LiveSession, from: Int, until: Int, diff: (Int) -> Float) {
+        var t = from
+        while (t <= until) { s.onFrame(t, diff(t)); t += 100 }
     }
 
-    @Test
-    fun `typing then still gives one ocr`() {
-        val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
-        drive(s, { t -> if (t in 100..400) 255f else 0f }, 1500)
-        assertEquals(2, h.ocr.size)  // initial + after typing settles
+    private fun sources(job: Pair<Int, List<List<Paragraph>>>) = job.second.flatten().map { it.text }
+
+    private fun translate(s: LiveSession, job: Pair<Int, List<List<Paragraph>>>) {
+        val segs = job.second.map { g -> g.map { Segment(Kind.TEXT, it.text, "VI ${it.text}", it.left, it.top, it.right, it.bottom) } }
+        s.onPartial(job.first, segs)
+        s.onJobEnded(job.first)
     }
 
     @Test
     fun `still screen ocrs once at start then never`() {
         val h = Host()
-        drive(LiveSession(LiveParams(), area = false, host = h), { 0f }, 3000)
-        assertEquals(1, h.ocr.size)
+        drive(session(h), 0, 3000) { 0f }
+        assertEquals(listOf(1 to true), h.ocr)
     }
 
     @Test
-    fun `ocr text is translated progressively and only once`() {
+    fun `sentences appear while the text is typing`() {
         val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
-        drive(s, { t -> if (t == 100) 255f else 0f }, 800)
-        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hello there."))), 900)
-        val (trId, paras) = h.translate.single()
-        assertEquals("Hello there.", paras[0][0].text)
-        s.onPartial(trId, listOf(listOf(seg("Hello there.", "Xin chào."))))
-        assertEquals("Xin chào.", h.shown!![0][0].translation)
-        drive(s, { t -> if (t == 100) 255f else 0f }, 800)
-        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hello there."))), 1000)
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(emptyList()))
+        drive(s, 100, 600) { t -> if (t <= 1500 && t % 200 == 100) 255f else if (t <= 1500) 255f else 0f }
+        val partial = h.ocr.last()
+        assertEquals(false, partial.second)
+        s.onOcrDone(partial.first, listOf(listOf(para("Where are you going? The"))))
+        assertEquals(listOf("Where are you going?"), sources(h.translate.last()))
+        translate(s, h.translate.last())
+        assertEquals(listOf("VI Where are you going?"), h.blocks.values.toList())
+        drive(s, 700, 2500) { t -> if (t <= 1500) 255f else 0f }
+        val final = h.ocr.last()
+        assertEquals(true, final.second)
+        s.onOcrDone(final.first, listOf(listOf(para("Where are you going? The station is closed today."))))
+        assertEquals(listOf("The station is closed today."), sources(h.translate.last()))
+        translate(s, h.translate.last())
+        assertEquals(listOf("VI Where are you going? VI The station is closed today."), h.blocks.values.toList())
+    }
+
+    @Test
+    fun `unchanged block is not translated again and gone block is removed`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello."))))
+        translate(s, h.translate.last())
+        s.debugExpectOcr(99, final = true)
+        s.onOcrDone(99, listOf(listOf(para("Hello."))))
         assertEquals(1, h.translate.size)
+        s.debugExpectOcr(100, final = true)
+        s.onOcrDone(100, listOf(emptyList()))
+        assertTrue(h.blocks.isEmpty())
+    }
+
+    @Test
+    fun `superseded translation is requested again`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello."))))
+        val lost = h.translate.last().first
+        s.onJobFailed(lost)
+        s.debugExpectOcr(99, final = true)
+        s.onOcrDone(99, listOf(listOf(para("Hello."))))
+        assertEquals(2, h.translate.size)
+        assertEquals(listOf("Hello."), sources(h.translate.last()))
+    }
+
+    @Test
+    fun `screen scope rate limits ocr`() {
+        val h = Host()
+        drive(session(h, scope = "screen"), 0, 4000) { 255f }
+        assertTrue(h.ocr.size in 1..5, "ocr ${h.ocr.size}")
     }
 
     @Test
     fun `stop ignores late results`() {
         val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
-        drive(s, { t -> if (t == 100) 255f else 0f }, 800)
-        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hi."))), 900)
-        val trId = h.translate.single().first
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hi."))))
+        val job = h.translate.last()
         s.stop()
-        s.onPartial(trId, listOf(listOf(seg("Hi.", "Chào."))))
-        assertEquals(null, h.shown)
-    }
-
-    @Test
-    fun `stale ocr result is ignored`() {
-        val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
-        drive(s, { t -> if (t == 100) 255f else 0f }, 800)
-        s.onOcrDone(12345, listOf(listOf(para("Hi."))), 900)
-        assertEquals(0, h.translate.size)
-    }
-
-    @Test
-    fun `area mode rate limits and translates only new blocks`() {
-        val h = Host()
-        val s = LiveSession(LiveParams(), area = true, host = h)
-        drive(s, { 255f }, 4000)
-        assertTrue(h.ocr.size in 1..3, "ocr ${h.ocr.size}")
-        val a = para("Bubble one.")
-        s.onOcrDone(h.ocr.last(), listOf(listOf(a)), 4100)
-        val (trId, paras) = h.translate.single()
-        assertEquals(listOf(listOf(a)), paras)
-        s.onPartial(trId, listOf(listOf(seg("Bubble one.", "Bong bóng một."))))
-        assertEquals(listOf("Bong bóng một."), h.blocks.values.map { it.translation })
-        s.debugSetOcrJob(500)
-        s.onOcrDone(500, listOf(listOf(a)), 5200)
-        assertEquals(1, h.translate.size)
-        s.debugSetOcrJob(501)
-        s.onOcrDone(501, listOf(emptyList()), 6300)  // bubble gone
+        translate(s, job)
         assertTrue(h.blocks.isEmpty())
     }
 
     @Test
-    fun `superseded translation is retried on the next identical ocr`() {
+    fun `name line is shown untranslated`() {
         val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
+        val s = session(h)
         s.onFrame(0, 0f)
-        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hello."))), 100)
-        val first = h.translate.single().first
-        s.onJobFailed(first)
-        s.debugSetOcrJob(77)
-        s.onOcrDone(77, listOf(listOf(para("Hello."))), 900)
-        assertEquals(2, h.translate.size)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(Paragraph(Kind.NAME, "Druvis III", emptyList(), 0f, 0f, 100f, 20f), para("Hello.", 30f))))
+        assertEquals(listOf("Hello."), sources(h.translate.last()))
+        assertTrue("Druvis III" in h.blocks.values)
     }
 
     @Test
-    fun `area failed translation makes its blocks new again`() {
+    fun `own redraw is ignored only when overlays are captured`() {
         val h = Host()
-        val s = LiveSession(LiveParams(), area = true, host = h)
+        val s = session(h)
+        s.overlaysInCapture = true
         s.onFrame(0, 0f)
-        val a = para("Bubble one.")
-        s.onOcrDone(h.ocr.last(), listOf(listOf(a)), 100)
-        s.onJobFailed(h.translate.single().first)
-        s.debugSetOcrJob(78)
-        s.onOcrDone(78, listOf(listOf(a)), 1200)
-        assertEquals(2, h.translate.size)
-    }
-
-    @Test
-    fun `dialogue redraw is not seen as a change`() {
-        val h = Host()
-        val s = LiveSession(LiveParams(), area = false, host = h)
-        s.onFrame(0, 0f)
-        s.onOcrDone(h.ocr.last(), listOf(listOf(para("Hi."))), 50)
-        s.onPartial(h.translate.single().first, listOf(listOf(seg("Hi.", "Chào."))))
-        s.onFrame(100, 255f)  // the frame showing our own card
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hi."))))
+        translate(s, h.translate.last())
+        s.onFrame(100, 255f)  // the frame showing our own block
         assertEquals(false, s.machine.changing)
+        val h2 = Host()
+        val s2 = session(h2)  // single-app capture: our overlay is not in the frames
+        s2.onFrame(0, 0f)
+        s2.onOcrDone(h2.ocr.last().first, listOf(listOf(para("Hi."))))
+        translate(s2, h2.translate.last())
+        s2.onFrame(100, 255f)
+        assertEquals(true, s2.machine.changing)
     }
 }

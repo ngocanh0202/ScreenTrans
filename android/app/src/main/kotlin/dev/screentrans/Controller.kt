@@ -67,7 +67,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private var regionsPx: List<IntArray> = emptyList()
     private var fullJob = -1
     private val maybeBlocked = HashSet<Int>()  // jobs whose frame looked black (FLAG_SECURE?)
-    private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ }) { hidden ->
+    private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ },
+        notify = { msg -> showCard(null, msg) }) { hidden ->
         bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
     }
 
@@ -115,7 +116,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             "Toàn màn hình" to ::translateFullScreen,
             "Chọn / sửa vùng" to { chooseRegion(null) },
             (if (live.running) "Tắt Live" else "Bật Live") to ::toggleLive,
-            (if (prefs.liveMode == "area") "Live: Vùng lớn" else "Live: Khung thoại") to ::switchLiveMode,
+            (if (prefs.liveScope == "screen") "Live dịch: Toàn màn hình" else "Live dịch: Vùng") to ::switchLiveScope,
             "Kiểm tra chụp màn hình" to ::probeCapture,
         ), onClose = ::closeMenu)
         val bp = bubble.params ?: return
@@ -218,13 +219,18 @@ class Controller(private val context: Context, projection: MediaProjection) {
         if (live.running) live.stop() else startLive()
     }
 
-    private fun switchLiveMode() {
-        prefs.liveMode = if (prefs.liveMode == "area") "dialogue" else "area"
+    private fun switchLiveScope() {
+        prefs.liveScope = if (prefs.liveScope == "screen") "region" else "screen"
         if (live.running) startLive()
     }
 
     private fun startLive() {
         closeResults()
+        capturer.resize()
+        if (prefs.liveScope == "screen") {
+            live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen")
+            return
+        }
         val px = prefs.regions.filter { it.isUsable(capturer.width, capturer.height) }.map { rel ->
             val r = rel.toPx(capturer.width, capturer.height)
             Frames.clampRect(capturer.width, capturer.height, r[0], r[1], r[2], r[3])
@@ -233,7 +239,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             chooseRegion(::startLive)
             return
         }
-        live.start(px, area = prefs.liveMode == "area")
+        live.start(px, "region")
     }
 
     // ---- capture probe (debug) ------------------------------------------------------------------

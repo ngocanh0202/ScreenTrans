@@ -8,38 +8,21 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.text.StaticLayout
 import android.text.TextPaint
-import android.util.TypedValue
 import android.view.View
-import android.widget.TextView
 import dev.screentrans.core.Layout
 import dev.screentrans.ui.dp
 import screentrans.text.Kind
 import screentrans.text.Segment
 import android.text.Layout as TextLayout
 
-/** Dialogue Live: one translation card per region, placed outside the region (FLAG_NOT_TOUCHABLE). */
-@SuppressLint("ViewConstructor")
-class LiveCard(context: Context) : TextView(context) {
-    init {
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        setBackgroundColor(Color.argb(217, 20, 20, 24))
-        val p = context.dp(10)
-        setPadding(p, p / 2, p, p / 2)
-    }
-
-    fun show(segments: List<Segment>) {
-        text = segments.joinToString("\n") { if (it.kind == Kind.NAME) "[${it.source}]" else it.translation ?: "" }
-    }
-}
-
-/** Large-area Live: the translation of each tracked block drawn over it (screen coordinates). */
+/** Live: the translation of each tracked text block drawn over it (screen coordinates, click-through). */
 @SuppressLint("ViewConstructor")
 class LiveAreaLayer(context: Context) : View(context) {
     private class Block(val segment: Segment, val rect: RectF, val layout: StaticLayout?)
 
     private val blocks = LinkedHashMap<String, Block>()
-    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(217, 20, 20, 24) }
+    // click-through overlays: Android caps their opacity at 0.8
+    private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(204, 20, 20, 24) }
     private val namePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(255, 220, 140); textSize = Layout.MIN_TEXT_PX; isFakeBoldText = true
     }
@@ -68,6 +51,10 @@ class LiveAreaLayer(context: Context) : View(context) {
         }
         invalidate()
     }
+
+    /** [box] = l, t, r, b in screen pixels. */
+    fun set(key: String, text: String, box: FloatArray, kind: Kind) =
+        set(key, Segment(kind, text, if (kind == Kind.NAME) null else text, box[0], box[1], box[2], box[3]))
 
     fun remove(key: String) {
         if (blocks.remove(key) != null) invalidate()

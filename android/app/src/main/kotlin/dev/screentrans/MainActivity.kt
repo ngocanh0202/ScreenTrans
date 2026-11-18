@@ -70,7 +70,8 @@ class MainActivity : Activity() {
         status.text = when (s) {
             Step.OVERLAY -> "1/3 — Cho phép ScreenTrans hiện trên ứng dụng khác (để vẽ nút nổi và bản dịch)."
             Step.NOTIFICATIONS -> "2/3 — Cho phép thông báo (để hiện nút Dừng khi đang chạy)."
-            Step.CAPTURE -> "3/3 — Bấm Bắt đầu rồi chọn \"Toàn bộ màn hình\" khi Android hỏi quyền ghi màn hình."
+            Step.CAPTURE -> "3/3 — Bấm Bắt đầu. Khi Android hỏi quyền ghi màn hình, chọn \"Một ứng dụng\" rồi chọn " +
+                "game (bản dịch Live đè lên chữ mà không nháy). Chọn \"Toàn bộ màn hình\" cũng được, nhưng Live sẽ nháy nhẹ."
             Step.RUNNING -> "Đang chạy. Mở game, chạm nút nổi để dịch."
         }
         action.text = when (s) {
