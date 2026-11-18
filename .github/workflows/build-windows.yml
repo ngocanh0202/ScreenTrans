@@ -2,7 +2,7 @@ name: build-windows
 
 on:
   push:
-    branches: [main]
+    branches: [main, "phase-*"]
     paths:
       - "windows/**"
       - "shared/**"
@@ -44,3 +44,21 @@ jobs:
           name: ScreenTrans-windows
           path: ScreenTrans-windows.zip
           retention-days: 30
+
+  nightly:
+    # Rolling pre-release: anyone can download it without logging in (artifacts need a login).
+    needs: exe
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: nightly-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ScreenTrans-windows
+      - name: Publish to the nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-nightly.sh ScreenTrans-windows.zip
