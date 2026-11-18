@@ -20,8 +20,8 @@ def test_fixture(path):
     tracker = BlockTracker(**data["params"])
     for step in data["steps"]:
         diff = tracker.update([para(p) for p in step["paragraphs"]])
-        got = {k: [b.text for b in getattr(diff, k)] for k in ("added", "kept", "removed")}
-        assert got == step["expected"]
+        got = {k: [b.text for b in getattr(diff, k)] for k in ("added", "kept", "grown", "removed")}
+        assert got == {"grown": [], **step["expected"]}
 
 
 def test_fixture_set_present():

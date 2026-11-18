@@ -21,6 +21,7 @@ class LiveFixturesTest {
             o["interval_ms"]?.asInt ?: d.intervalMs, o["active_interval_ms"]?.asInt ?: d.activeIntervalMs,
             o["settle_ms"]?.asInt ?: d.settleMs, o["max_wait_ms"]?.asInt ?: d.maxWaitMs,
             o["change_threshold"]?.asFloat ?: d.changeThreshold,
+            o["partial_interval_ms"]?.asInt ?: d.partialIntervalMs,
         )
     }
 
@@ -33,7 +34,11 @@ class LiveFixturesTest {
             for (e in root["events"].asJsonArray.map { it.asJsonObject }) {
                 val t = e["t"].asInt
                 when {
-                    e.has("diff") -> if (m.onFrame(t, e["diff"].asFloat) == LiveAction.OCR) got.add(t to "ocr")
+                    e.has("diff") -> when (m.onFrame(t, e["diff"].asFloat)) {
+                        LiveAction.OCR -> got.add(t to "ocr")
+                        LiveAction.PARTIAL -> got.add(t to "partial")
+                        LiveAction.WAIT -> Unit
+                    }
                     e.has("ocr_text") -> got.add(t to m.onText(t, e["ocr_text"].asString))
                     e.has("overlay_changed") -> m.onOverlayChanged()
                 }
@@ -60,6 +65,20 @@ class LiveFixturesTest {
                 assertEquals(texts("added"), diff.added.map { it.text }, "added")
                 assertEquals(texts("kept"), diff.kept.map { it.text }, "kept")
                 assertEquals(texts("removed"), diff.removed.map { it.text }, "removed")
+                assertEquals(if (exp.has("grown")) texts("grown") else emptyList(), diff.grown.map { it.text }, "grown")
+            }
+        }
+    }
+
+    @TestFactory
+    fun sentences(): List<DynamicTest> = files("live_sentences").map { file ->
+        DynamicTest.dynamicTest(file.nameWithoutExtension) {
+            val root = JsonParser.parseString(file.readText()).asJsonObject
+            var previous: List<String>? = null
+            for (step in root["steps"].asJsonArray.map { it.asJsonObject }) {
+                val sentences = step["sentences"].asJsonArray.map { it.asString }
+                assertEquals(step["done"].asInt, SentenceGate.done(sentences, previous, step["final"].asBoolean), sentences.toString())
+                previous = sentences
             }
         }
     }

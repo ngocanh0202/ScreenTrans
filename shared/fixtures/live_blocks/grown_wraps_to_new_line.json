@@ -1,0 +1,51 @@
+{
+ "name": "text that wraps to a new line (box grows down, centre moves) is still the same block",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going? The station",
+     "box": [
+      0,
+      0,
+      400,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going? The station"
+    ],
+    "kept": [],
+    "grown": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going? The station is closed today.",
+     "box": [
+      0,
+      0,
+      400,
+      62
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [],
+    "grown": [
+     "Where are you going? The station is closed today."
+    ],
+    "removed": []
+   }
+  }
+ ]
+}

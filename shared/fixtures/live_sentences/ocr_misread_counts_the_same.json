@@ -1,0 +1,21 @@
+{
+ "name": "a misread done sentence still counts as done (the caller re-translates changed text)",
+ "steps": [
+  {
+   "sentences": [
+    "Helo there.",
+    "And"
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Hello there.",
+    "And"
+   ],
+   "final": false,
+   "done": 1
+  }
+ ]
+}

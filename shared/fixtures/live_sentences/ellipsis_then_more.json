@@ -1,0 +1,36 @@
+{
+ "name": "an ellipsis ends a sentence; text after it starts a new one",
+ "steps": [
+  {
+   "sentences": [
+    "Well..."
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Well...",
+    "I"
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Well...",
+    "I see."
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Well...",
+    "I see."
+   ],
+   "final": false,
+   "done": 2
+  }
+ ]
+}

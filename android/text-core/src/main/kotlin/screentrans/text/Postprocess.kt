@@ -19,6 +19,8 @@ data class Paragraph(
     val top: Float,
     val right: Float,
     val bottom: Float,
+    /** Median height of the OCR lines (Live: the translation uses the same font size). */
+    val lineHeight: Float = 0f,
 )
 
 object Postprocess {
@@ -43,6 +45,11 @@ object Postprocess {
         val right get() = lines.maxOf { it.right }
         val top get() = lines.minOf { it.top }
         val bottom get() = lines.maxOf { it.bottom }
+        val lineHeight: Float get() {
+            val hs = lines.map { it.height }.sorted()
+            val n = hs.size
+            return if (n == 0) 0f else if (n % 2 == 1) hs[n / 2] else (hs[n / 2 - 1] + hs[n / 2]) / 2
+        }
     }
 
     private fun tokens(s: String): List<String> = s.trim().split(WS).filter { it.isNotEmpty() }
@@ -141,8 +148,8 @@ object Postprocess {
 
         return groups.map { g ->
             val text = join(g.lines)
-            if (isName(g, text, groups, h)) Paragraph(Kind.NAME, nameText(text), emptyList(), g.left, g.top, g.right, g.bottom)
-            else Paragraph(Kind.TEXT, text, splitSentences(text), g.left, g.top, g.right, g.bottom)
+            if (isName(g, text, groups, h)) Paragraph(Kind.NAME, nameText(text), emptyList(), g.left, g.top, g.right, g.bottom, g.lineHeight)
+            else Paragraph(Kind.TEXT, text, splitSentences(text), g.left, g.top, g.right, g.bottom, g.lineHeight)
         }
     }
 }

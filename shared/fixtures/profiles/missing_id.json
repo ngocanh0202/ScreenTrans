@@ -1,0 +1,7 @@
+{
+ "name": "a profile without an id is rejected",
+ "input": {
+  "name": "x"
+ },
+ "expected": null
+}

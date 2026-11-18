@@ -11,9 +11,11 @@ data class LiveParams(
     val settleMs: Int = 250,
     val maxWaitMs: Int = 2000,
     val changeThreshold: Float = 5f,
+    /** > 0: OCR while the text is still typing (Live realtime sentence by sentence). */
+    val partialIntervalMs: Int = 0,
 )
 
-enum class LiveAction { WAIT, OCR }
+enum class LiveAction { WAIT, OCR, PARTIAL }
 
 class LiveMachine(private val p: LiveParams = LiveParams()) {
     var changing = false
@@ -24,6 +26,10 @@ class LiveMachine(private val p: LiveParams = LiveParams()) {
     private var lastOcr = ""
     private var lastTranslated = ""
     private var suppressNext = false
+    private var lastPartial = 0
+
+    /** The last OCR came from the text standing still (not from max_wait): every sentence is done. */
+    val final: Boolean get() = !byMaxWait
 
     fun nextDelayMs(): Int = if (changing) p.activeIntervalMs else p.intervalMs
 
@@ -43,6 +49,7 @@ class LiveMachine(private val p: LiveParams = LiveParams()) {
                 changing = true
                 changedAt = nowMs
                 lastChange = nowMs
+                lastPartial = nowMs
             }
             return LiveAction.WAIT
         }
@@ -55,12 +62,24 @@ class LiveMachine(private val p: LiveParams = LiveParams()) {
             changing = false; byMaxWait = true
             return LiveAction.OCR
         }
+        if (p.partialIntervalMs > 0 && nowMs - lastPartial >= p.partialIntervalMs) {
+            lastPartial = nowMs
+            return LiveAction.PARTIAL
+        }
         return LiveAction.WAIT
     }
 
     /** The last translation never reached the screen (superseded / failed): allow it again. */
     fun forgetTranslation() {
         lastTranslated = ""
+    }
+
+    /** After an OCR that was not final (max_wait): keep watching, so a final OCR follows once it is still. */
+    fun rearm(nowMs: Int) {
+        changing = true
+        changedAt = nowMs
+        lastChange = nowMs
+        lastPartial = nowMs
     }
 
     /** "translate", "skip" or "wait". */
@@ -92,7 +111,8 @@ data class Block(val key: String, val text: String, val paragraph: Paragraph) {
     val cy: Float get() = (paragraph.top + paragraph.bottom) / 2
 }
 
-data class BlockDiff(val added: List<Block>, val kept: List<Block>, val removed: List<Block>)
+/** [grown]: same block with its text still typing (longer, same top-left). */
+data class BlockDiff(val added: List<Block>, val kept: List<Block>, val removed: List<Block>, val grown: List<Block> = emptyList())
 
 class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 24f) {
     var shown: List<Block> = emptyList()
@@ -104,28 +124,43 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
         val free = shown.toMutableList()
         val added = mutableListOf<Block>()
         val kept = mutableListOf<Block>()
+        val grown = mutableListOf<Block>()
         val now = mutableListOf<Block>()
         for (p in paras) {
             val text = normalizeText(p.text)
             val cx = (p.left + p.right) / 2
             val cy = (p.top + p.bottom) / 2
             val match = free.firstOrNull { it.text == text && hypot(it.cx - cx, it.cy - cy) <= nearPx }
+            val base = if (match != null) null else free.firstOrNull {
+                grows(it.text, text) && hypot(it.paragraph.left - p.left, it.paragraph.top - p.top) <= nearPx
+            }
             val block = if (match != null) {
                 free.remove(match)
                 Block(match.key, text, p).also { kept.add(it) }
+            } else if (base != null) {
+                free.remove(base)
+                Block(base.key, text, p).also { grown.add(it) }
             } else {
                 Block("b${nextId++}", text, p).also { added.add(it) }
             }
             now.add(block)
         }
         shown = now
-        return BlockDiff(added, kept, free)
+        return BlockDiff(added, kept, free, grown)
     }
 
     /** Blocks whose translation never arrived: they count as new on the next update. */
     fun forget(keys: Collection<String>) {
         shown = shown.filter { it.key !in keys }
     }
+}
+
+/** [new] continues [old]: same text up to old's last word (that word may have been half drawn / misread). */
+internal fun grows(old: String, new: String): Boolean {
+    if (new == old) return false
+    if (new.startsWith(old)) return true
+    val head = if (' ' in old) old.substringBeforeLast(' ') else ""
+    return head.isNotEmpty() && new.startsWith(head + " ") && new.length >= old.length - 3
 }
 
 /** At most one OCR per minIntervalMs (large-area Live). */

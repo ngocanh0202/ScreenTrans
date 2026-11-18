@@ -115,3 +115,60 @@ def test_iter_segments_uses_cache():
     list(p.iter_segments(paras))
     list(p.iter_segments(paras))
     assert tr.calls == [["Hi."]]
+
+
+# ---- 4b: user overrides, versioned cache key, corrections log ---------------------------------------
+def _p(tr, overrides=None, glossary=None, cache=None, **kw):
+    from app.cache import TranslationCache as C
+
+    return Pipeline(FakeOcr([]), tr, glossary or Glossary([]), cache or C(100, None), overrides=overrides, **kw)
+
+
+def test_override_wins_over_cache_and_model_whatever_the_whitespace():
+    tr = FakeTranslator(lambda s: "VI " + s)
+    cache = TranslationCache(100, None)
+    p = _p(tr, overrides={"Hello there.": "Chào cậu."}, cache=cache)
+    cache.put(p.cache_ns, "Hello  there.", "cached")
+    assert p._translate_sentences(["Hello  there."]) == {"Hello  there.": "Chào cậu."}
+    assert tr.calls == []
+
+
+def test_correct_is_used_next_time_and_logged(tmp_path):
+    import json
+
+    from app.datalog import CorrectionLogger
+
+    tr = FakeTranslator(lambda s: "VI " + s)
+    p = _p(tr, corrections=CorrectionLogger(tmp_path / "corrections.jsonl", True), game="game.exe")
+    assert p._translate_sentences(["Run."]) == {"Run.": "VI Run."}
+    p.correct("Run.", "VI Run.", "Chạy đi!")
+    assert p._translate_sentences(["Run."]) == {"Run.": "Chạy đi!"}
+    assert p.overrides == {"Run.": "Chạy đi!"}
+    row = json.loads((tmp_path / "corrections.jsonl").read_text(encoding="utf-8"))
+    assert set(row) == {"ts", "game", "model", "source", "machine", "corrected"}
+    assert (row["game"], row["model"], row["corrected"]) == ("game.exe", "fake", "Chạy đi!")
+
+
+def test_corrections_log_can_be_turned_off(tmp_path):
+    from app.datalog import CorrectionLogger
+
+    p = _p(FakeTranslator(str.upper), corrections=CorrectionLogger(tmp_path / "c.jsonl", False))
+    p.correct("a.", "A.", "b.")
+    assert not (tmp_path / "c.jsonl").exists() and p.overrides == {"a.": "b."}
+
+
+def test_cache_namespace_changes_with_glossary_and_model_version_not_with_auto_keep():
+    g = Glossary([])
+    p = _p(FakeTranslator(str.upper), glossary=g, model_version="2")
+    ns = p.cache_ns
+    assert ns.startswith("fake@2#")
+    g.add_keep("Vertin")  # session tracker term: same namespace
+    assert p.cache_ns == ns
+    g.add_entry("Arcanist", None)  # user term: old cached translations no longer apply
+    assert p.cache_ns != ns
+
+
+def test_set_game_switches_glossary_and_overrides():
+    p = _p(FakeTranslator(lambda s: "VI " + s), overrides={"A.": "a"})
+    p.set_game("other.exe", Glossary([]), {"B.": "b"})
+    assert p.game == "other.exe" and p._translate_sentences(["A.", "B."]) == {"A.": "VI A.", "B.": "b"}

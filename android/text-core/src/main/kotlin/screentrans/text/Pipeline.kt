@@ -68,10 +68,35 @@ data class Segment(
 class Pipeline(
     private val translator: SentenceTranslator,
     private val modelId: String,
-    private val glossary: Glossary,
+    private var glossary: Glossary,
     private val cache: TranslationCache,
     private val tracker: ProperNounTracker? = null,
+    private val modelVersion: String = "0",
+    overrides: Map<String, String> = emptyMap(),
 ) {
+    private val overrides = HashMap<String, String>().apply { overrides.forEach { (k, v) -> put(normalizeText(k), v) } }
+
+    /** Cache key prefix: a new model version or glossary edit must not reuse old translations. */
+    val cacheNs: String get() = "$modelId@$modelVersion#${glossary.digest()}"
+
+    /** Switch to another game's glossary and the user's translations for it. */
+    fun setGame(glossary: Glossary, overrides: Map<String, String>) {
+        this.glossary = glossary
+        this.overrides.clear()
+        overrides.forEach { (k, v) -> this.overrides[normalizeText(k)] = v }
+    }
+
+    /** The user fixed a translation: use it from now on, before cache and model. */
+    fun correct(source: String, corrected: String) {
+        overrides[normalizeText(source)] = corrected
+    }
+
+    /** A glossary term the user added (target null/blank = keep the source unchanged). */
+    fun addTerm(source: String, target: String?) = glossary.addEntry(source, target)
+
+    /** The user's translations (to save into the game profile). */
+    fun overrides(): Map<String, String> = HashMap(overrides)
+
     private fun observe(sentences: List<String>) {
         val t = tracker ?: return
         for (s in sentences) for (term in t.observe(s)) glossary.addKeep(term)
@@ -80,8 +105,14 @@ class Pipeline(
     private fun translateSentences(sentences: List<String>): Map<String, String> {
         val done = HashMap<String, String>()
         val todo = mutableListOf<String>()
+        val ns = cacheNs
         for (s in sentences.distinct()) {
-            val hit = cache.get(modelId, s)
+            val fixed = overrides[normalizeText(s)]
+            if (fixed != null) {  // the user's own translation wins over cache and model
+                done[s] = fixed
+                continue
+            }
+            val hit = cache.get(ns, s)
             if (hit != null) done[s] = hit else todo.add(s)
         }
         if (todo.isEmpty()) return done
@@ -96,7 +127,7 @@ class Pipeline(
         if (retry.isNotEmpty()) {  // the model damaged a placeholder: translate without glossary protection
             translator.translate(retry).forEachIndexed { i, out -> done[retry[i]] = out }
         }
-        for (s in todo) if (s !in retry) cache.put(modelId, s, done.getValue(s))  // never cache the degraded retry
+        for (s in todo) if (s !in retry) cache.put(ns, s, done.getValue(s))  // never cache the degraded retry
         return done
     }
 

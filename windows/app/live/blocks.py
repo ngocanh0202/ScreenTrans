@@ -1,13 +1,23 @@
 """Large-area Live: which text blocks are new, still shown, or gone (rules: shared/fixtures/live_blocks)."""
 import itertools
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.text.postprocess import Paragraph
 
 
 def _norm(text: str) -> str:
     return " ".join(text.split())
+
+
+def _grows(old: str, new: str) -> bool:
+    """`new` continues `old`: same text up to old's last word (that word may have been half drawn / misread)."""
+    if new == old:
+        return False
+    if new.startswith(old):
+        return True
+    head = old.rsplit(" ", 1)[0] if " " in old else ""
+    return bool(head) and new.startswith(head + " ") and len(new) >= len(old) - 3
 
 
 @dataclass
@@ -28,6 +38,7 @@ class BlockDiff:
     added: list[Block]
     kept: list[Block]
     removed: list[Block]
+    grown: list[Block] = field(default_factory=list)  # same block, text still typing (longer, same top-left)
 
 
 class BlockTracker:
@@ -40,7 +51,7 @@ class BlockTracker:
     def update(self, paragraphs: list[Paragraph]) -> BlockDiff:
         paras = sorted(paragraphs, key=lambda p: (p.top, p.left))[: self.max_blocks]
         free = list(self.shown)
-        added, kept, now = [], [], []
+        added, kept, grown, now = [], [], [], []
         for p in paras:
             box = (p.left, p.top, p.right, p.bottom)
             text = _norm(p.text)
@@ -51,12 +62,17 @@ class BlockTracker:
                 free.remove(match)
                 block = Block(match.key, text, box, p)
                 kept.append(block)
+            elif (base := next((b for b in free if _grows(_norm(b.text), text)
+                                and math.dist(b.box[:2], box[:2]) <= self.near_px), None)) is not None:
+                free.remove(base)
+                block = Block(base.key, text, box, p)
+                grown.append(block)
             else:
                 block = Block(f"b{next(self._ids)}", text, box, p)
                 added.append(block)
             now.append(block)
         self.shown = now
-        return BlockDiff(added, kept, free)
+        return BlockDiff(added, kept, free, grown)
 
     def forget(self, keys) -> None:
         """Blocks whose translation never arrived: they count as new on the next update."""

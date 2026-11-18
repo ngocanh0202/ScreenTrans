@@ -18,20 +18,24 @@ from app.config import Config, load_config
 from app.glossary import COMMON_GLOSSARY, Glossary, games_dir
 from app.gui.fullscreen import FullscreenOverlay
 from app.gui.hotkeys import HotkeyManager
-from app.gui.live_overlay import AreaOverlay, LiveOverlay
+from app.gui.live_overlay import AreaOverlay
 from app.gui.overlay import ResultOverlay, physical_to_logical
 from app.gui.selector import RegionSelector
 from app.gui.win32 import cursor_pos_physical, monitor_rect_at
 from app.gui.worker import SUPERSEDED, Job, start_worker
 from app.live.controller import LiveController
 from app.live.machine import LiveParams
-from app.live.regions import load_live_mode, load_live_regions, save_live_mode, save_live_regions
+from app.cache import normalize
+from app.gui.correct_dialog import CorrectDialog
+from app.gui.foreground import current_game, game_window
+from app.profiles import DEFAULT_ID, Profile, ProfileStore, _rel, to_rel
 from app.paths import default_config_path
 
 MODELS = ["vinai-en2vi", "opus-mt-en-vi"]
 HOTKEYS = [("translate_region", "translate_region"), ("translate_fullscreen", "translate_fullscreen"),
-           ("toggle_live", "toggle_live")]
-LIVE_MODES = [("dialogue", "Khung thoại"), ("area", "Vùng lớn")]
+           ("toggle_live", "toggle_live"), ("edit_last", "edit_last")]
+LIVE_SCOPES = [("screen", "Toàn màn hình"), ("region", "Vùng")]
+LIVE_STYLES = [("match", "Giống game"), ("classic", "Dễ đọc (chữ trắng nền tối)")]
 TRANSLATING_DELAY_MS = 300
 CAPTURE_DELAY_MS = 80  # let the selector shade disappear from the screen before capturing
 QUIT_WAIT_MS = 3000
@@ -82,6 +86,9 @@ class TrayApp(QObject):
         monitor_at: Callable[[int, int], tuple[int, int, int, int]] = monitor_rect_at,
         cursor: Callable[[], tuple[int, int]] = cursor_pos_physical,
         capture_delay_ms: int = CAPTURE_DELAY_MS,
+        foreground: Callable = current_game,
+        window_of: Callable = game_window,
+        timers: bool = True,
     ):
         super().__init__()
         self.config = config
@@ -107,10 +114,26 @@ class TrayApp(QObject):
         self._fullscreen_job: int | None = None
         self._fullscreen_origin = (0, 0)
         self.live: LiveController | None = None
-        self.live_mode = load_live_mode(self._data_dir())
         self._live_timer_enabled = True
         self._selecting_live = False
+        self._foreground = foreground
+        self._window_of = window_of
+        self.profiles = ProfileStore(self._data_dir() / "profiles")
+        try:
+            self.profiles.migrate_phase4a(self._data_dir(), self._monitor_at(0, 0))
+        except OSError:
+            pass
+        self._game = None            # last game window seen in the foreground (GameWindow)
+        self._live_game: str | None = None
+        self._worker_game: str | None = None  # profile whose glossary/overrides the worker uses
+        self._select_ctx = None
+        self._last_segments: list = []   # last one-shot result, for "edit the last translation"
+        self._dialog_factory = CorrectDialog
         self._build_tray()
+        if timers:
+            self._game_timer = QTimer(self)
+            self._game_timer.timeout.connect(self._check_foreground)
+            self._game_timer.start(1000)
         self.hotkeys.triggered.connect(self._on_hotkey)
         self.selector.selected.connect(self._on_region_selected)
 
@@ -124,17 +147,32 @@ class TrayApp(QObject):
         menu.addAction(f"Toàn màn hình ({display_combo(hk.translate_fullscreen)})", self.translate_fullscreen)
         self.live_action = menu.addAction(f"Live ({display_combo(hk.toggle_live)})", self.toggle_live)
         self.live_action.setCheckable(True)
-        modes = menu.addMenu("Chế độ Live")
-        mode_group = QActionGroup(menu)
-        self.live_mode_actions: dict[str, QAction] = {}
-        for mode, label in LIVE_MODES:
-            action = modes.addAction(label)
+        scopes = menu.addMenu("Live dịch")
+        scope_group = QActionGroup(menu)
+        self.live_scope_actions: dict[str, QAction] = {}
+        for scope, label in LIVE_SCOPES:
+            action = scopes.addAction(label)
             action.setCheckable(True)
-            action.setChecked(mode == self.live_mode)
-            action.triggered.connect(lambda checked=False, m=mode: self.set_live_mode(m))
-            mode_group.addAction(action)
-            self.live_mode_actions[mode] = action
-        menu.addAction("Chọn lại vùng Live", self.select_live_region)
+            action.triggered.connect(lambda checked=False, sc=scope: self.set_live_scope(sc))
+            scope_group.addAction(action)
+            self.live_scope_actions[scope] = action
+        styles = menu.addMenu("Kiểu bản dịch")
+        style_group = QActionGroup(menu)
+        self.live_style_actions: dict[str, QAction] = {}
+        for style, label in LIVE_STYLES:
+            action = styles.addAction(label)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, st=style: self.set_live_style(st))
+            style_group.addAction(action)
+            self.live_style_actions[style] = action
+        regions = menu.addMenu("Vùng Live")
+        regions.addAction("Chọn vùng Live…", self.select_live_region)
+        regions.addAction("Thêm vùng Live", self.add_live_region)
+        regions.addAction("Thêm vùng bỏ qua", self.add_ignore_region)
+        regions.addAction("Xóa vùng Live", self.clear_live_regions)
+        menu.addAction(f"Sửa bản dịch gần nhất ({display_combo(hk.edit_last)})", self.edit_last)
+        self.game_action = menu.addAction("Game: —")
+        self.game_action.setEnabled(False)
         menu.addSeparator()
         self.status_action = menu.addAction(LOADING)
         self.status_action.setEnabled(False)
@@ -185,6 +223,7 @@ class TrayApp(QObject):
         self.restart_worker()
 
     def restart_worker(self) -> None:
+        self._worker_game = None  # a new pipeline starts with the default glossary
         if self._thread is not None:
             self._thread.quit()
             # keep the old worker alive until its thread ends; its signals are ignored (see _current)
@@ -199,6 +238,8 @@ class TrayApp(QObject):
             return factory.build_pipeline(cfg, None, glossaries, progress)
 
         self._thread, self.worker = self._worker_factory(pipeline_factory, connect=self._connect)
+        if self.live is not None and self.live.running:
+            self.start_live()  # jobs of the retired worker never come back: start over on the new one
 
     def _connect(self, worker) -> None:
         # Connected before the worker thread starts, to bound methods of this UI-thread object.
@@ -269,6 +310,7 @@ class TrayApp(QObject):
             return
         if job_id == self._fullscreen_job and self.fullscreen_overlay is not None:
             self.fullscreen_overlay.add_segment(segment, self._fullscreen_origin)
+            self._last_segments.append(segment)
 
     @Slot(int, object)
     def _on_live_ocr_done(self, job_id: int, per_region) -> None:
@@ -284,11 +326,12 @@ class TrayApp(QObject):
     def _on_job_done(self, job_id: int, segments) -> None:
         if not self._current():
             return
-        if self.live is not None and job_id == self.live.translate_job:
+        if self.live is not None and self.live.owns(job_id):
             self.live.on_job_done(job_id, segments)
             return
         if job_id == self._region_job:
             self._region_job = None
+            self._last_segments = list(segments)
             self.region_overlay.show_segments(segments, self.config.overlay.show_source)
             self._present_region()
         elif job_id == self._fullscreen_job and self.fullscreen_overlay is not None:
@@ -299,7 +342,7 @@ class TrayApp(QObject):
     def _on_job_failed(self, job_id: int, why: str) -> None:
         if not self._current():
             return
-        if self.live is not None and job_id in (self.live.ocr_job, self.live.translate_job):
+        if self.live is not None and self.live.owns(job_id):
             self.live.on_job_failed(job_id, why)
             return
         if why == SUPERSEDED:  # a newer job replaced it: drop its pending indicator
@@ -323,12 +366,15 @@ class TrayApp(QObject):
     # ---- hotkeys --------------------------------------------------------------------------------
     @Slot(str)
     def _on_hotkey(self, name: str) -> None:
+        self._remember_game()  # the game is in the foreground when its hotkey is pressed
         if name == "translate_region":
             self.translate_region()
         elif name == "translate_fullscreen":
             self.translate_fullscreen()
         elif name == "toggle_live":
             self.toggle_live()
+        elif name == "edit_last":
+            self.edit_last()
 
     def _close_overlays(self) -> None:
         """Results from the previous press must not grab input or end up in the next capture."""
@@ -346,17 +392,18 @@ class TrayApp(QObject):
     def _on_region_selected(self, rect) -> None:
         if self._selecting_live:
             self._selecting_live = False
-            save_live_regions(self._data_dir(), [tuple(rect)])
-            self.start_live()
+            self._on_live_region_selected(tuple(rect))
             return
         QTimer.singleShot(self._capture_delay_ms, lambda r=tuple(rect): self._run_region(r))
 
     def _run_region(self, rect: tuple[int, int, int, int]) -> None:
         image = self._capture(*rect)
+        self._send_set_game(self._profile())  # the game's glossary and the user's corrections
         job = Job(next(self._ids), "region", image, (rect[0], rect[1]))
         self._region_job, self._region_rect = job.id, rect
         if self.region_overlay is None:
             self.region_overlay = ResultOverlay(self.config.overlay)
+            self.region_overlay.edit_requested.connect(self.edit_last)
         if self.error is not None:
             self.region_overlay.show_error(self.error)
             self._present_region()
@@ -386,6 +433,8 @@ class TrayApp(QObject):
         self.fullscreen_overlay = FullscreenOverlay(self.config.overlay, QRect(screen.geometry()),
                                                     screen.devicePixelRatio())
         self.fullscreen_overlay.present()
+        self._last_segments = []
+        self._send_set_game(self._profile())
         job = Job(next(self._ids), "fullscreen", image, (mon[0], mon[1]))
         self._fullscreen_job, self._fullscreen_origin = job.id, job.origin
         if self.error is not None:
@@ -395,55 +444,231 @@ class TrayApp(QObject):
         self.worker.submit(job)
 
 
+    # ---- games & profiles ----------------------------------------------------------------------------
+    def _remember_game(self):
+        gw = self._foreground()
+        if gw is not None:
+            self._game = gw
+            self.game_action.setText(f"Game: {gw.title or gw.exe}")
+            p = self._profile()
+            for sc, action in self.live_scope_actions.items():
+                action.setChecked(sc == p.scope)
+            for st, action in self.live_style_actions.items():
+                action.setChecked(st == p.style)
+        return self._game
+
+    def _profile(self, gw=None) -> Profile:
+        gw = gw or self._game
+        if gw is None:
+            return self.profiles.get_or_default(DEFAULT_ID, "Mặc định")
+        return self.profiles.get_or_default(gw.exe, gw.title)
+
+    def _live_profile(self) -> Profile:
+        return self.profiles.get_or_default(self._live_game or DEFAULT_ID)
+
+    def _frame_of(self, gw) -> tuple[int, int, int, int]:
+        """Regions are relative to the game window's client area (or the monitor under the mouse)."""
+        return gw.client if gw is not None else self._monitor_at(*self._cursor())
+
+    def _check_foreground(self) -> None:
+        """Every second: follow the game in front; with Live on, switch to another game that has a profile."""
+        before = self._game.exe if self._game else None
+        gw = self._remember_game()
+        if gw is None or gw.exe == before:
+            return
+        p = self.profiles.get(gw.exe)
+        if self.live is not None and self.live.running and gw.exe != self._live_game and p is not None \
+                and (p.scope == "screen" or p.regions):  # never pop the region selector up mid-game
+            self.start_live()
+
     # ---- live -------------------------------------------------------------------------------------
     def toggle_live(self) -> None:
         if self.live is not None and self.live.running:
             self.stop_live()
-        elif load_live_regions(self._data_dir()):
-            self.start_live()
-        else:
+            return
+        p = self._profile()
+        if p.scope == "region" and not p.regions:
             self.select_live_region()
+        else:
+            self.start_live()
 
-    def select_live_region(self) -> None:
+    def _begin_select(self, purpose: str) -> None:
+        was_live = self.live is not None and self.live.running
         self.stop_live()
         self._close_overlays()
+        self._select_ctx = (self._game, purpose, was_live)
         self._selecting_live = True
         self.selector.begin()
 
-    def set_live_mode(self, mode: str) -> None:
-        self.live_mode = mode
-        save_live_mode(self._data_dir(), mode)
+    def select_live_region(self) -> None:
+        self._begin_select("replace")
+
+    def add_live_region(self) -> None:
+        self._begin_select("add")
+
+    def add_ignore_region(self) -> None:
+        self._begin_select("ignore")
+
+    def _on_live_region_selected(self, rect: tuple[int, int, int, int]) -> None:
+        gw, purpose, was_live = self._select_ctx or (self._game, "replace", False)
+        self._select_ctx = None
+        p = self._profile(gw)
+        rel = _rel(list(to_rel(rect, self._frame_of(gw))))
+        if rel is None:
+            return
+        if purpose == "replace":
+            p.regions, p.scope = [rel], "region"
+        elif purpose == "add":
+            p.regions.append(rel)
+        else:
+            p.ignore.append(rel)
+        self.profiles.save(p)
+        if purpose == "replace" or was_live:
+            self.start_live()
+
+    def clear_live_regions(self) -> None:
+        p = self._profile()
+        p.regions, p.ignore = [], []
+        self.profiles.save(p)
+        if self.live is not None and self.live.running and p.scope == "region":
+            self.stop_live()
+
+    def set_live_scope(self, scope: str) -> None:
+        p = self._profile()
+        p.scope = scope
+        self.profiles.save(p)
         if self.live is not None and self.live.running:
-            self.start_live()  # restart with the new mode
+            self.start_live()  # restart with the new scope
+
+    def set_live_style(self, style: str) -> None:
+        p = self._profile()
+        p.style = style
+        self.profiles.save(p)
+        if self.live is not None and self.live.running:
+            self.start_live()  # redraw with the new colours
 
     def start_live(self) -> None:
-        regions = load_live_regions(self._data_dir())
-        if not regions:
+        gw = self._game
+        p = self._profile(gw)
+        if p.scope == "region" and not p.regions:
             self.select_live_region()
             return
         self.stop_live()
+        exe = gw.exe if gw is not None else None
+        fixed = None if gw is not None else self._monitor_at(*self._cursor())
+
+        def frame():
+            if exe is None:
+                return fixed
+            w = self._window_of(exe)
+            if w is None or w.minimized:
+                return None
+            if p.scope == "screen":
+                x, y, cw, ch = w.client
+                return self._monitor_at(x + cw // 2, y + ch // 2)
+            return w.client
+
         lc = self.config.live
-        params = LiveParams(lc.interval_ms, lc.active_interval_ms, lc.settle_ms, lc.max_wait_ms, lc.change_threshold)
+        params = LiveParams(p.interval_ms, lc.active_interval_ms, p.settle_ms, lc.max_wait_ms, p.change_threshold,
+                            lc.partial_interval_ms)
         self.live = LiveController(
             params, capture=self._capture, submit=lambda job: self.worker.submit(job),
             next_id=lambda: next(self._ids), notify=self.notify, overlay_factory=self._live_overlay,
-            area=self.live_mode == "area", area_min_interval_ms=lc.area_min_interval_ms,
-            area_max_blocks=lc.area_max_blocks, use_timer=self._live_timer_enabled)
-        self.live.start(regions)
+            scope=p.scope, area_min_interval_ms=lc.area_min_interval_ms,
+            area_max_blocks=lc.area_max_blocks, use_timer=self._live_timer_enabled, on_screen=self._on_screen,
+            style=p.style)
+        rel = p.regions if p.scope == "region" else [(0.0, 0.0, 1.0, 1.0)]
+        self.live.start_relative(rel, frame, p.ignore)
+        self._live_game = p.id
+        self._send_set_game(p)
         self.live_action.setChecked(True)
+
+    def _send_set_game(self, p: Profile) -> None:
+        if self.worker is None or self._worker_game == p.id:
+            return
+        user = self._user_glossary(p.id)
+        glossaries = ([str(user)] if user.exists() else []) + [str(g) for g in game_glossaries()] + [str(COMMON_GLOSSARY)]
+        self.worker.submit(Job(next(self._ids), "set_game", None, (0, 0),
+                               payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides)}))
+        self._worker_game = p.id
+
+    def _user_glossary(self, game_id: str) -> Path:
+        return self._data_dir() / "glossary" / "games" / f"{game_id}.json"
 
     def stop_live(self) -> None:
         if self.live is not None:
             self.live.stop()
         self.live_action.setChecked(False)
 
+    @staticmethod
+    def _on_screen(region: tuple[int, int, int, int]) -> bool:
+        x, y, w, h = region
+        for screen in QGuiApplication.screens():
+            g, dpr = screen.geometry(), screen.devicePixelRatio()
+            if x < g.left() + g.width() * dpr and x + w > g.left() and y < g.top() + g.height() * dpr and y + h > g.top():
+                return True
+        return False
+
     def _live_overlay(self, region: tuple[int, int, int, int]):
         x, y, w, h = region
         screen = screen_for_physical(x + w // 2, y + h // 2)
-        geometry, dpr = QRect(screen.geometry()), screen.devicePixelRatio()
-        if self.live_mode == "area":
-            return AreaOverlay(self.config.overlay, geometry, dpr)
-        return LiveOverlay(self.config.overlay, physical_to_logical(region, geometry, dpr), geometry)
+        return AreaOverlay(self.config.overlay, QRect(screen.geometry()), screen.devicePixelRatio())
+
+    # ---- corrections ------------------------------------------------------------------------------
+    def edit_last(self) -> None:
+        live_on = self.live is not None and self.live.running
+        segments = self.live.shown_segments() if live_on else []
+        segments = segments or self._last_segments
+        if not [s for s in segments if s.kind == "text" and s.translation]:
+            self.notify("Chưa có bản dịch nào để sửa.")
+            return
+        dialog = self._dialog_factory(segments)
+        if not dialog.exec():
+            return
+        fixes, terms = dialog.corrections(), dialog.parsed_terms()
+        if not fixes and not terms:
+            return
+        p = self._live_profile() if live_on else self._profile()
+        for f in fixes:
+            p.overrides[normalize(f.source)] = f.corrected
+        self.profiles.save(p)
+        if terms:
+            self._save_terms(p.id, terms)
+        self.worker.submit(Job(next(self._ids), "correct", None, (0, 0), payload={
+            "corrections": [[f.source, f.machine, f.corrected] for f in fixes],
+            "terms": [[src, target] for src, target in terms]}))
+        fixed = {f.source: f.corrected for f in fixes}
+        if live_on:
+            for src, text in fixed.items():
+                self.live.apply_correction(src, text)
+        if fixed and self._last_segments:
+            self._last_segments = [replace_translation(s, fixed) for s in self._last_segments]
+            if self.region_overlay is not None and self.region_overlay.isVisible():
+                self.region_overlay.show_segments(self._last_segments, self.config.overlay.show_source)
+                self._present_region()
+
+    def _save_terms(self, game_id: str, terms: list[tuple[str, str | None]]) -> None:
+        import json
+
+        path = self._user_glossary(game_id)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {"entries": []}
+        for src, target in terms:
+            entry = {"source": src, "type": "map" if target else "keep", "case_sensitive": True}
+            if target:
+                entry["target"] = target
+            data["entries"].append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def replace_translation(seg, fixed: dict[str, str]):
+    """A one-shot segment after the user corrected some of its sentences (whole-segment match)."""
+    if seg.kind != "text" or seg.source not in fixed:
+        return seg
+    return type(seg)(seg.kind, seg.source, fixed[seg.source], seg.box)
 
 
 def self_test(model_dir: Path | None = None) -> int:

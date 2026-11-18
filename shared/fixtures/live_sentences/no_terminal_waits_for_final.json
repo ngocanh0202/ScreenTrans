@@ -1,0 +1,26 @@
+{
+ "name": "a last sentence without terminal punctuation is done only when the text stops",
+ "steps": [
+  {
+   "sentences": [
+    "Hmm"
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Hmm"
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Hmm"
+   ],
+   "final": true,
+   "done": 1
+  }
+ ]
+}

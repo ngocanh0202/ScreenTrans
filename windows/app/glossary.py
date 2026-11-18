@@ -43,6 +43,8 @@ class Glossary:
         # value: (priority, entry); a lower priority number wins, across exact and folded maps
         self._exact: dict[str, tuple[int, Entry]] = {}
         self._folded: dict[str, tuple[int, Entry]] = {}
+        self._user: list[Entry] = list(entries)  # loaded + user-added entries (not tracker terms): the digest
+        self._next_user_priority = -1
         for prio, e in enumerate(entries):  # earlier entries have priority
             if e.case_sensitive:
                 self._exact.setdefault(e.source, (prio, e))
@@ -71,6 +73,24 @@ class Glossary:
             return
         self._exact[term] = (self.AUTO_PRIORITY, Entry(term, "keep", None, True))
         self._compile()
+
+    def add_entry(self, source: str, target: str | None) -> None:
+        """A term the user added while correcting: `keep` (target None/empty) or `map`; wins over every entry."""
+        source = source.strip()
+        if not source:
+            return
+        e = Entry(source, "map" if target else "keep", target or None, True)
+        self._exact[source] = (self._next_user_priority, e)
+        self._next_user_priority -= 1
+        self._user.append(e)
+        self._compile()
+
+    def digest(self) -> str:
+        """12-hex fingerprint of the loaded/user entries; part of the cache key so edits invalidate it."""
+        import hashlib
+
+        rows = sorted(json.dumps([e.source, e.kind, e.target, e.case_sensitive], ensure_ascii=False) for e in self._user)
+        return hashlib.sha1("\n".join(rows).encode("utf-8")).hexdigest()[:12]
 
     def _lookup(self, matched: str) -> Entry | None:
         candidates = [c for c in (self._exact.get(matched), self._folded.get(matched.lower())) if c]

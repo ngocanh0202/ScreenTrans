@@ -25,9 +25,13 @@ import dev.screentrans.core.Layout
 import screentrans.text.Kind
 import screentrans.text.Segment
 
-/** Dark card with the translation of a region; Copy button; touching outside closes it. */
+/** Dark card with the translation of a region; Sửa / Copy buttons; touching outside closes it. */
 @SuppressLint("ViewConstructor")
-class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayout(context) {
+class ResultCard(
+    context: Context,
+    private val onClose: () -> Unit,
+    private val onEdit: ((List<Segment>) -> Unit)? = null,
+) : LinearLayout(context) {
     private val scroll = android.widget.ScrollView(context)
     private val text = TextView(context).apply {
         setTextColor(Color.WHITE)
@@ -40,7 +44,15 @@ class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayo
         setTextColor(Color.WHITE)
         setBackgroundColor(Color.argb(40, 255, 255, 255))
     }
+    private val edit = Button(context).apply {
+        text = "Sửa"
+        isAllCaps = false
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.argb(40, 255, 255, 255))
+        visibility = GONE
+    }
     private var translations: List<String> = emptyList()
+    private var segments: List<Segment> = emptyList()
 
     init {
         orientation = VERTICAL
@@ -51,7 +63,11 @@ class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayo
         setPadding(context.dp(14), context.dp(10), context.dp(14), context.dp(8))
         scroll.addView(text)
         addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(copy, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { topMargin = context.dp(6) })
+        val buttons = LinearLayout(context).apply { orientation = HORIZONTAL }
+        buttons.addView(edit, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginEnd = context.dp(8) })
+        buttons.addView(copy)
+        addView(buttons, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { topMargin = context.dp(6) })
+        edit.setOnClickListener { onEdit?.invoke(segments) }
         copy.setOnClickListener {
             val cm = context.getSystemService(ClipboardManager::class.java)
             cm.setPrimaryClip(ClipData.newPlainText("ScreenTrans", translations.joinToString("\n")))
@@ -64,6 +80,7 @@ class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayo
         text.text = message
         text.setTextColor(if (error) Color.rgb(255, 154, 154) else Color.WHITE)
         copy.visibility = GONE
+        edit.visibility = GONE
     }
 
     fun showSegments(segments: List<Segment>, showSource: Boolean = false) {
@@ -88,6 +105,8 @@ class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayo
         text.text = if (sb.isEmpty()) "(không tìm thấy chữ)" else sb
         copy.text = "Copy"
         copy.visibility = if (translations.isEmpty()) GONE else VISIBLE
+        this.segments = segments
+        edit.visibility = if (translations.isEmpty() || onEdit == null) GONE else VISIBLE
     }
 
     @SuppressLint("ClickableViewAccessibility")

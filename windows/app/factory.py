@@ -4,7 +4,7 @@ from typing import Callable
 
 from app.cache import TranslationCache
 from app.config import Config
-from app.datalog import PairLogger
+from app.datalog import CorrectionLogger, PairLogger
 from app.glossary import COMMON_GLOSSARY, Glossary, ProperNounTracker, load_common_words
 from app.models import ensure_model
 from app.ocr.windows_ocr import WindowsOcr
@@ -24,8 +24,9 @@ def resolve_model_dir(config: Config, model_dir: Path | None,
 def build_pipeline(config: Config, model_dir: Path | None, glossaries: list[Path],
                    progress: Callable[[int, int], None] | None = None) -> Pipeline:
     data_dir = Path(config.paths.data_dir)
+    resolved = Path(resolve_model_dir(config, model_dir, progress))
     translator = Ct2Translator(
-        resolve_model_dir(config, model_dir, progress), beam_size=config.translator.beam_size,
+        resolved, beam_size=config.translator.beam_size,
         intra_threads=config.translator.intra_threads,
     )
     glossary = Glossary.load(*glossaries, COMMON_GLOSSARY)  # game glossaries win over the common one
@@ -34,4 +35,6 @@ def build_pipeline(config: Config, model_dir: Path | None, glossaries: list[Path
         WindowsOcr(), translator, glossary, cache,
         tracker=ProperNounTracker(load_common_words()),
         pair_logger=PairLogger(data_dir / "translations.jsonl", config.logging.save_pairs),
+        corrections=CorrectionLogger(data_dir / "corrections.jsonl", config.logging.save_corrections),
+        model_version=resolved.name,  # data_dir/models/<id>/<version>, or the folder given with --model-dir
     )

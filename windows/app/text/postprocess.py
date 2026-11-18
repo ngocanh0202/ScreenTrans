@@ -32,6 +32,7 @@ class Paragraph:
     top: float
     right: float
     bottom: float
+    line_height: float = 0.0  # median height of the OCR lines (Live "giống game" font size)
 
 
 @dataclass
@@ -53,6 +54,12 @@ class _Group:
     @property
     def bottom(self) -> float:
         return max(l.bottom for l in self.lines)
+
+    @property
+    def line_height(self) -> float:
+        hs = sorted(l.height for l in self.lines)
+        n = len(hs)
+        return (hs[n // 2] if n % 2 else (hs[n // 2 - 1] + hs[n // 2]) / 2) if n else 0.0
 
 
 def _has_letter(s: str) -> bool:
@@ -157,7 +164,7 @@ def postprocess(lines: list[Line]) -> list[Paragraph]:
     for g in groups:
         text = _join(g.lines)
         if _is_name(g, text, groups, h):
-            out.append(Paragraph("name", _name_text(text), [], g.left, g.top, g.right, g.bottom))
+            out.append(Paragraph("name", _name_text(text), [], g.left, g.top, g.right, g.bottom, g.line_height))
         else:
-            out.append(Paragraph("text", text, split_sentences(text), g.left, g.top, g.right, g.bottom))
+            out.append(Paragraph("text", text, split_sentences(text), g.left, g.top, g.right, g.bottom, g.line_height))
     return out

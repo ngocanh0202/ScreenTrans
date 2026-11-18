@@ -14,11 +14,13 @@ class LiveParams:
     settle_ms: int = 250
     max_wait_ms: int = 2000
     change_threshold: float = 5.0
+    partial_interval_ms: int = 0  # > 0: OCR while the text is still typing (Live realtime sentence by sentence)
 
 
 class Action(Enum):
     WAIT = "wait"
     OCR = "ocr"
+    PARTIAL = "partial"
 
 
 def _norm(text: str) -> str:
@@ -35,6 +37,12 @@ class LiveMachine:
         self._last_ocr = ""
         self._last_translated = ""
         self._suppress_next = False
+        self._last_partial = 0
+
+    @property
+    def final(self) -> bool:
+        """The last OCR came from the text standing still (not from max_wait): every sentence is done."""
+        return self._reason == "settled"
 
     def next_delay_ms(self) -> int:
         return self.p.active_interval_ms if self.state == "changing" else self.p.interval_ms
@@ -51,7 +59,7 @@ class LiveMachine:
         if self.state == "idle":
             if changed:
                 self.state = "changing"
-                self._changed_at = self._last_change = now_ms
+                self._changed_at = self._last_change = self._last_partial = now_ms
             return Action.WAIT
         if changed:
             self._last_change = now_ms
@@ -61,11 +69,19 @@ class LiveMachine:
         if now_ms - self._changed_at >= self.p.max_wait_ms:
             self.state, self._reason = "idle", "max_wait"
             return Action.OCR
+        if self.p.partial_interval_ms > 0 and now_ms - self._last_partial >= self.p.partial_interval_ms:
+            self._last_partial = now_ms
+            return Action.PARTIAL
         return Action.WAIT
 
     def forget_translation(self) -> None:
         """The last translation never reached the screen (superseded / failed): allow it again."""
         self._last_translated = ""
+
+    def rearm(self, now_ms: int) -> None:
+        """After an OCR that was not final (max_wait): keep watching, so a final OCR follows once it is still."""
+        self.state = "changing"
+        self._changed_at = self._last_change = self._last_partial = now_ms
 
     def on_text(self, now_ms: int, text: str) -> Literal["translate", "skip", "wait"]:
         t = _norm(text)

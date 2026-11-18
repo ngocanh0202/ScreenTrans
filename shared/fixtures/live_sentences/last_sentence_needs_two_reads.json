@@ -1,0 +1,19 @@
+{
+ "name": "a last sentence ending with a period is done only when read twice the same",
+ "steps": [
+  {
+   "sentences": [
+    "Wait."
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Wait."
+   ],
+   "final": false,
+   "done": 1
+  }
+ ]
+}

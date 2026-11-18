@@ -15,7 +15,7 @@ Máy trạng thái Live quyết định **khi nào OCR** và **có dịch kết 
 }
 ```
 
-`params` tùy chọn (mặc định như trên). `events` theo thứ tự thời gian; `expected` liệt kê **mọi** hành động khác "chờ", theo thứ tự.
+`params` tùy chọn (mặc định như trên, `partial_interval_ms` mặc định `0` = tắt). `events` theo thứ tự thời gian; `expected` liệt kê **mọi** hành động khác "chờ", theo thứ tự.
 
 ## Quy tắc
 
@@ -29,4 +29,7 @@ Máy trạng thái Live quyết định **khi nào OCR** và **có dịch kết 
   2. giống text **đã dịch gần nhất** → **skip**;
   3. lý do *max_wait* và khác text OCR lần trước → **wait**: quay lại ĐANG ĐỔI với `changed_at = t` (chữ có thể còn đang chạy; dịch khi chữ đứng yên hoặc khi lần OCR sau ra y hệt);
   4. còn lại → **translate** (ghi nhớ là text đã dịch).
+- **OCR giữa chừng** (`partial_interval_ms` > 0, Live realtime từng câu): khi đang ĐANG ĐỔI và chưa tới OCR ở trên, nếu
+  `t - max(changed_at, lần PARTIAL trước) >= partial_interval_ms` → **PARTIAL** (ghi `"action": "partial"`), trạng thái giữ nguyên.
+  Kết quả OCR giữa chừng không đi qua `ocr_text` (đi vào cổng câu, xem `shared/fixtures/live_sentences`).
 - Nhịp chụp: `active_interval_ms` khi ĐANG ĐỔI, `interval_ms` khi ĐỨNG YÊN.

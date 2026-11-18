@@ -1,0 +1,13 @@
+{
+ "name": "when the text stopped every sentence is done",
+ "steps": [
+  {
+   "sentences": [
+    "So you",
+    "came"
+   ],
+   "final": true,
+   "done": 2
+  }
+ ]
+}

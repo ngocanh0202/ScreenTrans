@@ -2,6 +2,7 @@ hotkeys:
   translate_region: "ctrl+alt+t"
   translate_fullscreen: "ctrl+alt+f"
   toggle_live: "ctrl+alt+l"
+  edit_last: "ctrl+alt+e"     # sửa bản dịch gần nhất
 ocr:
   engine: windows          # windows (rapid: deferred, too slow in Phase 0)
 translator:
@@ -21,11 +22,13 @@ live:
   area_min_interval_ms: 1000   # Live vùng lớn: tối đa 1 OCR mỗi giây
   area_max_blocks: 30
   change_threshold: 5
+  partial_interval_ms: 500     # Live: OCR khi chữ còn đang chạy, hiện từng câu ngay khi xong
 cache:
   max_items: 5000
   persist: true
 logging:
   save_pairs: true
+  save_corrections: true      # ghi corrections.jsonl khi bạn sửa bản dịch
 models:
   manifest_url: "https://github.com/ngocanh0202/ScreenTrans/releases/download/models-v1/manifest.json"
 paths:

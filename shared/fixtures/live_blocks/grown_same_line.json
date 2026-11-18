@@ -1,0 +1,51 @@
+{
+ "name": "text that grows on the same line keeps its block (grown)",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are",
+     "box": [
+      0,
+      0,
+      100,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are"
+    ],
+    "kept": [],
+    "grown": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going?",
+     "box": [
+      0,
+      0,
+      200,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [],
+    "grown": [
+     "Where are you going?"
+    ],
+    "removed": []
+   }
+  }
+ ]
+}

@@ -20,9 +20,12 @@ class FakeWorker(QObject):
     def __init__(self):
         super().__init__()
         self.jobs: list[Job] = []
+        self.all_jobs: list[Job] = []
 
     def submit(self, job):
-        self.jobs.append(job)
+        self.all_jobs.append(job)
+        if job.mode not in ("set_game", "correct"):  # control jobs: see all_jobs
+            self.jobs.append(job)
 
 
 class FakeThread:
@@ -76,7 +79,27 @@ class FakeSelector(QObject):
         self.begun += 1
 
 
-def _app(qtbot, ok=True, tmp_path=None):
+class Foreground:
+    """Fake foreground-window lookup: `.game` is what current_game() returns; windows by exe for game_window()."""
+
+    def __init__(self):
+        self.game = None
+        self.windows = {}
+
+    def current(self):
+        return self.game
+
+    def window(self, exe):
+        return self.windows.get(exe)
+
+
+def game(exe="game.exe", client=(0, 0, 1920, 1080), title="Game", minimized=False):
+    from app.gui.foreground import GameWindow
+
+    return GameWindow(1, exe, title, client, minimized)
+
+
+def _app(qtbot, ok=True, tmp_path=None, fg=None):
     from app.main import TrayApp
 
     cfg = Config()
@@ -89,8 +112,10 @@ def _app(qtbot, ok=True, tmp_path=None):
         captures.append((x, y, w, h))
         return Image.new("RGB", (max(w, 1), max(h, 1)))
 
+    fg = fg or Foreground()
     app = TrayApp(cfg, worker_factory=factory, hotkeys=hotkeys, selector=selector, capture=capture,
-                  monitor_at=lambda x, y: (0, 0, 1920, 1080), cursor=lambda: (500, 500), capture_delay_ms=0)
+                  monitor_at=lambda x, y: (0, 0, 1920, 1080), cursor=lambda: (500, 500), capture_delay_ms=0,
+                  foreground=fg.current, window_of=fg.window, timers=False)
     app.start()
     return app, factory, hotkeys, selector, captures
 
@@ -101,7 +126,7 @@ SEGS = [Segment("name", "Druvis III", None, (0, 0, 10, 10)),
 
 def test_registers_both_hotkeys(qtbot):
     _, _, hotkeys, _, _ = _app(qtbot)
-    assert [n for n, _ in hotkeys.registered] == ["translate_region", "translate_fullscreen", "toggle_live"]
+    assert [n for n, _ in hotkeys.registered] == ["translate_region", "translate_fullscreen", "toggle_live", "edit_last"]
 
 
 def test_region_flow_loading_then_result(qtbot):
@@ -274,59 +299,209 @@ def test_superseded_region_job_clears_its_popup(qtbot):
     assert app._region_job is None and not app.region_overlay.isVisible()
 
 
-def _live_app(qtbot, tmp_path):
-    app, factory, hotkeys, selector, captures = _app(qtbot, tmp_path=tmp_path)
+def _live_app(qtbot, tmp_path, current=None):
+    fg = Foreground()
+    fg.game = current
+    if current is not None:
+        fg.windows[current.exe] = current
+    app, factory, hotkeys, selector, captures = _app(qtbot, tmp_path=tmp_path, fg=fg)
     app._live_timer_enabled = False
-    return app, factory, hotkeys, selector, captures
+    return app, factory, hotkeys, selector, captures, fg
 
 
-def test_toggle_live_without_regions_opens_selector_then_starts(qtbot, tmp_path):
-    from app.live.regions import load_live_regions
+def _saved(tmp_path, exe="game.exe", **kw):
+    from app.profiles import Profile, ProfileStore
 
-    app, factory, hotkeys, selector, _ = _live_app(qtbot, tmp_path)
+    store = ProfileStore(tmp_path / "profiles")
+    store.save(Profile(exe, "Game", **kw))
+    return store
+
+
+def test_toggle_live_without_regions_opens_selector_and_saves_the_game_profile(qtbot, tmp_path):
+    from app.profiles import ProfileStore
+
+    app, factory, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game(client=(0, 0, 1000, 500)))
     hotkeys.triggered.emit("toggle_live")
     assert selector.begun == 1 and app.live is None
-    selector.selected.emit((10, 10, 300, 80))
-    assert load_live_regions(tmp_path) == [(10, 10, 300, 80)]
-    assert app.live is not None and app.live.running and app.live_action.isChecked()
-    assert factory.workers[0].jobs == []  # a live selection is not a one-shot translation
+    selector.selected.emit((100, 400, 800, 100))
+    p = ProfileStore(tmp_path / "profiles").get("game.exe")
+    assert p.name == "Game" and p.regions == [(0.1, 0.8, 0.8, 0.2)]
+    assert app.live.running and app.live_action.isChecked() and app.live.regions == [(100, 400, 800, 100)]
+    assert [j.mode for j in factory.workers[0].all_jobs] == ["set_game"]  # the game's glossary + overrides
     hotkeys.triggered.emit("toggle_live")
     assert not app.live.running and not app.live_action.isChecked()
 
 
-def test_toggle_live_with_saved_region_starts_directly(qtbot, tmp_path):
-    from app.live.regions import save_live_regions
-
-    save_live_regions(tmp_path, [(10, 10, 300, 80)])
-    app, _, hotkeys, selector, _ = _live_app(qtbot, tmp_path)
+def test_toggle_live_with_a_saved_profile_starts_directly(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.1, 0.8, 0.8, 0.2)])
+    app, _, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game(client=(0, 0, 1000, 500)))
     hotkeys.triggered.emit("toggle_live")
-    assert selector.begun == 0 and app.live.running and app.live.regions == [(10, 10, 300, 80)]
+    assert selector.begun == 0 and app.live.running and app.live.regions == [(100, 400, 800, 100)]
+
+
+def test_add_region_and_ignore_region_from_the_tray(qtbot, tmp_path):
+    from app.profiles import ProfileStore
+
+    _saved(tmp_path, regions=[(0.1, 0.8, 0.8, 0.2)])
+    app, _, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game(client=(0, 0, 1000, 500)))
+    app._remember_game()
+    app.add_live_region()
+    selector.selected.emit((0, 0, 500, 50))
+    app.add_ignore_region()
+    selector.selected.emit((950, 450, 50, 50))
+    p = ProfileStore(tmp_path / "profiles").get("game.exe")
+    assert p.regions == [(0.1, 0.8, 0.8, 0.2), (0.0, 0.0, 0.5, 0.1)] and p.ignore == [(0.95, 0.9, 0.05, 0.1)]
+    app.clear_live_regions()
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").regions == []
 
 
 def test_live_results_reach_the_controller_and_quit_stops_it(qtbot, tmp_path):
-    from app.live.regions import save_live_regions
     from app.text.postprocess import Paragraph
 
-    save_live_regions(tmp_path, [(10, 10, 300, 80)])
-    app, factory, hotkeys, _, _ = _live_app(qtbot, tmp_path)
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
     w = factory.workers[0]
     w.ready.emit()
     hotkeys.triggered.emit("toggle_live")
     app.live.ocr_job = 900
-    w.ocr_done.emit(900, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)]])
+    app.live._ocr_final[900] = True
+    w.ocr_done.emit(900, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 300, 40)]])
     tr = w.jobs[-1]
     assert tr.mode == "live_translate"
-    seg = Segment("text", "Hello.", "Xin chào.", (0, 0, 50, 10))
+    seg = Segment("text", "Hello.", "Xin chào.", (0, 0, 300, 40))
     w.partial.emit(tr.id, [[seg]])
-    assert "Xin chào." in app.live._overlays[0].text()
+    assert [b.text for b in app.live._overlays[0].blocks.values()] == ["Xin chào."]
+    w.job_done.emit(tr.id, [[seg]])
+    assert app.live.translate_job is None
     app._exit = lambda code: None
     app.quit()
     assert not app.live.running
 
 
-def test_live_mode_menu_persists_area(qtbot, tmp_path):
-    from app.live.regions import load_live_mode
+def test_screen_scope_needs_no_selection(qtbot, tmp_path):
+    from app.profiles import ProfileStore
 
-    app, *_ = _live_app(qtbot, tmp_path)
-    app.live_mode_actions["area"].trigger()
-    assert load_live_mode(tmp_path) == "area" and app.live_mode == "area"
+    app, _, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game(client=(100, 100, 800, 600)))
+    app._remember_game()
+    app.live_scope_actions["screen"].trigger()
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").scope == "screen"
+    hotkeys.triggered.emit("toggle_live")
+    assert selector.begun == 0 and app.live.running and app.live.regions == [(0, 0, 1920, 1080)]
+    assert app.live.scope == "screen"
+
+
+def test_switching_to_another_game_restarts_live_with_its_profile(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    _saved(tmp_path, exe="b.exe", regions=[(0.5, 0.5, 0.5, 0.5)])
+    a = game()
+    app, factory, hotkeys, _, _, fg = _live_app(qtbot, tmp_path, a)
+    hotkeys.triggered.emit("toggle_live")
+    old = app.live._overlays[0]
+    b = game("b.exe", client=(0, 0, 1000, 1000))
+    fg.game, fg.windows["b.exe"] = b, b
+    app._check_foreground()
+    assert app.live.running and app.live.regions == [(500, 500, 500, 500)]
+    assert not old.isVisible()
+    sets = [j for j in factory.workers[0].all_jobs if j.mode == "set_game"]
+    assert [j.payload["game"] for j in sets] == ["game.exe", "b.exe"]
+    fg.game = None  # our own window / the desktop: Live stays on b.exe
+    app._check_foreground()
+    assert app.live.regions == [(500, 500, 500, 500)]
+
+
+def test_minimized_game_pauses_live(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, _, captures, fg = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("toggle_live")
+    fg.windows["game.exe"] = game(minimized=True)
+    n = len(captures)
+    app.live.tick(0)
+    assert len(captures) == n and "thu nhỏ" in app.last_message
+
+
+def test_edit_last_without_results_says_so(qtbot, tmp_path):
+    app, _, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("edit_last")
+    assert app.last_message == "Chưa có bản dịch nào để sửa."
+
+
+def test_edit_last_saves_overrides_terms_and_tells_the_worker(qtbot, tmp_path):
+    import json
+
+    from app.gui.correct_dialog import Correction
+    from app.profiles import ProfileStore
+
+    app, factory, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game())
+
+    class FakeDialog:
+        def __init__(self, segments):
+            self.segments = segments
+
+        def exec(self):
+            return True
+
+        def corrections(self):
+            return [Correction("Hello.", "Xin chào.", "Chào cậu.")]
+
+        def parsed_terms(self):
+            return [("Arcanist", None)]
+
+    app._dialog_factory = FakeDialog
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    job = factory.workers[0].jobs[-1]
+    factory.workers[0].job_done.emit(job.id, SEGS)
+    hotkeys.triggered.emit("edit_last")
+    fix = factory.workers[0].all_jobs[-1]
+    assert fix.mode == "correct" and fix.payload["corrections"] == [["Hello.", "Xin chào.", "Chào cậu."]]
+    assert fix.payload["terms"] == [["Arcanist", None]]
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").overrides == {"Hello.": "Chào cậu."}
+    terms = json.loads((tmp_path / "glossary" / "games" / "game.exe.json").read_text(encoding="utf-8"))
+    assert terms["entries"] == [{"source": "Arcanist", "type": "keep", "case_sensitive": True}]
+    assert "Chào cậu." in app.region_overlay.text()
+
+
+def test_style_menu_is_saved_in_the_game_profile_and_used_by_live(qtbot, tmp_path):
+    from app.profiles import ProfileStore
+
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, _, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    app._remember_game()
+    assert app.live_style_actions["match"].isChecked()  # default: like the game
+    app.live_style_actions["classic"].trigger()
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").style == "classic"
+    hotkeys.triggered.emit("toggle_live")
+    assert app.live.style == "classic"
+
+
+def test_i3_switching_model_restarts_live_so_no_job_stays_stuck(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("toggle_live")
+    app.live.ocr_job = 900
+    app.switch_model("opus-mt-en-vi")
+    assert app.live.running and app.live.ocr_job is None
+    assert [j.mode for j in factory.workers[1].all_jobs] == ["set_game"]
+
+
+def test_i4_one_shot_translation_uses_the_game_profile(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)], overrides={"Hello.": "Chào."})
+    app, factory, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: any(j.mode == "region" for j in factory.workers[0].jobs), timeout=2000)
+    modes = [j.mode for j in factory.workers[0].all_jobs]
+    assert modes.index("set_game") < modes.index("region")
+
+
+def test_i5_switching_to_a_game_without_regions_keeps_live_and_no_selector(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    _saved(tmp_path, exe="b.exe")  # no regions
+    app, _, hotkeys, selector, _, fg = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("toggle_live")
+    b = game("b.exe")
+    fg.game, fg.windows["b.exe"] = b, b
+    app._check_foreground()
+    assert selector.begun == 0 and app.live.running and app._live_game == "game.exe"
