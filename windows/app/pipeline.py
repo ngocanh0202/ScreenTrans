@@ -5,8 +5,8 @@ from typing import Iterator, Literal
 
 from PIL import Image
 
-from app.cache import TranslationCache
-from app.datalog import PairLogger
+from app.cache import TranslationCache, normalize
+from app.datalog import CorrectionLogger, PairLogger
 from app.glossary import Glossary, ProperNounTracker
 from app.ocr.base import OcrEngine
 from app.text.postprocess import Paragraph, postprocess
@@ -39,6 +39,9 @@ class Pipeline:
         tracker: ProperNounTracker | None = None,
         pair_logger: PairLogger | None = None,
         game: str | None = None,
+        model_version: str = "0",
+        overrides: dict[str, str] | None = None,
+        corrections: CorrectionLogger | None = None,
     ):
         self.ocr = ocr
         self.translator = translator
@@ -47,6 +50,24 @@ class Pipeline:
         self.tracker = tracker
         self.pair_logger = pair_logger
         self.game = game
+        self.model_version = model_version
+        self.overrides: dict[str, str] = {normalize(k): v for k, v in (overrides or {}).items()}
+        self.corrections = corrections
+
+    @property
+    def cache_ns(self) -> str:
+        """Cache key prefix: a new model version or glossary edit must not reuse old translations."""
+        return f"{self.translator.model_id}@{self.model_version}#{self.glossary.digest()}"
+
+    def set_game(self, game: str | None, glossary: Glossary, overrides: dict[str, str]) -> None:
+        self.game, self.glossary = game, glossary
+        self.overrides = {normalize(k): v for k, v in overrides.items()}
+
+    def correct(self, source: str, machine: str, corrected: str) -> None:
+        """The user fixed a translation: use it from now on (before cache and model), and log it."""
+        self.overrides[normalize(source)] = corrected
+        if self.corrections is not None:
+            self.corrections.log(self.game, self.translator.model_id, source, machine, corrected)
 
     def run(self, img: Image.Image) -> PipelineResult:
         t0 = time.perf_counter()
@@ -64,10 +85,15 @@ class Pipeline:
 
     def _translate_sentences(self, sentences: list[str]) -> dict[str, str]:
         model = self.translator.model_id
+        ns = self.cache_ns
         done: dict[str, str] = {}
         todo: list[str] = []
         for s in dict.fromkeys(sentences):  # unique, in order
-            hit = self.cache.get(model, s)
+            fixed = self.overrides.get(normalize(s))
+            if fixed is not None:  # the user's own translation wins over cache and model
+                done[s] = fixed
+                continue
+            hit = self.cache.get(ns, s)
             if hit is not None:
                 done[s] = hit
             else:
@@ -88,7 +114,7 @@ class Pipeline:
                 done[s] = out
         for s in todo:
             if s not in retry:  # the no-glossary fallback is a degraded result: do not remember it
-                self.cache.put(model, s, done[s])
+                self.cache.put(ns, s, done[s])
             if self.pair_logger is not None:
                 self.pair_logger.log(s, done[s], model, self.game)
         return done

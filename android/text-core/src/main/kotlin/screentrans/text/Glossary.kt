@@ -12,6 +12,8 @@ class Glossary(entries: List<Entry>) {
     private val exact = HashMap<String, Pair<Int, Entry>>()
     private val folded = HashMap<String, Pair<Int, Entry>>()
     private var pattern: Regex? = null
+    private val user = entries.toMutableList()  // loaded + user-added entries (not tracker terms): the digest
+    private var nextUserPriority = -1
 
     init {
         entries.forEachIndexed { prio, e ->  // earlier entries have priority
@@ -31,6 +33,23 @@ class Glossary(entries: List<Entry>) {
         if (term in exact || term.lowercase() in folded) return
         exact[term] = AUTO_PRIORITY to Entry(term, true, null, true)
         compile()
+    }
+
+    /** A term the user added while correcting: keep ([target] null/blank) or map; wins over every entry. */
+    fun addEntry(source: String, target: String?) {
+        val src = source.trim()
+        if (src.isEmpty()) return
+        val e = Entry(src, target.isNullOrBlank(), target?.takeIf { it.isNotBlank() }, true)
+        exact[src] = nextUserPriority-- to e
+        user.add(e)
+        compile()
+    }
+
+    /** 12-hex fingerprint of the loaded/user entries; part of the cache key so edits invalidate it. */
+    fun digest(): String {
+        val rows = user.map { listOf(it.source, if (it.keep) "keep" else "map", it.target ?: "", it.caseSensitive).joinToString(SEP) }.sorted()
+        val bytes = java.security.MessageDigest.getInstance("SHA-1").digest(rows.joinToString(ROW).toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }.take(12)
     }
 
     private fun lookup(matched: String): Entry? =
@@ -61,6 +80,8 @@ class Glossary(entries: List<Entry>) {
         const val PLACEHOLDER = "[%d]"
         private val PLACEHOLDER_ANY = Regex("\\[(\\d+)]")
         const val AUTO_PRIORITY = 1_000_000
+        private const val SEP = "\u0001"
+        private const val ROW = "\n"
 
         /** JSON glossaries in priority order (game first, common last). */
         fun load(vararg json: String): Glossary = Glossary(json.flatMap { doc ->

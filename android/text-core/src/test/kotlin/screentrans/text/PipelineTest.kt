@@ -108,4 +108,37 @@ class PipelineTest {
         val steps = pipeline(FakeTranslator { it }).iterSentences(listOf(name)).toList()
         assertEquals(1, steps.size)
     }
+
+    @Test
+    fun `override wins over cache and model whatever the whitespace`() {
+        val tr = FakeTranslator { "VI:$it" }
+        val p = Pipeline(tr, "fake", Glossary(emptyList()), TranslationCache(100), overrides = mutableMapOf("Hello there." to "Chào cậu."))
+        val segs = p.translateParagraphs(listOf(text("Hello  there.")))
+        assertEquals("Chào cậu.", segs[0].translation)
+        assertTrue(tr.calls.isEmpty())
+    }
+
+    @Test
+    fun `correct is used next time and set game switches overrides`() {
+        val tr = FakeTranslator { "VI:$it" }
+        val p = pipeline(tr)
+        assertEquals("VI:Run.", p.translateParagraphs(listOf(text("Run.")))[0].translation)
+        p.correct("Run.", "Chạy đi!")
+        assertEquals("Chạy đi!", p.translateParagraphs(listOf(text("Run.")))[0].translation)
+        p.setGame(Glossary(emptyList()), mapOf("Go." to "Đi."))
+        assertEquals("VI:Run.", p.translateParagraphs(listOf(text("Run.")))[0].translation)
+        assertEquals("Đi.", p.translateParagraphs(listOf(text("Go.")))[0].translation)
+    }
+
+    @Test
+    fun `cache namespace follows glossary edits and model version, not auto keep`() {
+        val g = Glossary(emptyList())
+        val p = Pipeline(FakeTranslator { it }, "fake", g, TranslationCache(100), modelVersion = "2")
+        val ns = p.cacheNs
+        assertTrue(ns.startsWith("fake@2#"))
+        g.addKeep("Vertin")
+        assertEquals(ns, p.cacheNs)
+        g.addEntry("Arcanist", null)
+        assertTrue(ns != p.cacheNs)
+    }
 }

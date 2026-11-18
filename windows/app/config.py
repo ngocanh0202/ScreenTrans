@@ -63,6 +63,7 @@ class Cache:
 @dataclass
 class Logging:
     save_pairs: bool = True
+    save_corrections: bool = True
 
 
 @dataclass
