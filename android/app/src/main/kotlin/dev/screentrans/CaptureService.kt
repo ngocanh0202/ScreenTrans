@@ -18,12 +18,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Foreground service that owns the MediaProjection for the whole session. Later tasks add the
- * capturer, the translation engine and the floating bubble on top of this lifecycle.
+ * Foreground service that owns the MediaProjection for the whole session and the Controller
+ * (bubble, capture, translation engine, result overlays).
  */
-open class CaptureService : Service() {
-    protected var projection: MediaProjection? = null
-    protected val main = Handler(Looper.getMainLooper())
+class CaptureService : Service() {
+    private var projection: MediaProjection? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var controller: Controller? = null
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {  // user revoked capture (status bar chip / Android 14+), or another app took it
@@ -57,8 +58,14 @@ open class CaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    /** Hook for the capture/translation layers (filled in by later tasks). */
-    protected open fun onProjectionReady(projection: MediaProjection) {}
+    private fun onProjectionReady(projection: MediaProjection) {
+        controller = Controller(this, projection).also { it.start() }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        controller?.onRotated()  // rotation / resolution change: resize the capture surface
+    }
 
     private fun startInForeground() {
         val nm = getSystemService(NotificationManager::class.java)
@@ -82,6 +89,8 @@ open class CaptureService : Service() {
     }
 
     override fun onDestroy() {
+        controller?.stop()
+        controller = null
         projection?.unregisterCallback(projectionCallback)
         projection?.stop()
         projection = null
