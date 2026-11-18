@@ -27,7 +27,7 @@ object Postprocess {
     const val NAME_GAP = 2.0f
     const val SAME_ROW = 0.5f
 
-    private val WS = Regex("(?U)\\s+")
+    private val WS = Regex("[\\s\\p{Z}\\u0085\\u001c-\\u001f]+")  // Android regex (ICU) lacks the U inline flag: Unicode spaces like Python str.split
     private const val JUNK_BRACKETS = "()[]{}<>|©®"
     private const val END_PUNCT = ".!?,;…\"'”’"
     private val NAME_TOKEN = Regex("^(?:[A-Z]|[IVXLl1|]{1,4}$)")

@@ -58,7 +58,12 @@ class MainActivity : Activity() {
     private fun notificationsOk(): Boolean =
         Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun step() = nextStep(Settings.canDrawOverlays(this), notificationsOk(), CaptureService.running.value)
+    private val prefs by lazy { getSharedPreferences("screentrans", MODE_PRIVATE) }
+
+    private fun step() = nextStep(
+        Settings.canDrawOverlays(this), notificationsOk(), CaptureService.running.value,
+        notificationsAsked = prefs.getBoolean("notifications_asked", false),
+    )
 
     private fun refresh() {
         val s = step()
@@ -84,6 +89,7 @@ class MainActivity : Activity() {
                 Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
             )
             Step.NOTIFICATIONS -> if (Build.VERSION.SDK_INT >= 33) {
+                prefs.edit().putBoolean("notifications_asked", true).apply()  // denied twice -> no dialog: let them go on
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
             }
             Step.CAPTURE -> {

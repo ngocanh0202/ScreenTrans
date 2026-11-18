@@ -19,8 +19,10 @@ import screentrans.text.splitLong
 import java.io.File
 
 /** ML Kit Latin text recognition (bundled model, no Play Services download). Call off the main thread. */
-class MlKitOcr {
+class MlKitOcr : AutoCloseable {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+    override fun close() = recognizer.close()
 
     fun recognize(bitmap: Bitmap): List<Line> {
         val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)))
@@ -73,6 +75,9 @@ object AppEngine {
         val common = asset(context, "glossary/common_words_en.txt").lines().map { it.trim().lowercase() }.toSet()
         val pipeline = Pipeline(translator, MODEL_ID, glossary, TranslationCache(5000), ProperNounTracker(common))
         val ocr = MlKitOcr()
-        return EngineBundle(ocr = ocr::recognize, pipeline = pipeline, warmUp = { mt.translate("Hello.") })
+        return EngineBundle(
+            ocr = ocr::recognize, pipeline = pipeline, warmUp = { mt.translate("Hello.") },
+            close = { ocr.close(); mt.close() },  // ONNX sessions + ML Kit are native memory
+        )
     }
 }

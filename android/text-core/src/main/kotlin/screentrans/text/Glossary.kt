@@ -24,7 +24,7 @@ class Glossary(entries: List<Entry>) {
     private fun compile() {
         val sources = (exact.keys + folded.values.map { it.second.source }).toSet().sortedByDescending { it.length }
         pattern = if (sources.isEmpty()) null
-        else Regex("(?U)(?<!\\w)(?:" + sources.joinToString("|") { Regex.escape(it) } + ")(?!\\w)", RegexOption.IGNORE_CASE)
+        else Regex("(?<![\\p{L}\\p{M}\\p{N}_])(?:" + sources.joinToString("|") { Regex.escape(it) } + ")(?![\\p{L}\\p{M}\\p{N}_])", RegexOption.IGNORE_CASE)
     }
 
     fun addKeep(term: String) {
@@ -84,7 +84,7 @@ class ProperNounTracker(private val commonWords: Set<String>, private val minCou
     private val seen = HashSet<String>()
 
     fun observe(sentence: String): List<String> {
-        val key = sentence.trim().split(Regex("(?U)\\s+")).joinToString(" ")
+        val key = normalizeText(sentence)
         if (!seen.add(key)) return emptyList()
         val out = mutableListOf<String>()
         for (word in WORD.findAll(sentence).map { it.value }.drop(1)) {

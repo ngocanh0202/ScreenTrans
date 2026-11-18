@@ -28,6 +28,7 @@ import screentrans.text.Segment
 /** Dark card with the translation of a region; Copy button; touching outside closes it. */
 @SuppressLint("ViewConstructor")
 class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayout(context) {
+    private val scroll = android.widget.ScrollView(context)
     private val text = TextView(context).apply {
         setTextColor(Color.WHITE)
         textSize = 16f
@@ -48,7 +49,8 @@ class ResultCard(context: Context, private val onClose: () -> Unit) : LinearLayo
             cornerRadius = context.dp(10).toFloat()
         }
         setPadding(context.dp(14), context.dp(10), context.dp(14), context.dp(8))
-        addView(text)
+        scroll.addView(text)
+        addView(scroll, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(copy, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { topMargin = context.dp(6) })
         copy.setOnClickListener {
             val cm = context.getSystemService(ClipboardManager::class.java)
@@ -114,6 +116,7 @@ class FullScreenLayer(
     }
     private val chipPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = context.dp(13).toFloat() }
     private val basePx = context.dp(16).toFloat()
+    private val onScreen = IntArray(2)  // window origin, in case the system still offsets the layer
     private val pad = context.dp(4).toFloat()
     var translating = true
         private set
@@ -146,6 +149,9 @@ class FullScreenLayer(
     }
 
     override fun onDraw(canvas: Canvas) {
+        getLocationOnScreen(onScreen)
+        canvas.save()
+        canvas.translate(-onScreen[0].toFloat(), -onScreen[1].toFloat())  // blocks are in screen coords
         for (b in blocks) {
             if (b.layout == null) {
                 canvas.drawText(b.segment.source, b.rect.left, b.rect.bottom - namePaint.descent(), namePaint)
@@ -157,6 +163,7 @@ class FullScreenLayer(
             b.layout.draw(canvas)
             canvas.restore()
         }
+        canvas.restore()
         if (translating) {
             val label = "Đang dịch…"
             val w = chipPaint.measureText(label) + 2 * pad * 3
@@ -169,7 +176,7 @@ class FullScreenLayer(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked != MotionEvent.ACTION_UP) return true
-        val hit = blocks.lastOrNull { it.layout != null && it.rect.contains(e.x, e.y) }
+        val hit = blocks.lastOrNull { it.layout != null && it.rect.contains(e.rawX, e.rawY) }
         if (hit == null) onClose() else onBlockTapped(hit.segment)
         return true
     }

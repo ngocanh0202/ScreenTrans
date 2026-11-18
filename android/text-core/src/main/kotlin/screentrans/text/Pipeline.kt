@@ -5,7 +5,10 @@ fun interface SentenceTranslator {
     fun translate(texts: List<String>): List<String>
 }
 
-fun normalizeText(text: String): String = text.trim().split(Regex("(?U)\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+/** Unicode whitespace like Python str.split; written out because Android's ICU regex lacks the U inline flag. */
+val UNICODE_WS = Regex("[\\s\\p{Z}\\u0085\\u001c-\\u001f]+")
+
+fun normalizeText(text: String): String = text.trim().split(UNICODE_WS).filter { it.isNotEmpty() }.joinToString(" ")
 
 /** In-memory LRU keyed by (model id, normalized sentence). */
 class TranslationCache(private val maxItems: Int) {

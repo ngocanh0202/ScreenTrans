@@ -31,7 +31,15 @@ class Overlays(private val context: Context) {
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
         PixelFormat.TRANSLUCENT,
-    ).apply { gravity = Gravity.TOP or Gravity.START }
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        // Overlays draw in screen coordinates (OCR boxes, regions): never shift them for a display
+        // cutout or the system bars.
+        layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30)
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        if (android.os.Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
+    }
 
     fun add(view: View, p: WindowManager.LayoutParams) = wm.addView(view, p)
     fun update(view: View, p: WindowManager.LayoutParams) = wm.updateViewLayout(view, p)

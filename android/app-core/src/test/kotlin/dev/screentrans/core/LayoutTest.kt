@@ -38,3 +38,13 @@ class LayoutTest {
         assert(size < 32f && size >= Layout.MIN_TEXT_PX)
     }
 }
+
+class BubbleClampTest {
+    @Test
+    fun `bubble saved in portrait is pulled back onto a landscape screen`() {
+        assertContentEquals(intArrayOf(0, 948), Layout.clampBubble(0, 1800, 132, 2400, 1080))
+        assertContentEquals(intArrayOf(0, 948), Layout.clampBubble(-50, 1800, 132, 2400, 1080))
+        assertContentEquals(intArrayOf(2268, 10), Layout.clampBubble(2500, 10, 132, 2400, 1080))
+        assertContentEquals(intArrayOf(100, 200), Layout.clampBubble(100, 200, 132, 2400, 1080))
+    }
+}

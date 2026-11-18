@@ -20,7 +20,12 @@ object ModelInstall {
 }
 
 /** OCR + the one Pipeline the engine thread owns. */
-class EngineBundle<I>(val ocr: (I) -> List<Line>, val pipeline: Pipeline, val warmUp: () -> Unit = {})
+class EngineBundle<I>(
+    val ocr: (I) -> List<Line>,
+    val pipeline: Pipeline,
+    val warmUp: () -> Unit = {},
+    val close: () -> Unit = {},  // releases native resources (ONNX sessions, ML Kit)
+)
 
 data class EngineJob<I>(val id: Int, val fullScreen: Boolean, val image: I)
 
@@ -74,6 +79,17 @@ class TranslationEngine<I>(
         val old = synchronized(lock) { pending.also { pending = job } }
         if (old != null) _events.tryEmit(EngineEvent.JobFailed(old.id, SUPERSEDED))
         scope.launch(dispatcher) { process() }
+    }
+
+    /**
+     * Release the bundle on the engine dispatcher (after any running job). Uses its own scope: the
+     * caller usually cancels [scope] right after, which would drop a launch made there.
+     */
+    fun close() {
+        CoroutineScope(dispatcher).launch {
+            bundle?.close?.invoke()
+            bundle = null
+        }
     }
 
     private fun take(): EngineJob<I>? = synchronized(lock) { pending.also { pending = null } }

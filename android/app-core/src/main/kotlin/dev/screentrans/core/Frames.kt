@@ -24,6 +24,12 @@ object Frames {
         return dark >= threshold * total
     }
 
+    /**
+     * Report "game blocks capture" only when the frame looks black AND OCR found nothing: a dark
+     * cutscene with thin light text also looks black on a thumbnail.
+     */
+    fun reportBlocked(mostlyBlack: Boolean, textFound: Boolean): Boolean = mostlyBlack && !textFound
+
     /** Clamp (l, t, r, b) to a width x height image; the result may be empty (r <= l or b <= t). */
     fun clampRect(width: Int, height: Int, l: Int, t: Int, r: Int, b: Int): IntArray =
         intArrayOf(l.coerceIn(0, width), t.coerceIn(0, height), r.coerceIn(0, width), b.coerceIn(0, height))

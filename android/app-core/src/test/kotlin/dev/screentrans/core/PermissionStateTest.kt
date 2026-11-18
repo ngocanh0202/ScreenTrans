@@ -21,3 +21,11 @@ class PermissionStateTest {
         assertEquals(Step.RUNNING, nextStep(true, false, true))
     }
 }
+
+class NotificationSkipTest {
+    @Test
+    fun `after notifications were asked once the user can continue without them`() {
+        assertEquals(Step.CAPTURE, nextStep(true, false, false, notificationsAsked = true))
+        assertEquals(Step.NOTIFICATIONS, nextStep(true, false, false, notificationsAsked = false))
+    }
+}

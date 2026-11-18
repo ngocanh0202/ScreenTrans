@@ -33,6 +33,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import screentrans.text.Kind
 import screentrans.text.Segment
 import java.util.concurrent.Executors
 
@@ -40,6 +41,8 @@ import java.util.concurrent.Executors
  * Everything the service shows: bubble -> menu -> capture (overlays hidden) -> engine -> results.
  * Lives on the main thread; OCR + translation run on the engine's single thread.
  */
+private const val BLOCKED = "Game này chặn chụp màn hình (FLAG_SECURE), không dịch được."
+
 class Controller(private val context: Context, projection: MediaProjection) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val engineThread = Executors.newSingleThreadExecutor { r -> Thread(r, "screentrans-engine") }
@@ -57,20 +60,36 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private var regionJob = -1
     private var regionPx = intArrayOf(0, 0, 0, 0)
     private var fullJob = -1
+    private val maybeBlocked = HashSet<Int>()  // jobs whose frame looked black (FLAG_SECURE?)
 
     fun start() {
         scope.launch { engine.events.collect(::onEvent) }  // collect before the first submit (no replay)
         engine.start()
         val size = context.dp(48)
-        val p = overlays.params(size, size).apply { x = prefs.bubbleX; y = prefs.bubbleY }
+        val pos = Layout.clampBubble(prefs.bubbleX, prefs.bubbleY, size, capturer.width, capturer.height)
+        val p = overlays.params(size, size).apply { x = pos[0]; y = pos[1] }
         bubble.params = p
         overlays.add(bubble, p)
     }
 
-    fun onRotated() = capturer.resize()
+    fun onRotated() {
+        capturer.resize()
+        keepBubbleOnScreen()
+    }
+
+    /** A position saved in portrait can be off a landscape screen: pull the bubble back inside. */
+    private fun keepBubbleOnScreen() {
+        val p = bubble.params ?: return
+        val pos = Layout.clampBubble(p.x, p.y, context.dp(48), capturer.width, capturer.height)
+        if (pos[0] != p.x || pos[1] != p.y) {
+            p.x = pos[0]; p.y = pos[1]
+            if (bubble.isAttachedToWindow) overlays.update(bubble, p)
+        }
+    }
 
     fun stop() {
         listOf(menu, card, layer, selector, bubble).forEach { overlays.remove(it) }
+        engine.close()  // queued on the engine thread: ONNX sessions + ML Kit
         scope.cancel()
         capturer.release()
         engineThread.shutdown()
@@ -127,13 +146,15 @@ class Controller(private val context: Context, projection: MediaProjection) {
             return
         }
         scope.launch {
-            val frame = captureWithoutOverlays() ?: return@launch showCard(null, "Không chụp được màn hình.", true)
+            val cap = captureWithoutOverlays() ?: return@launch showCard(null, "Không chụp được màn hình.", true)
+            val frame = cap.frame
             val px = rel.toPx(frame.width, frame.height)
             val r = Frames.clampRect(frame.width, frame.height, px[0], px[1], px[2], px[3])
             if (r[2] - r[0] < RelRect.MIN_PX || r[3] - r[1] < RelRect.MIN_PX) return@launch chooseRegion(true)
             val crop = Bitmap.createBitmap(frame, r[0], r[1], r[2] - r[0], r[3] - r[1])
             regionPx = r
             regionJob = nextId++
+            if (cap.looksBlack) maybeBlocked.add(regionJob)
             engine.submit(EngineJob(regionJob, fullScreen = false, image = crop))
             when (val s = engine.state.value) {
                 is EngineState.Failed -> showCard(r, s.message, true)
@@ -150,8 +171,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
     // ---- full screen ----------------------------------------------------------------------------
     private fun translateFullScreen() {
         scope.launch {
-            val frame = captureWithoutOverlays() ?: return@launch showCard(null, "Không chụp được màn hình.", true)
+            val cap = captureWithoutOverlays() ?: return@launch showCard(null, "Không chụp được màn hình.", true)
+            val frame = cap.frame
             fullJob = nextId++
+            if (cap.looksBlack) maybeBlocked.add(fullJob)
             val l = FullScreenLayer(context, onBlockTapped = ::showDetail, onClose = ::closeResults)
             overlays.add(l, overlays.params(MATCH_PARENT, MATCH_PARENT))
             layer = l
@@ -167,9 +190,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
 
     // ---- capture --------------------------------------------------------------------------------
     /** Hide our own windows, wait for a frame without them, capture, show them again. */
-    private suspend fun captureWithoutOverlays(): Bitmap? {
+    private class Captured(val frame: Bitmap, val looksBlack: Boolean)
+
+    private suspend fun captureWithoutOverlays(): Captured? {
         closeMenu()
         closeResults()
+        capturer.resize()  // the rotation callback may not fire while our activity sits in the background
+        keepBubbleOnScreen()
         bubble.visibility = View.INVISIBLE
         val hiddenAt = SystemClock.uptimeMillis()
         delay(50)
@@ -179,11 +206,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val small = Bitmap.createScaledBitmap(frame, 160, maxOf(1, 160 * frame.height / maxOf(1, frame.width)), false)
         val pixels = IntArray(small.width * small.height)
         small.getPixels(pixels, 0, small.width, 0, 0, small.width, small.height)
-        if (Frames.isMostlyBlack(pixels)) {
-            showCard(null, "Game này chặn chụp màn hình (FLAG_SECURE), không dịch được.", true)
-            return null
-        }
-        return frame
+        // A black-looking frame may still be a dark scene with thin text: OCR decides (see onEvent).
+        return Captured(frame, Frames.isMostlyBlack(pixels))
     }
 
     // ---- results --------------------------------------------------------------------------------
@@ -195,16 +219,17 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val c = ResultCard(context) { overlays.remove(card); card = null }
         if (segments != null) c.showSegments(segments, showSource) else c.showMessage(message ?: "", error)
         val maxW = (capturer.width * 0.9f).toInt()
+        val maxH = (capturer.height * 0.8f).toInt()  // long text scrolls inside the card
         val width = if (region == null) maxW else minOf(maxW, maxOf(region[2] - region[0], context.dp(280)))
         c.measure(
             View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(maxH, View.MeasureSpec.AT_MOST),
         )
         val reg = region ?: intArrayOf(
             (capturer.width - width) / 2, capturer.height / 3, (capturer.width + width) / 2, capturer.height / 3,
         )
         val pos = Layout.placeOverlay(reg, width, c.measuredHeight, capturer.width, capturer.height)
-        val p = overlays.params(width, WindowManager.LayoutParams.WRAP_CONTENT).apply { x = pos[0]; y = pos[1] }
+        val p = overlays.params(width, minOf(c.measuredHeight, maxH)).apply { x = pos[0]; y = pos[1] }
         overlays.add(c, p)
         card = c
     }
@@ -212,9 +237,21 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private fun onEvent(e: EngineEvent) {
         when (e) {
             is EngineEvent.SegmentReady -> if (e.jobId == fullJob) layer?.add(e.segment)
-            is EngineEvent.Done -> when (e.jobId) {
-                regionJob -> { regionJob = -1; showCard(regionPx, null, segments = e.segments) }
-                fullJob -> { fullJob = -1; layer?.finish() }
+            is EngineEvent.Done -> {
+                val blocked = Frames.reportBlocked(
+                    mostlyBlack = maybeBlocked.remove(e.jobId), textFound = e.segments.any { it.kind == Kind.TEXT },
+                )
+                when (e.jobId) {
+                    regionJob -> {
+                        regionJob = -1
+                        if (blocked) showCard(regionPx, BLOCKED, true) else showCard(regionPx, null, segments = e.segments)
+                    }
+                    fullJob -> {
+                        fullJob = -1
+                        layer?.finish()
+                        if (blocked) showCard(null, BLOCKED, true)
+                    }
+                }
             }
             is EngineEvent.JobFailed -> when {
                 e.why == SUPERSEDED -> Unit

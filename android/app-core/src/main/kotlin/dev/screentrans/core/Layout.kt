@@ -22,6 +22,10 @@ object Layout {
         return intArrayOf(x, (screenH - h).coerceAtLeast(0))
     }
 
+    /** Keep a size x size bubble fully on a w x h screen (a position saved in portrait may be off-screen). */
+    fun clampBubble(x: Int, y: Int, size: Int, w: Int, h: Int): IntArray =
+        intArrayOf(x.coerceIn(0, maxOf(0, w - size)), y.coerceIn(0, maxOf(0, h - size)))
+
     /** Largest text size in [MIN_TEXT_PX, basePx] whose estimated wrapped height fits blockH * GROW. */
     fun fitTextPx(textLen: Int, blockW: Int, blockH: Int, basePx: Float): Float {
         if (basePx <= MIN_TEXT_PX) return basePx

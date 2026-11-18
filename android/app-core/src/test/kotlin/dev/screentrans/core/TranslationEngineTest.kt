@@ -96,4 +96,18 @@ class TranslationEngineTest {
         assertEquals(4, failed.jobId)
         assertTrue("no model here" in failed.why)
     }
+
+    @Test
+    fun `close releases the bundle on the engine dispatcher`() = runTest {
+        var closed = 0
+        val engine = TranslationEngine({
+            val b = bundle()
+            EngineBundle(b.ocr, b.pipeline, close = { closed++ })
+        }, this, StandardTestDispatcher(testScheduler))
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        engine.close()
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, closed)
+    }
 }

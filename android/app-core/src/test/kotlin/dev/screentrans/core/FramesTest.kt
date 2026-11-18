@@ -37,3 +37,12 @@ class FramesTest {
         assertTrue(r[2] <= r[0] || r[3] <= r[1])
     }
 }
+
+class BlockedReportTest {
+    @Test
+    fun `black frame is reported as blocked only when OCR found no text`() {
+        kotlin.test.assertTrue(Frames.reportBlocked(mostlyBlack = true, textFound = false))
+        kotlin.test.assertFalse(Frames.reportBlocked(mostlyBlack = true, textFound = true))  // text on a black scene
+        kotlin.test.assertFalse(Frames.reportBlocked(mostlyBlack = false, textFound = false))
+    }
+}

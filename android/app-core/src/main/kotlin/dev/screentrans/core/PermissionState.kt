@@ -8,9 +8,16 @@ enum class Step { OVERLAY, NOTIFICATIONS, CAPTURE, RUNNING }
  * screen-capture consent (starts the service) -> running. A running service stays RUNNING even if
  * notifications were revoked later; without the overlay permission nothing can be shown at all.
  */
-fun nextStep(canDrawOverlays: Boolean, notificationsOk: Boolean, serviceRunning: Boolean): Step = when {
+fun nextStep(
+    canDrawOverlays: Boolean,
+    notificationsOk: Boolean,
+    serviceRunning: Boolean,
+    notificationsAsked: Boolean = false,
+): Step = when {
     !canDrawOverlays -> Step.OVERLAY
     serviceRunning -> Step.RUNNING
-    !notificationsOk -> Step.NOTIFICATIONS
+    // Asked once already: Android stops showing the dialog after denials, and the foreground
+    // service works without the notification permission, so let the user continue.
+    !notificationsOk && !notificationsAsked -> Step.NOTIFICATIONS
     else -> Step.CAPTURE
 }
