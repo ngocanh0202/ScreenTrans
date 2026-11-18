@@ -174,9 +174,11 @@ Chụp vùng → (Live: phát hiện thay đổi + chờ chữ ổn định) →
 
 0. **Khởi tạo + spike:** cấu trúc monorepo, CI khung. Spike: (a) winocr trên ảnh chụp Reverse: 1999; (b) vinai CT2 so với transformers gốc (token ngôn ngữ mBART); (c) opus-mt ONNX + tokenizer chạy trên Android, đo tốc độ.
 1. **Lõi Windows (CLI):** capture, OCR, hậu xử lý, thuật ngữ, dịch, cache, benchmark → chốt model mặc định Windows.
-2. **GUI Windows:** tray, phím tắt, chọn vùng (DPI, đa màn hình), overlay.
-3. **Live + hồ sơ game + sửa bản dịch** trên Windows. Release Windows đầu tiên qua CI.
-4. **App Android:** MediaProjection, ML Kit, ONNX, overlay, nút nổi, Live, hồ sơ, thuật ngữ. Release `.apk` qua CI.
+2. **GUI Windows (một lần + toàn màn hình):** tray, phím tắt, chọn vùng (DPI, đa màn hình), overlay. Release Windows đầu tiên qua CI.
+3. **App Android cơ bản (một lần + toàn màn hình):** MediaProjection, ML Kit, ONNX, overlay, nút nổi, thuật ngữ, cache. Release `.apk` qua CI.
+4. **Live + hồ sơ game + sửa bản dịch** cho **cả hai nền tảng** (máy trạng thái và Live vùng lớn đặc tả bằng fixtures dùng chung).
+
+(Thứ tự 2–4 do người dùng chọn 2026-11-18: mỗi nền tảng có bản dùng được sớm, Live làm một lần cho cả hai.)
 5. **Hoàn thiện:** màn hình cài đặt, tải/cập nhật/xóa model, xem/sửa bảng thuật ngữ, **engine từ xa** (notebook `kaggle_serve` + client có fallback) trên cả hai nền tảng, **hỗ trợ tiếng Nhật** qua engine từ xa.
 6. **Fine-tune trên Kaggle** (chỉ khi đã có đủ `corrections.jsonl`): train, đánh giá sacreBLEU/COMET, chỉ thay model nếu tốt hơn.
 

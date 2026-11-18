@@ -259,22 +259,24 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
   → Phase 3 (Live): hiện **từng câu ngay khi dịch xong** (câu đầu ~300 ms) thay vì đợi cả đoạn; cân nhắc lại vinai vs opus cho Live sau khi người dùng thử.
 
-### Phase 2 — GUI Windows
+> **Thứ tự (người dùng chọn 2026-11-18, phương án C):** mỗi nền tảng có bản dùng được sớm (Phase 2 Windows, Phase 3 Android, đều chế độ một lần + toàn màn hình), rồi làm **Live một lần cho cả hai** ở Phase 4 (logic chờ ổn định / vùng lớn dùng chung qua fixtures).
+
+### Phase 2 — GUI Windows (một lần + toàn màn hình)
 - [ ] Tray + phím tắt toàn cục; `selector` (DPI, đa màn hình); `overlay` (copy, Esc, sửa).
-- [ ] Chế độ **toàn màn hình** (`Ctrl+Alt+F`): nhóm khối chữ, lọc, overlay đè từng khối, "Dùng khối này làm vùng Live".
-- [ ] Model load trong worker thread, UI không đơ; màn hình tải model.
-- [ ] `build-windows.yml`.
+- [ ] Chế độ **toàn màn hình** (`Ctrl+Alt+F`): nhóm khối chữ, lọc, overlay đè từng khối, "Dùng khối này làm vùng Live" (lưu vùng, dùng ở Phase 4).
+- [ ] Model load trong worker thread (một `Pipeline` duy nhất cho thread đó), UI không đơ; "Đang tải model…", "Đang dịch…".
+- [ ] `build-windows.yml`, phát hành bản Windows đầu tiên.
 
-### Phase 3 — Live + hồ sơ game (Windows)
-- [ ] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through.
-- [ ] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối.
-- [ ] `profiles` tự nhận game; tách tên / lựa chọn; tên riêng tự động; sửa bản dịch → thuật ngữ + `corrections.jsonl`.
-- [ ] Đo FPS trước/sau. `release.yml`, phát hành `v0.1.0` Windows.
-
-### Phase 4 — App Android
-- [ ] MediaProjection foreground service, overlay + nút nổi (menu 3 mục), ML Kit OCR, ONNX dịch, postprocess (pass fixtures), thuật ngữ, cache, hồ sơ, Live, **toàn màn hình**.
-- [ ] Tải model theo manifest. Đo ngân sách hiệu năng trên POCO X8 Pro → chốt model mặc định Android.
+### Phase 3 — App Android cơ bản (một lần + toàn màn hình)
+- [ ] MediaProjection foreground service, overlay + nút nổi (menu: **Dịch vùng** / **Toàn màn hình** / **Chọn vùng mới**), ML Kit OCR, ONNX dịch (`mt-core`), postprocess Kotlin (pass `shared/fixtures/postprocess`), thuật ngữ, cache.
+- [ ] Model: đóng gói trong APK (hoặc tải theo manifest). Đo ngân sách trên POCO X8 Pro.
 - [ ] `build-android.yml`, thêm `.apk` vào Release.
+
+### Phase 4 — Live + hồ sơ game (Windows + Android)
+- [ ] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s).
+- [ ] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối.
+- [ ] `profiles` tự nhận game; tách tên / lựa chọn; sửa bản dịch → `overrides` + `corrections.jsonl`; xem lại khóa cache (thuật ngữ / phiên bản model).
+- [ ] Fixtures chuỗi khung hình dùng chung cho máy trạng thái Live (Python ↔ Kotlin). Đo FPS trước/sau. Release `v0.1.0`.
 
 ### Phase 5 — Hoàn thiện
 - [ ] Màn hình cài đặt (cả hai nền tảng); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
