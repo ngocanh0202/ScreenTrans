@@ -1,0 +1,5 @@
+{
+ "name": "text that is not JSON gives no profile",
+ "input": "{not json",
+ "expected": null
+}

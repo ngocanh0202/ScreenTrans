@@ -1,0 +1,68 @@
+{
+ "name": "bad regions are dropped or clamped, bad values fall back to defaults",
+ "input": {
+  "id": "game.exe",
+  "live": {
+   "scope": "weird",
+   "interval_ms": "fast",
+   "settle_ms": -5
+  },
+  "regions": [
+   [
+    0.5,
+    0.5,
+    0.8,
+    0.2
+   ],
+   [
+    0.1,
+    0.1,
+    0,
+    0.2
+   ],
+   [
+    "a"
+   ],
+   [
+    1.2,
+    -0.1,
+    0.3,
+    0.3
+   ],
+   [
+    0.2,
+    0.2,
+    0.3
+   ]
+  ],
+  "ignore_regions": "nope",
+  "overrides": {
+   "  Hello   there. ": "Chào.",
+   "": "x",
+   "Bye.": 3
+  }
+ },
+ "expected": {
+  "id": "game.exe",
+  "name": "",
+  "live": {
+   "scope": "region",
+   "interval_ms": 300,
+   "settle_ms": 250,
+   "change_threshold": 5.0
+  },
+  "regions": [
+   [
+    0.5,
+    0.5,
+    0.5,
+    0.2
+   ]
+  ],
+  "ignore_regions": [],
+  "glossary": null,
+  "overrides": {
+   "Hello there.": "Chào."
+  }
+ }
+}

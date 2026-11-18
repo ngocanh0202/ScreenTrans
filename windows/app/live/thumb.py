@@ -11,7 +11,11 @@ def gray_thumb(img: Image.Image, width: int = WIDTH) -> np.ndarray:
     return np.asarray(g.resize((width, h), Image.BOX), dtype=np.float32)
 
 
-def diff(a: np.ndarray, b: np.ndarray) -> float:
+def diff(a: np.ndarray, b: np.ndarray, mask: np.ndarray | None = None) -> float:
+    """Mean |a - b|; with `mask` only where it is True (all ignored -> 0.0, i.e. "no change")."""
     if a.shape != b.shape:
         return float("inf")
-    return float(np.mean(np.abs(a - b)))
+    d = np.abs(a - b)
+    if mask is not None and mask.shape == d.shape:
+        return float(d[mask].mean()) if mask.any() else 0.0
+    return float(np.mean(d))

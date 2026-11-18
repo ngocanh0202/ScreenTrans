@@ -27,11 +27,17 @@ object Thumb {
         return sum
     }
 
-    /** Mean |Δ| per thumbnail pixel (0–255); different sizes → [Float.MAX_VALUE]. */
-    fun diff(a: FloatArray, b: FloatArray): Float {
+    /** Mean |Δ| per thumbnail pixel (0–255), only where [mask] is true; different sizes → [Float.MAX_VALUE]. */
+    fun diff(a: FloatArray, b: FloatArray, mask: BooleanArray? = null): Float {
         if (a.size != b.size || a.isEmpty()) return Float.MAX_VALUE
+        val m = mask?.takeIf { it.size == a.size }
         var total = 0.0
-        for (i in a.indices) total += abs(a[i] - b[i])
-        return (total / a.size).toFloat()
+        var count = 0
+        for (i in a.indices) {
+            if (m != null && !m[i]) continue
+            total += abs(a[i] - b[i])
+            count++
+        }
+        return if (count == 0) 0f else (total / count).toFloat()  // everything ignored: "no change"
     }
 }

@@ -1,0 +1,63 @@
+{
+ "name": "every field kept",
+ "input": {
+  "id": "reverse1999.exe",
+  "name": "Reverse: 1999",
+  "live": {
+   "scope": "screen",
+   "interval_ms": 400,
+   "settle_ms": 300,
+   "change_threshold": 6.5
+  },
+  "regions": [
+   [
+    0.1,
+    0.7,
+    0.8,
+    0.25
+   ]
+  ],
+  "ignore_regions": [
+   [
+    0.85,
+    0.9,
+    0.05,
+    0.05
+   ]
+  ],
+  "glossary": "reverse1999.json",
+  "overrides": {
+   "Hello there.": "Chào cậu."
+  }
+ },
+ "expected": {
+  "id": "reverse1999.exe",
+  "name": "Reverse: 1999",
+  "live": {
+   "scope": "screen",
+   "interval_ms": 400,
+   "settle_ms": 300,
+   "change_threshold": 6.5
+  },
+  "regions": [
+   [
+    0.1,
+    0.7,
+    0.8,
+    0.25
+   ]
+  ],
+  "ignore_regions": [
+   [
+    0.85,
+    0.9,
+    0.05,
+    0.05
+   ]
+  ],
+  "glossary": "reverse1999.json",
+  "overrides": {
+   "Hello there.": "Chào cậu."
+  }
+ }
+}

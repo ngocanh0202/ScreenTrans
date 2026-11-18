@@ -1,0 +1,20 @@
+{
+ "name": "only an id: every other field takes its default",
+ "input": {
+  "id": "game.exe"
+ },
+ "expected": {
+  "id": "game.exe",
+  "name": "",
+  "live": {
+   "scope": "region",
+   "interval_ms": 300,
+   "settle_ms": 250,
+   "change_threshold": 5.0
+  },
+  "regions": [],
+  "ignore_regions": [],
+  "glossary": null,
+  "overrides": {}
+ }
+}
