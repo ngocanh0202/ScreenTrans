@@ -26,8 +26,8 @@ Mỗi file `*.json`:
 ## Chi tiết bắt buộc cho bản port (Kotlin phải làm y hệt)
 
 - **Duyệt dòng:** sắp theo `(top, left)` tăng dần. Khi một dòng nối được vào nhiều đoạn có cùng `bottom` lớn nhất → chọn **đoạn được tạo trước** (fixture `tie_break_two_groups`).
-- **"Chữ hoa"** ở quy tắc 4 và 6 là **ASCII `A`–`Z`** — `Élise` không phải tên (fixture `accented_name`).
+- **"Chữ hoa"**: quy tắc 4 (token tên) và phép thử "một chữ cái hoa + `.`" của quy tắc 6 dùng **ASCII `A`–`Z`** — `Élise` không phải tên (fixture `accented_name`). Ký tự **mở đầu câu sau** ở quy tắc 6 dùng chữ hoa **Unicode** (Python `str.isupper()`, Kotlin `Char.isUpperCase()`). Nối gạch ngang (quy tắc 3): chữ thường **ASCII** `[a-z]` trước `-`, ký tự đầu dòng sau là chữ thường **Unicode**.
 - **"Chữ cái/chữ số"** ở quy tắc 1 theo Unicode (Python `str.isalpha()` / `str.isalnum()`; Kotlin `Char.isLetter()` / `Char.isLetterOrDigit()`). Khác biệt đã biết: Python coi chữ số mũ/phân số như `²`, `½` là `isalnum`, Kotlin `isLetterOrDigit` thì không — OCR game hiếm gặp, chấp nhận.
-- **Tách token** theo khoảng trắng Unicode (Python `str.split()`; Kotlin `split(Regex("\s+"))` sau `trim()`).
+- **Tách token** theo khoảng trắng Unicode (Python `str.split()`; Kotlin `trim().split(Regex("(?U)\s+"))`).
 - **Quy tắc 6:** trước khi so với danh sách viết tắt và quy tắc "một chữ hoa + `.`", bỏ các ký tự mở đầu token trong `"“‘'(` (fixture `quote_prefixed_abbrev`: `"Mr. Smith came."` không bị tách sau `"Mr.`).
 - **Quy tắc 4:** bỏ `:` cuối **trước** khi đếm token (fixture `name_with_colon_three_tokens`: `Old Man Tom:` → tên `Old Man Tom`).
