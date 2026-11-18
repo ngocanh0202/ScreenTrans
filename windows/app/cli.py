@@ -11,18 +11,14 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.cache import TranslationCache
 from app.capture import capture_region, parse_region
 from app.config import Config, ConfigError, load_config
-from app.datalog import PairLogger
-from app.models import ModelDownloadError, ensure_model
-from app.glossary import COMMON_GLOSSARY, Glossary, ProperNounTracker, load_common_words
+from app import factory
+from app.models import ModelDownloadError
 from app.ocr.base import OcrUnavailable
 from app.paths import default_config_path
-from app.ocr.windows_ocr import WindowsOcr
 from app.pipeline import Pipeline
 from app.translate.base import ModelNotFound
-from app.translate.ct2 import Ct2Translator
 
 DEFAULT_CONFIG = default_config_path()
 NO_TEXT = "(không tìm thấy chữ)"
@@ -51,33 +47,12 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def resolve_model_dir(config: Config, args: argparse.Namespace) -> Path:
-    model_dir = args.model_dir or (Path(config.translator.model_dir) if config.translator.model_dir else None)
-    if model_dir is not None:
-        return model_dir
-
-    def progress(done: int, total: int) -> None:
-        print(f"\rĐang tải model {config.translator.model}: {done / 1e6:.0f}/{total / 1e6:.0f} MB",
-              end="", file=sys.stderr, flush=True)
-
-    model_dir = ensure_model(config.translator.model, config.models.manifest_url, Path(config.paths.data_dir),
-                             progress=progress)
-    return model_dir
+def _cli_progress(done: int, total: int) -> None:
+    print(f"\rĐang tải model: {done / 1e6:.0f}/{total / 1e6:.0f} MB", end="", file=sys.stderr, flush=True)
 
 
 def build_pipeline(config: Config, args: argparse.Namespace) -> Pipeline:
-    data_dir = Path(config.paths.data_dir)
-    translator = Ct2Translator(
-        resolve_model_dir(config, args), beam_size=config.translator.beam_size,
-        intra_threads=config.translator.intra_threads,
-    )
-    glossary = Glossary.load(*args.glossary, COMMON_GLOSSARY)  # game glossaries win over the common one
-    cache = TranslationCache(config.cache.max_items, data_dir / "cache.sqlite" if config.cache.persist else None)
-    return Pipeline(
-        WindowsOcr(), translator, glossary, cache,
-        tracker=ProperNounTracker(load_common_words()),
-        pair_logger=PairLogger(data_dir / "translations.jsonl", config.logging.save_pairs),
-    )
+    return factory.build_pipeline(config, args.model_dir, args.glossary, progress=_cli_progress)
 
 
 def _print_result(result, args) -> None:

@@ -1,0 +1,189 @@
+from PIL import Image
+from PySide6.QtCore import QObject, Signal
+
+from app.config import Config
+from app.gui.worker import Job
+from app.pipeline import Segment
+
+
+class FakeWorker(QObject):
+    ready = Signal()
+    failed = Signal(str)
+    progress = Signal(int, int)
+    job_started = Signal(int)
+    segment = Signal(int, object)
+    job_done = Signal(int, object)
+    job_failed = Signal(int, str)
+
+    def __init__(self):
+        super().__init__()
+        self.jobs: list[Job] = []
+
+    def submit(self, job):
+        self.jobs.append(job)
+
+
+class FakeThread:
+    def __init__(self):
+        self.stopped = False
+
+    def quit(self):
+        self.stopped = True
+
+    def wait(self, ms=0):
+        return True
+
+
+class WorkerFactory:
+    def __init__(self):
+        self.workers: list[FakeWorker] = []
+
+    def __call__(self, pipeline_factory, connect=None):
+        w = FakeWorker()
+        if connect:
+            connect(w)
+        self.workers.append(w)
+        return FakeThread(), w
+
+
+class FakeHotkeys(QObject):
+    triggered = Signal(str)
+
+    def __init__(self, ok=True):
+        super().__init__()
+        self.ok = ok
+        self.registered = []
+
+    def register(self, name, combo):
+        self.registered.append((name, combo))
+        return self.ok
+
+    def close(self):
+        pass
+
+
+class FakeSelector(QObject):
+    selected = Signal(tuple)
+    cancelled = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.begun = 0
+
+    def begin(self):
+        self.begun += 1
+
+
+def _app(qtbot, ok=True, tmp_path=None):
+    from app.main import TrayApp
+
+    cfg = Config()
+    if tmp_path is not None:
+        cfg.paths.data_dir = str(tmp_path)
+    factory, hotkeys, selector = WorkerFactory(), FakeHotkeys(ok), FakeSelector()
+    captures = []
+
+    def capture(x, y, w, h):
+        captures.append((x, y, w, h))
+        return Image.new("RGB", (max(w, 1), max(h, 1)))
+
+    app = TrayApp(cfg, worker_factory=factory, hotkeys=hotkeys, selector=selector, capture=capture,
+                  monitor_at=lambda x, y: (0, 0, 1920, 1080), cursor=lambda: (500, 500), capture_delay_ms=0)
+    app.start()
+    return app, factory, hotkeys, selector, captures
+
+
+SEGS = [Segment("name", "Druvis III", None, (0, 0, 10, 10)),
+        Segment("text", "Hello.", "Xin chào.", (0, 20, 100, 40))]
+
+
+def test_registers_both_hotkeys(qtbot):
+    _, _, hotkeys, _, _ = _app(qtbot)
+    assert [n for n, _ in hotkeys.registered] == ["translate_region", "translate_fullscreen"]
+
+
+def test_region_flow_loading_then_result(qtbot):
+    app, factory, hotkeys, selector, captures = _app(qtbot)
+    hotkeys.triggered.emit("translate_region")
+    assert selector.begun == 1
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    job = factory.workers[0].jobs[0]
+    assert job.mode == "region" and captures == [(10, 10, 200, 100)]
+    assert "Đang tải model…" in app.region_overlay.text()
+    factory.workers[0].ready.emit()
+    factory.workers[0].job_done.emit(job.id, SEGS)
+    assert "[Druvis III]" in app.region_overlay.text() and "Xin chào." in app.region_overlay.text()
+
+
+def test_stale_job_result_is_ignored(qtbot):
+    app, factory, hotkeys, selector, _ = _app(qtbot)
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: len(factory.workers[0].jobs) == 1, timeout=2000)
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((20, 20, 200, 100))
+    qtbot.waitUntil(lambda: len(factory.workers[0].jobs) == 2, timeout=2000)
+    first, second = factory.workers[0].jobs
+    factory.workers[0].job_done.emit(first.id, SEGS)
+    assert "Xin chào." not in app.region_overlay.text()
+    factory.workers[0].job_done.emit(second.id, SEGS)
+    assert "Xin chào." in app.region_overlay.text()
+
+
+def test_fullscreen_flow(qtbot):
+    app, factory, hotkeys, _, captures = _app(qtbot)
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_fullscreen")
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    job = factory.workers[0].jobs[0]
+    assert job.mode == "fullscreen" and job.origin == (0, 0) and captures == [(0, 0, 1920, 1080)]
+    factory.workers[0].segment.emit(job.id, SEGS[1])
+    assert len(app.fullscreen_overlay.blocks) == 1 and app.fullscreen_overlay.translating
+    factory.workers[0].job_done.emit(job.id, SEGS)
+    assert not app.fullscreen_overlay.translating
+
+
+def test_worker_failure_offers_retry(qtbot):
+    app, factory, _, _, _ = _app(qtbot)
+    factory.workers[0].failed.emit("No translation model in X")
+    assert app.retry_action.isVisible() and "Lỗi" in app.status_action.text()
+    app.retry_action.trigger()
+    assert len(factory.workers) == 2
+
+
+def test_job_failure_shows_error(qtbot):
+    app, factory, hotkeys, selector, _ = _app(qtbot)
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    factory.workers[0].job_failed.emit(factory.workers[0].jobs[0].id, "boom")
+    assert "boom" in app.region_overlay.text()
+
+
+def test_switch_model_restarts_worker(qtbot):
+    app, factory, _, _, _ = _app(qtbot)
+    app.model_actions["opus-mt-en-vi"].trigger()
+    assert app.config.translator.model == "opus-mt-en-vi" and len(factory.workers) == 2
+
+
+def test_progress_updates_status(qtbot):
+    app, factory, _, _, _ = _app(qtbot)
+    factory.workers[0].progress.emit(120_000_000, 439_000_000)
+    assert "120/439 MB" in app.status_action.text()
+    factory.workers[0].ready.emit()
+    assert "Sẵn sàng" in app.status_action.text()
+
+
+def test_hotkey_failure_notifies(qtbot):
+    app, _, _, _, _ = _app(qtbot, ok=False)
+    assert "Ctrl+Alt+T" in app.last_message and "Ctrl+Alt+F" in app.last_message
+
+
+def test_self_test(capsys):
+    from app.main import main
+
+    assert main(["--self-test"]) == 0
+    assert "OK" in capsys.readouterr().out
