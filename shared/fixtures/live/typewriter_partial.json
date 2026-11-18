@@ -1,0 +1,106 @@
+{
+ "name": "typing for 1.5 s with partial_interval_ms=500: partial OCR every 500 ms, final OCR once still",
+ "params": {
+  "partial_interval_ms": 500
+ },
+ "events": [
+  {
+   "t": 0,
+   "diff": 20.0
+  },
+  {
+   "t": 100,
+   "diff": 20.0
+  },
+  {
+   "t": 200,
+   "diff": 20.0
+  },
+  {
+   "t": 300,
+   "diff": 20.0
+  },
+  {
+   "t": 400,
+   "diff": 20.0
+  },
+  {
+   "t": 500,
+   "diff": 20.0
+  },
+  {
+   "t": 600,
+   "diff": 20.0
+  },
+  {
+   "t": 700,
+   "diff": 20.0
+  },
+  {
+   "t": 800,
+   "diff": 20.0
+  },
+  {
+   "t": 900,
+   "diff": 20.0
+  },
+  {
+   "t": 1000,
+   "diff": 20.0
+  },
+  {
+   "t": 1100,
+   "diff": 20.0
+  },
+  {
+   "t": 1200,
+   "diff": 20.0
+  },
+  {
+   "t": 1300,
+   "diff": 20.0
+  },
+  {
+   "t": 1400,
+   "diff": 20.0
+  },
+  {
+   "t": 1500,
+   "diff": 20.0
+  },
+  {
+   "t": 1600,
+   "diff": 0.0
+  },
+  {
+   "t": 1700,
+   "diff": 0.0
+  },
+  {
+   "t": 1800,
+   "diff": 0.0
+  },
+  {
+   "t": 1900,
+   "diff": 0.0
+  }
+ ],
+ "expected": [
+  {
+   "t": 500,
+   "action": "partial"
+  },
+  {
+   "t": 1000,
+   "action": "partial"
+  },
+  {
+   "t": 1500,
+   "action": "partial"
+  },
+  {
+   "t": 1800,
+   "action": "ocr"
+  }
+ ]
+}

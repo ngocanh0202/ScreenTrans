@@ -13,8 +13,9 @@ def run(data):
     actions = []
     for ev in data["events"]:
         if "diff" in ev:
-            if m.on_frame(ev["t"], ev["diff"]) is Action.OCR:
-                actions.append({"t": ev["t"], "action": "ocr"})
+            a = m.on_frame(ev["t"], ev["diff"])
+            if a is not Action.WAIT:
+                actions.append({"t": ev["t"], "action": a.value})
         elif "ocr_text" in ev:
             actions.append({"t": ev["t"], "action": m.on_text(ev["t"], ev["ocr_text"])})
         elif ev.get("overlay_changed"):

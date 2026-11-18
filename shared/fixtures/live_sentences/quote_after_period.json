@@ -1,0 +1,19 @@
+{
+ "name": "closing quotes after the period still end the sentence",
+ "steps": [
+  {
+   "sentences": [
+    "“Run.”"
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "“Run.”"
+   ],
+   "final": false,
+   "done": 1
+  }
+ ]
+}

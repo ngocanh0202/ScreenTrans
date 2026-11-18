@@ -1,0 +1,44 @@
+{
+ "name": "a sentence followed by another one is done; the last one needs two identical reads",
+ "steps": [
+  {
+   "sentences": [
+    "Where are"
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Where are you going?",
+    "The"
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Where are you going?",
+    "The station is"
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Where are you going?",
+    "The station is closed today."
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "Where are you going?",
+    "The station is closed today."
+   ],
+   "final": false,
+   "done": 2
+  }
+ ]
+}

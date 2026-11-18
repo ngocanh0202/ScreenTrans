@@ -1,0 +1,26 @@
+{
+ "name": "'Mr.' at the end while typing is not a finished sentence",
+ "steps": [
+  {
+   "sentences": [
+    "Thank you, Mr."
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Thank you, Mr. Smith."
+   ],
+   "final": false,
+   "done": 0
+  },
+  {
+   "sentences": [
+    "Thank you, Mr. Smith."
+   ],
+   "final": false,
+   "done": 1
+  }
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "name": "text that got shorter is a new block (a new line started typing)",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going?",
+     "box": [
+      0,
+      0,
+      200,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going?"
+    ],
+    "kept": [],
+    "grown": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where",
+     "box": [
+      0,
+      0,
+      60,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where"
+    ],
+    "kept": [],
+    "grown": [],
+    "removed": [
+     "Where are you going?"
+    ]
+   }
+  }
+ ]
+}
