@@ -38,6 +38,7 @@ class Recorder:
         w.segment.connect(lambda i, seg: self.events.append(("segment", i, seg.source)))
         w.job_done.connect(lambda i, segs: self.events.append(("done", i, segs)))
         w.job_failed.connect(lambda i, why: self.events.append(("job_failed", i, why)))
+        w.job_started.connect(lambda i: self.events.append(("started", i)))
 
     def of(self, kind):
         return [e for e in self.events if e[0] == kind]
@@ -91,7 +92,7 @@ def test_only_latest_pending_job_runs(qtbot, run_worker):
     w, rec = run_worker(delay=0.3)
     qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
     w.submit(Job(1, "region", IMG, (0, 0)))
-    qtbot.wait(100)  # job 1 is now running
+    qtbot.waitUntil(lambda: ("started", 1) in rec.events, timeout=5000)  # job 1 is now running
     w.submit(Job(2, "region", IMG, (0, 0)))
     w.submit(Job(3, "region", IMG, (0, 0)))
     qtbot.waitUntil(lambda: any(e[1] == 3 for e in rec.of("done")), timeout=10000)

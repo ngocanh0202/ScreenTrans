@@ -1,6 +1,7 @@
 """System-wide hotkeys via Win32 RegisterHotKey, delivered through Qt's native event filter."""
 import ctypes
 import itertools
+import weakref
 from ctypes import wintypes
 from typing import Callable
 
@@ -45,12 +46,24 @@ def _win_unregister(hotkey_id: int) -> bool:
 
 
 class _Filter(QAbstractNativeEventFilter):
+    """Holds its manager weakly: the filter must never keep a dead manager reachable from Qt."""
+
     def __init__(self, owner: "HotkeyManager"):
         super().__init__()
-        self._owner = owner
+        self._owner = weakref.ref(owner)
 
     def nativeEventFilter(self, event_type, message):
-        return self._owner.nativeEventFilter(event_type, message)
+        owner = self._owner()
+        return owner.nativeEventFilter(event_type, message) if owner is not None else (False, 0)
+
+
+def _cleanup(native_filter: _Filter, names: dict, unregister_fn) -> None:
+    for hotkey_id in list(names):
+        unregister_fn(hotkey_id)
+    names.clear()
+    app = QCoreApplication.instance()
+    if app is not None:
+        app.removeNativeEventFilter(native_filter)
 
 
 class HotkeyManager(QObject):
@@ -70,6 +83,12 @@ class HotkeyManager(QObject):
         app = QCoreApplication.instance()
         if app is not None:
             app.installNativeEventFilter(self._filter)
+        # Remove the native filter (and hotkeys) when closed or garbage-collected: a filter left
+        # installed after its Python object died crashed the next window show().
+        self._finalizer = weakref.finalize(self, _cleanup, self._filter, self._names, unregister_fn)
+
+    def close(self) -> None:
+        self._finalizer()
 
     def register(self, name: str, combo: str) -> bool:
         mods, vk = parse_hotkey(combo)

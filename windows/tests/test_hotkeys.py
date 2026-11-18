@@ -79,3 +79,21 @@ def test_real_keypress_reaches_qt_filter(qtbot):
         assert blocker.args == ["probe"]
     finally:
         mgr.unregister_all()
+
+
+@pytest.mark.local
+def test_hotkey_managers_from_earlier_tests_do_not_crash_later_windows():
+    """Regression: managers garbage-collected while their native filter stayed installed crashed
+    the next window show() (reproduced by running these three files together)."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    tests = Path(__file__).parent
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-m", "not local", "-p", "no:cacheprovider",
+         str(tests / "test_hotkeys.py"), str(tests / "test_models.py"), str(tests / "test_selector.py")],
+        capture_output=True, cwd=tests.parents[1], env=dict(os.environ), timeout=300,
+    )
+    assert proc.returncode == 0, proc.stdout.decode("utf-8", "replace")[-800:]
