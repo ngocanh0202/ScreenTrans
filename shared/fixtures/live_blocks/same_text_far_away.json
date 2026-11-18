@@ -1,0 +1,51 @@
+{
+ "name": "same text far away is a new bubble",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going?",
+     "box": [
+      0,
+      0,
+      200,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going?"
+    ],
+    "kept": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going?",
+     "box": [
+      500,
+      500,
+      700,
+      530
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going?"
+    ],
+    "kept": [],
+    "removed": [
+     "Where are you going?"
+    ]
+   }
+  }
+ ]
+}
