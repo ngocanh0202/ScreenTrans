@@ -284,8 +284,10 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 - [x] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s). Windows: `Ctrl+Alt+L`, CPU Live nhàn rỗi đo 0,15% (60 s, vùng 900×200). Android: menu nút nổi "Bật Live". *(4a — chờ người dùng nghiệm thu trên game thật.)*
 - [x] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối. Chế độ chọn trong tray / menu, nhớ giữa các lần chạy (hồ sơ theo game ở 4b).
-- [ ] `profiles` tự nhận game; tách tên / lựa chọn; sửa bản dịch → `overrides` + `corrections.jsonl`; xem lại khóa cache (thuật ngữ / phiên bản model).
-- [ ] Fixtures chuỗi khung hình dùng chung cho máy trạng thái Live (Python ↔ Kotlin). Đo FPS trước/sau. Release `v0.1.0`.
+- [x] `profiles` tự nhận game (Windows: cửa sổ foreground; Android: Usage Access / chọn tay); sửa bản dịch → `overrides` + `corrections.jsonl`; khóa cache = model + phiên bản + digest thuật ngữ. *(4b; tách tên/lựa chọn thay bằng Live đè từng khối — tên nhân vật vẫn giữ nguyên không dịch.)*
+- [x] **Live đè lên chữ gốc** (toàn màn hình / vùng, vùng bỏ qua) + **realtime từng câu**; Android chụp "Một ứng dụng" không nháy. Windows CPU Live toàn màn hình nhàn rỗi 0,73%.
+- [x] Fixtures dùng chung Python ↔ Kotlin: `live`, `live_blocks`, `live_sentences`, `profiles`.
+- [ ] Nghiệm thu trên game thật + đo FPS trước/sau (chờ người dùng). Release `v0.1.0` (tag khi người dùng xác nhận).
 
 ### Phase 5 — Hoàn thiện
 - [ ] Màn hình cài đặt (cả hai nền tảng); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.

@@ -16,20 +16,21 @@ Bản build mới nhất từ `main`: [Releases → nightly](https://github.com/
 
 | Tính năng | Dùng để | Windows | Android |
 |---|---|---|---|
-| Dịch vùng | Dịch chữ trong vùng vừa chọn | `Ctrl+Alt+T` | Nút nổi → "Dịch vùng" |
-| Nhiều vùng | Lưu và dịch nhiều vùng cùng lúc | — | Nút nổi → "Chọn / sửa vùng" |
-| Toàn màn hình | Dịch mọi chữ trên màn hình, bản dịch đè đúng chỗ | `Ctrl+Alt+F` | Nút nổi → "Toàn màn hình" |
-| Live — Khung thoại | Tự dịch mỗi khi chữ trong vùng đổi, bản dịch hiện cạnh vùng | `Ctrl+Alt+L` | Nút nổi → "Bật Live" |
-| Live — Vùng lớn | Tự dịch chữ mới xuất hiện ở bất kỳ đâu trong một vùng lớn, bản dịch đè đúng chỗ | Tray → "Chế độ Live" | Nút nổi → "Live: Vùng lớn" |
+| Dịch vùng | Dịch chữ trong vùng đã chọn | `Ctrl+Alt+T` | Nút nổi → "Dịch vùng" |
+| Toàn màn hình | Dịch mọi chữ trên màn hình một lần, bản dịch đè đúng chỗ | `Ctrl+Alt+F` | Nút nổi → "Toàn màn hình" |
+| Live | Tự dịch khi chữ đổi, bản dịch đè lên chữ gốc, hiện từng câu ngay khi câu đó hiện xong | `Ctrl+Alt+L` | Nút nổi → "Bật Live" |
+| Phạm vi Live | Toàn màn hình, hoặc chỉ các vùng đã chọn (kèm vùng bỏ qua) | Tray → "Live dịch", "Vùng Live" | Nút nổi → "Live dịch", "Chọn / sửa vùng (bỏ qua)" |
+| Hồ sơ theo game | Tự nhận game, nhớ vùng, phạm vi Live, bản sửa riêng từng game | Tự động | Usage Access hoặc chọn tay ("Game ▸") |
+| Sửa bản dịch | Lần sau gặp đúng câu sẽ dùng bản của bạn; thêm thuật ngữ | `Ctrl+Alt+E`, nút "Sửa" | "Sửa bản dịch gần nhất", nút "Sửa" |
 | Bảng thuật ngữ | Giữ nguyên hoặc dịch cố định tên riêng, thuật ngữ | ✓ | ✓ |
-| Đổi model | Chọn `vinai-en2vi` (mặc định) hoặc `opus-mt-en-vi` | Tray → "Model" | `opus-mt-en-vi` |
+| Đổi model | `vinai-en2vi` (mặc định) hoặc `opus-mt-en-vi` | Tray → "Model" | `opus-mt-en-vi` |
 
-Overlay Live không chặn chuột / chạm. Dữ liệu Windows nằm ở `%LOCALAPPDATA%\ScreenTrans` (tray → "Mở thư mục dữ liệu"),
-cấu hình ở [windows/config.yaml](windows/config.yaml).
+Android: khi cấp quyền ghi màn hình, chọn **"Một ứng dụng" → game** để bản dịch Live không nháy.
+Dữ liệu Windows ở `%LOCALAPPDATA%\ScreenTrans` (tray → "Mở thư mục dữ liệu"), cấu hình ở [windows/config.yaml](windows/config.yaml).
 
 ## Sắp làm
 
-- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): Live toàn màn hình / vùng đè lên chữ gốc và dịch từng câu ngay khi hiện xong, hồ sơ theo game, sửa bản dịch, release v0.1.0.
+- **Phase 4b** ([plan](docs/superpowers/plans/2026-11-18-phase4b-profiles.md)): nghiệm thu trên game thật, đo FPS, release **v0.1.0** ([CHANGELOG](CHANGELOG.md)).
 - **Phase 5:** màn hình cài đặt, dịch từ xa qua Kaggle, tiếng Nhật.
 - **Phase 6:** fine-tune model.
 
