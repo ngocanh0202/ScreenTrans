@@ -1,0 +1,46 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "windows/**"
+      - "shared/**"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Python env
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv -r windows/requirements-dev.txt
+
+      - name: PyInstaller
+        run: .venv\Scripts\pyinstaller windows\screentrans.spec --noconfirm --distpath windows\dist --workpath windows\build
+
+      - name: Self-test the packaged exe
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "selftest.txt"
+          $p = Start-Process -FilePath "windows\dist\ScreenTrans\ScreenTrans.exe" -ArgumentList "--self-test", "`"$report`"" -Wait -PassThru
+          Get-Content $report
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          if (-not (Get-Content $report -Raw).StartsWith("OK")) { exit 1 }
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path windows\dist\ScreenTrans -DestinationPath ScreenTrans-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenTrans-windows
+          path: ScreenTrans-windows.zip
+          retention-days: 30

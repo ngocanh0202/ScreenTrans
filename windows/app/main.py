@@ -301,19 +301,59 @@ class TrayApp(QObject):
         self.worker.submit(job)
 
 
+def self_test(model_dir: Path | None = None) -> int:
+    """Packaging check: every heavy runtime import must resolve inside the frozen app; with a model
+    directory, also load it and translate one sentence (AutoTokenizer imports modules lazily)."""
+    import ctranslate2  # noqa: F401
+    import mss  # noqa: F401
+    from transformers import MarianTokenizer, MBartTokenizerFast  # noqa: F401
+
+    from app.ocr.windows_ocr import language_available
+
+    Glossary.load(*game_glossaries(), COMMON_GLOSSARY)
+    app_icon()
+    sample = ""
+    if model_dir is not None:
+        from app.translate.ct2 import Ct2Translator
+
+        sample = ", sample: " + Ct2Translator(model_dir).translate(["Good morning."])[0]
+    print(f"OK (ctranslate2 {ctranslate2.__version__}, english ocr: {language_available('en')}{sample})")
+    return 0
+
+
+def _run_self_test(report: str, model_dir: Path | None = None) -> int:
+    """The packaged app has no console and shows a dialog on uncaught errors: never let one escape."""
+    import io
+    import traceback
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            code = self_test(model_dir)
+    except Exception:
+        buf.write("FAIL\n" + traceback.format_exc())
+        code = 1
+    if report == "-":
+        if sys.stdout is not None:
+            sys.stdout.write(buf.getvalue())
+    else:
+        Path(report).write_text(buf.getvalue(), encoding="utf-8")
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ScreenTrans")
     ap.add_argument("--config", type=Path, default=default_config_path())
-    ap.add_argument("--self-test", action="store_true", help="load resources and exit (CI check)")
+    ap.add_argument("--self-test", nargs="?", const="-", metavar="REPORT",
+                    help="load resources and exit (CI check); write the result to REPORT (default stdout)")
+    ap.add_argument("--model-dir", type=Path, help="with --self-test: also load this model and translate")
     args = ap.parse_args(argv)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     config = load_config(args.config)
     if args.self_test:
-        Glossary.load(*game_glossaries(), COMMON_GLOSSARY)
-        app_icon()
-        print("OK")
-        return 0
+        return _run_self_test(args.self_test, args.model_dir)
     tray = TrayApp(config)
     tray.start()
     return app.exec()

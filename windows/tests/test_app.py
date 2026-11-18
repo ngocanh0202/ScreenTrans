@@ -187,3 +187,23 @@ def test_self_test(capsys):
 
     assert main(["--self-test"]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_self_test_writes_report_file(tmp_path):
+    from app.main import main
+
+    report = tmp_path / "r.txt"
+    assert main(["--self-test", str(report)]) == 0
+    assert report.read_text(encoding="utf-8").startswith("OK")
+
+
+def test_self_test_failure_is_reported_not_raised(tmp_path, monkeypatch):
+    import app.main as m
+
+    def boom(model_dir=None):
+        raise ImportError("ctranslate2 missing")
+
+    monkeypatch.setattr(m, "self_test", boom)
+    report = tmp_path / "r.txt"
+    assert m.main(["--self-test", str(report)]) == 1
+    assert "ctranslate2 missing" in report.read_text(encoding="utf-8")

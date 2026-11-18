@@ -21,3 +21,5 @@ spikes/ocr/data/*.jpeg
 spikes/ocr/data/*
 !spikes/ocr/data/README.md
 windows/out/
+windows/dist/
+windows/build/
