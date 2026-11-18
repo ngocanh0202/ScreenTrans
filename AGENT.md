@@ -273,6 +273,9 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [ ] `build-android.yml`, thêm `.apk` vào Release.
 
 ### Phase 4 — Live + hồ sơ game (Windows + Android)
+
+> Chia hai kế hoạch: **4a — Live** ([plan](docs/superpowers/plans/2026-11-18-phase4a-live.md)): máy trạng thái + Live thoại + Live vùng lớn trên cả hai nền tảng; **4b — hồ sơ game + sửa bản dịch + release `v0.1.0`**.
+
 - [ ] `live` với phát hiện thay đổi + chờ ổn định + overlay click-through; **hiện từng câu ngay khi dịch xong** (vinai 2 câu ~0,9 s).
 - [ ] **Live vùng lớn** (`live.mode: area`): giới hạn 1 OCR/s, so khối mới/cũ, chỉ dịch khối mới, overlay đè từng khối.
 - [ ] `profiles` tự nhận game; tách tên / lựa chọn; sửa bản dịch → `overrides` + `corrections.jsonl`; xem lại khóa cache (thuật ngữ / phiên bản model).
