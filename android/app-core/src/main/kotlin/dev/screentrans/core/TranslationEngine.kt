@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import screentrans.text.Glossary
 import screentrans.text.Line
 import screentrans.text.Paragraph
 import screentrans.text.Pipeline
@@ -36,6 +37,14 @@ class EngineBundle<I>(
  * [liveParagraphs] (paragraphs per region, no image) translates sentence by sentence
  * ([EngineEvent.Partial] after each sentence, then [EngineEvent.Done]).
  */
+/** Jobs that change the pipeline; never superseded, run before OCR / translation jobs. */
+sealed interface EngineControl {
+    /** The user's corrections ([fixes]: source to corrected) and glossary terms (target null = keep). */
+    data class Correct(val fixes: List<Pair<String, String>>, val terms: List<Pair<String, String?>>) : EngineControl
+    /** Another game: its glossary files (JSON text) and the user's translations for it. */
+    data class SetGame(val glossaryJson: List<String>, val overrides: Map<String, String>) : EngineControl
+}
+
 data class EngineJob<I>(
     val id: Int,
     val fullScreen: Boolean,
@@ -43,6 +52,7 @@ data class EngineJob<I>(
     val regions: List<IntArray> = emptyList(),
     val liveOcr: Boolean = false,
     val liveParagraphs: List<List<Paragraph>>? = null,
+    val control: EngineControl? = null,
 )
 
 sealed interface EngineState {
@@ -77,7 +87,8 @@ class TranslationEngine<I>(
 
     private val lock = Any()
     private var pending: EngineJob<I>? = null
-    private var livePending: EngineJob<I>? = null  // Live jobs have their own slot: they never replace user jobs
+    private var livePending: EngineJob<I>? = null
+    private val controls = ArrayDeque<EngineJob<I>>()  // Live jobs have their own slot: they never replace user jobs
     private var bundle: EngineBundle<I>? = null
 
     fun start() {
@@ -98,7 +109,11 @@ class TranslationEngine<I>(
     fun submit(job: EngineJob<I>) {
         val live = job.liveOcr || job.liveParagraphs != null
         val old = synchronized(lock) {
-            if (live) livePending.also { livePending = job } else pending.also { pending = job }
+            when {
+                job.control != null -> null.also { controls.addLast(job) }
+                live -> livePending.also { livePending = job }
+                else -> pending.also { pending = job }
+            }
         }
         if (old != null) _events.tryEmit(EngineEvent.JobFailed(old.id, SUPERSEDED))
         scope.launch(dispatcher) { process() }
@@ -116,7 +131,8 @@ class TranslationEngine<I>(
     }
 
     private fun take(): EngineJob<I>? = synchronized(lock) {
-        if (pending != null) pending.also { pending = null } else livePending.also { livePending = null }
+        controls.removeFirstOrNull()
+            ?: if (pending != null) pending.also { pending = null } else livePending.also { livePending = null }
     }
 
     private fun process() {
@@ -136,6 +152,20 @@ class TranslationEngine<I>(
 
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
         try {
+            when (val c = job.control) {
+                is EngineControl.Correct -> {
+                    c.fixes.forEach { (src, fixed) -> b.pipeline.correct(src, fixed) }
+                    c.terms.forEach { (src, target) -> b.pipeline.addTerm(src, target) }
+                    _events.tryEmit(EngineEvent.Done(job.id, emptyList()))
+                    return
+                }
+                is EngineControl.SetGame -> {
+                    b.pipeline.setGame(Glossary.load(*c.glossaryJson.toTypedArray()), c.overrides)
+                    _events.tryEmit(EngineEvent.Done(job.id, emptyList()))
+                    return
+                }
+                null -> Unit
+            }
             val live = job.liveParagraphs
             if (live != null) {
                 runLiveTranslate(b, job.id, live)

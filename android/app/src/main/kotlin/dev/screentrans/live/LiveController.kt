@@ -15,6 +15,7 @@ import dev.screentrans.core.live.LiveHost
 import dev.screentrans.core.live.LiveParams
 import dev.screentrans.core.live.LiveSession
 import dev.screentrans.core.live.Thumb
+import dev.screentrans.core.profile.ProfileLogic
 import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,10 @@ class LiveController(
 ) : LiveHost {
     enum class CaptureMode { UNKNOWN, HIDDEN, CAPTURED }
 
+    private companion object {
+        const val THUMB_W = 64
+    }
+
     var captureMode = CaptureMode.UNKNOWN
         private set
     private var session: LiveSession? = null
@@ -55,6 +60,10 @@ class LiveController(
     private var ocrCapture: Job? = null
     private var regions: List<IntArray> = emptyList()
     private var prev: Array<FloatArray?> = emptyArray()
+    private var ignore: List<IntArray> = emptyList()
+    private var masks: Array<BooleanArray?> = emptyArray()
+    private var blackTicks = 0
+    private var blackReported = false
     private var layer: LiveAreaLayer? = null
     private var capturing = false
     private var startedAt = 0L
@@ -73,18 +82,30 @@ class LiveController(
 
     val running: Boolean get() = session?.running == true
 
-    /** Translations shown last (for "edit the last translation"). */
-    val lastSegments: List<Segment> get() = session?.lastSegments.orEmpty()
+    /** Every translated sentence Live shows now (for "edit the last translation"). */
+    fun shownSegments(): List<Segment> = session?.shownSegments().orEmpty()
+
+    fun applyCorrection(source: String, corrected: String) {
+        session?.applyCorrection(source, corrected)
+    }
 
     private fun now(): Int = (SystemClock.uptimeMillis() - startedAt).toInt()
 
-    /** [scopeName]: "screen" ([regionsPx] = the whole screen) or "region". */
-    fun start(regionsPx: List<IntArray>, scopeName: String) {
+    /**
+     * [scopeName]: "screen" ([regionsPx] = the whole screen) or "region"; [ignorePx]: parts left out of the
+     * change detection (blinking arrow, animated HUD); [params]: from the game profile.
+     */
+    fun start(regionsPx: List<IntArray>, scopeName: String, ignorePx: List<IntArray> = emptyList(),
+              params: LiveParams = LiveParams(partialIntervalMs = 500)) {
         stop()
         regions = regionsPx
+        ignore = ignorePx
         prev = arrayOfNulls(regionsPx.size)
+        masks = arrayOfNulls(regionsPx.size)
+        blackTicks = 0
+        blackReported = false
         startedAt = SystemClock.uptimeMillis()
-        val s = LiveSession(LiveParams(partialIntervalMs = 500), scopeName, regionsPx.size, host = this)
+        val s = LiveSession(params, scopeName, regionsPx.size, host = this)
         session = s
         val l = LiveAreaLayer(context)
         overlays.add(l, overlays.params(MATCH_PARENT, MATCH_PARENT, touchable = false))
@@ -162,10 +183,25 @@ class LiveController(
             val thumb = capturer.thumbnail(r) ?: return@forEachIndexed
             if (thumb.average() < 2.0) return@forEachIndexed  // black: the captured app is not on screen
             any = true
-            prev[i]?.let { worst = maxOf(worst, Thumb.diff(it, thumb)) }
+            prev[i]?.let { worst = maxOf(worst, Thumb.diff(it, thumb, mask(i, r, thumb.size))) }
             prev[i] = thumb
         }
-        if (any) s.onFrame(now(), worst)
+        if (any) {
+            blackTicks = 0
+            blackReported = false
+            s.onFrame(now(), worst)
+        } else if (++blackTicks >= 10 && !blackReported) {  // ~3 s of black frames
+            blackReported = true
+            notify("Không thấy hình game (game chặn chụp màn hình, hoặc bạn đang ở ứng dụng khác) — Live chờ tới khi thấy lại hình.")
+        }
+    }
+
+    /** Thumbnails are THUMB_W wide (narrower regions are rare: no mask then). */
+    private fun mask(i: Int, region: IntArray, size: Int): BooleanArray? {
+        if (ignore.isEmpty() || size % THUMB_W != 0) return null
+        val m = masks[i]
+        if (m != null && m.size == size) return m
+        return ProfileLogic.ignoreMask(region, ignore, THUMB_W, size / THUMB_W).also { masks[i] = it }
     }
 
     // ---- LiveHost -----------------------------------------------------------------------------------

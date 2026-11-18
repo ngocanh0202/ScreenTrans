@@ -17,6 +17,16 @@ class Prefs(context: Context) {
         get() = sp.getString("live_scope", null).takeIf { it == "screen" } ?: "region"
         set(v) = sp.edit().putString("live_scope", v).apply()
 
+    /** Game picked by hand in the bubble menu ("" = detect automatically). */
+    var manualGame: String
+        get() = sp.getString("manual_game", "") ?: ""
+        set(v) = sp.edit().putString("manual_game", v).apply()
+
+    /** The regions / Live mode above were moved into the default game profile (4b). */
+    var profilesMigrated: Boolean
+        get() = sp.getBoolean("profiles_migrated", false)
+        set(v) = sp.edit().putBoolean("profiles_migrated", v).apply()
+
     var bubbleX: Int
         get() = sp.getInt("bubble_x", 0)
         set(v) = sp.edit().putInt("bubble_x", v).apply()

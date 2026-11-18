@@ -181,4 +181,24 @@ class TranslationEngineTest {
         assertEquals(listOf(1), events.filterIsInstance<EngineEvent.Done>().map { it.jobId })
         assertEquals(listOf(3), events.filterIsInstance<EngineEvent.OcrDone>().map { it.jobId })
     }
+
+    @Test
+    fun `correct and set game control jobs are never superseded and apply to later jobs`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        testScheduler.runCurrent()
+        engine.submit(EngineJob(1, false, null as String?, control = EngineControl.Correct(listOf("Hello there." to "Chào cậu."), emptyList())))
+        engine.submit(EngineJob(2, false, "img"))
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        assertTrue(events.none { it is EngineEvent.JobFailed })
+        val done = events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 2 }
+        assertEquals("Chào cậu.", done.segments[1].translation)
+        engine.submit(EngineJob(3, false, null as String?, control = EngineControl.SetGame(listOf("""{"entries": []}"""), mapOf("Far below." to "Tít dưới."))))
+        engine.submit(EngineJob(4, false, "img"))
+        testScheduler.advanceUntilIdle()
+        val after = events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 4 }
+        assertEquals(listOf("VI Hello there.", "Tít dưới."), after.segments.drop(1).map { it.translation })
+    }
 }

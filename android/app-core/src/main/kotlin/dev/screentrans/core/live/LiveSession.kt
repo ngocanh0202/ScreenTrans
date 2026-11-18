@@ -162,6 +162,23 @@ class LiveSession(
         lastSegments = flat
     }
 
+    /** Every translated sentence on screen now (for "edit the last translation"). */
+    fun shownSegments(): List<Segment> = blocks.values.filter { it.kind == Kind.TEXT }.flatMap { st ->
+        (0 until st.done).mapNotNull { k ->
+            st.shown[k]?.let { (src, tr) -> Segment(Kind.TEXT, src, tr, st.box[0], st.box[1], st.box[2], st.box[3]) }
+        }
+    }
+
+    /** The user fixed a sentence: redraw every block showing it. */
+    fun applyCorrection(source: String, corrected: String) {
+        for ((key, st) in blocks) {
+            val hit = st.shown.filterValues { it.first == source }.keys
+            if (hit.isEmpty()) continue
+            hit.forEach { st.shown[it] = source to corrected }
+            draw(key.first, key.second)
+        }
+    }
+
     /** Done: the job no longer counts as running. */
     fun onJobEnded(jobId: Int) {
         requests.remove(jobId)?.let { inflight -= it.toSet() }

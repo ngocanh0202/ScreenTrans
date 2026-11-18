@@ -149,4 +149,16 @@ class LiveSessionTest {
         s2.onFrame(100, 255f)
         assertEquals(true, s2.machine.changing)
     }
+
+    @Test
+    fun `shown segments and apply correction`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello. Bye."))))
+        translate(s, h.translate.last())
+        assertEquals(listOf("Hello." to "VI Hello.", "Bye." to "VI Bye."), s.shownSegments().map { it.source to it.translation })
+        s.applyCorrection("Hello.", "Chào.")
+        assertEquals(listOf("Chào. VI Bye."), h.blocks.values.toList())
+    }
 }

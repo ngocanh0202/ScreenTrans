@@ -91,6 +91,9 @@ class Pipeline(
         overrides[normalizeText(source)] = corrected
     }
 
+    /** A glossary term the user added (target null/blank = keep the source unchanged). */
+    fun addTerm(source: String, target: String?) = glossary.addEntry(source, target)
+
     /** The user's translations (to save into the game profile). */
     fun overrides(): Map<String, String> = HashMap(overrides)
 
