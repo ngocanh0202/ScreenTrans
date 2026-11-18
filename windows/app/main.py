@@ -2,6 +2,7 @@
 import argparse
 import copy
 import itertools
+import os
 import sys
 from pathlib import Path
 from typing import Callable
@@ -26,6 +27,7 @@ MODELS = ["vinai-en2vi", "opus-mt-en-vi"]
 HOTKEYS = [("translate_region", "translate_region"), ("translate_fullscreen", "translate_fullscreen")]
 TRANSLATING_DELAY_MS = 300
 CAPTURE_DELAY_MS = 80  # let the selector shade disappear from the screen before capturing
+QUIT_WAIT_MS = 3000
 LOADING = "Đang tải model…"
 TRANSLATING = "Đang dịch…"
 
@@ -83,6 +85,7 @@ class TrayApp(QObject):
         self._monitor_at = monitor_at
         self._cursor = cursor
         self._capture_delay_ms = capture_delay_ms
+        self._exit = os._exit  # last resort when a worker thread is stuck in a download / model load
         self._ids = itertools.count(1)
         self._thread = None
         self.worker = None
@@ -157,7 +160,8 @@ class TrayApp(QObject):
     def restart_worker(self) -> None:
         if self._thread is not None:
             self._thread.quit()
-            self._retired.append(self._thread)  # may still be loading a model; let it finish
+            # keep the old worker alive until its thread ends; its signals are ignored (see _current)
+            self._retired.append((self._thread, self.worker))
         self.ready, self.error = False, None
         self.status_action.setText(LOADING)
         self.retry_action.setVisible(False)
@@ -184,19 +188,31 @@ class TrayApp(QObject):
         self.config.translator.model = model_id
         self.restart_worker()
 
+    def _current(self) -> bool:
+        """Only the active worker may change app state; a retired one (model switch) is ignored."""
+        return self.sender() is self.worker
+
     def quit(self) -> None:
         closer = getattr(self.hotkeys, "close", None)
         if callable(closer):
             closer()
-        for t in [self._thread, *self._retired]:
-            if t is not None:
-                t.quit()
         self.tray.hide()
+        threads = [t for t in [self._thread, *(t for t, _ in self._retired)] if t is not None]
+        for t in threads:
+            t.quit()
+        # Destroying a running QThread aborts the process: wait, and if a thread is stuck in a
+        # download or model load, end the process directly instead of crashing on exit.
+        stuck = [t for t in threads if not t.wait(QUIT_WAIT_MS)]
+        if stuck:
+            self._exit(0)
+            return
         QApplication.quit()
 
     # ---- worker signals -----------------------------------------------------------------------
     @Slot()
     def _on_ready(self) -> None:
+        if not self._current():
+            return
         self.ready = True
         self.status_action.setText(f"Sẵn sàng: {self.config.translator.model}")
         if self._region_job is not None and self.region_overlay is not None and self.region_overlay.isVisible():
@@ -204,6 +220,8 @@ class TrayApp(QObject):
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:
+        if not self._current():
+            return
         self.error = message
         self.status_action.setText(f"Lỗi: {message[:80]}")
         self.retry_action.setVisible(True)
@@ -211,15 +229,21 @@ class TrayApp(QObject):
 
     @Slot(int, int)
     def _on_progress(self, done: int, total: int) -> None:
+        if not self._current():
+            return
         self.status_action.setText(f"{LOADING} {done / 1e6:.0f}/{total / 1e6:.0f} MB")
 
     @Slot(int, object)
     def _on_segment(self, job_id: int, segment) -> None:
+        if not self._current():
+            return
         if job_id == self._fullscreen_job and self.fullscreen_overlay is not None:
             self.fullscreen_overlay.add_segment(segment, self._fullscreen_origin)
 
     @Slot(int, object)
     def _on_job_done(self, job_id: int, segments) -> None:
+        if not self._current():
+            return
         if job_id == self._region_job:
             self._region_job = None
             self.region_overlay.show_segments(segments, self.config.overlay.show_source)
@@ -230,7 +254,16 @@ class TrayApp(QObject):
 
     @Slot(int, str)
     def _on_job_failed(self, job_id: int, why: str) -> None:
-        if why == SUPERSEDED:
+        if not self._current():
+            return
+        if why == SUPERSEDED:  # a newer job replaced it: drop its pending indicator
+            if job_id == self._region_job:
+                self._region_job = None
+                if self.region_overlay is not None:
+                    self.region_overlay.close()
+            elif job_id == self._fullscreen_job and self.fullscreen_overlay is not None:
+                self._fullscreen_job = None
+                self.fullscreen_overlay.close()
             return
         if job_id == self._region_job:
             self._region_job = None
@@ -249,7 +282,15 @@ class TrayApp(QObject):
         elif name == "translate_fullscreen":
             self.translate_fullscreen()
 
+    def _close_overlays(self) -> None:
+        """Results from the previous press must not grab input or end up in the next capture."""
+        if self.region_overlay is not None:
+            self.region_overlay.close()
+        if self.fullscreen_overlay is not None:
+            self.fullscreen_overlay.close()
+
     def translate_region(self) -> None:
+        self._close_overlays()
         self.selector.begin()
 
     @Slot(tuple)
@@ -284,11 +325,10 @@ class TrayApp(QObject):
         self.region_overlay.present(region, screen.geometry())
 
     def translate_fullscreen(self) -> None:
+        self._close_overlays()
         mon = self._monitor_at(*self._cursor())
         image = self._capture(*mon)
         screen = screen_for_physical(mon[0] + mon[2] // 2, mon[1] + mon[3] // 2)
-        if self.fullscreen_overlay is not None:
-            self.fullscreen_overlay.close()
         self.fullscreen_overlay = FullscreenOverlay(self.config.overlay, QRect(screen.geometry()),
                                                     screen.devicePixelRatio())
         self.fullscreen_overlay.present()

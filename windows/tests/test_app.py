@@ -207,3 +207,66 @@ def test_self_test_failure_is_reported_not_raised(tmp_path, monkeypatch):
     report = tmp_path / "r.txt"
     assert m.main(["--self-test", str(report)]) == 1
     assert "ctranslate2 missing" in report.read_text(encoding="utf-8")
+
+
+def test_retired_worker_signals_are_ignored(qtbot):
+    app, factory, _, _, _ = _app(qtbot)
+    old = factory.workers[0]
+    app.model_actions["opus-mt-en-vi"].trigger()
+    old.progress.emit(1, 2)
+    old.ready.emit()
+    assert not app.ready and "1/0 MB" not in app.status_action.text()
+    old.failed.emit("old model broke")
+    assert app.error is None and not app.retry_action.isVisible()
+    factory.workers[1].ready.emit()
+    assert app.ready and "opus-mt-en-vi" in app.status_action.text()
+
+
+def test_quit_waits_for_threads_and_force_exits_if_stuck(qtbot, monkeypatch):
+    import app.main as m
+
+    app, factory, _, _, _ = _app(qtbot)
+    exits = []
+    monkeypatch.setattr(m.QApplication, "quit", staticmethod(lambda: None))
+    app._exit = lambda code: exits.append(code)
+    waited = []
+    app._thread.wait = lambda ms=0: (waited.append(ms), False)[1]  # still loading a model
+    app.quit()
+    assert waited and waited[0] > 0
+    assert exits == [0]
+
+
+def test_new_selection_closes_previous_result(qtbot):
+    app, factory, hotkeys, selector, _ = _app(qtbot)
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    factory.workers[0].job_done.emit(factory.workers[0].jobs[0].id, SEGS)
+    assert app.region_overlay.isVisible()
+    hotkeys.triggered.emit("translate_region")
+    assert not app.region_overlay.isVisible() and selector.begun == 2
+
+
+def test_fullscreen_closes_overlays_before_capturing(qtbot):
+    app, factory, hotkeys, selector, captures = _app(qtbot)
+    factory.workers[0].ready.emit()
+    hotkeys.triggered.emit("translate_fullscreen")
+    first = app.fullscreen_overlay
+    seen_visible = []
+    original = app._capture
+    app._capture = lambda *r: (seen_visible.append(first.isVisible()), original(*r))[1]
+    hotkeys.triggered.emit("translate_fullscreen")
+    assert seen_visible == [False]
+
+
+def test_superseded_region_job_clears_its_popup(qtbot):
+    app, factory, hotkeys, selector, _ = _app(qtbot)
+    hotkeys.triggered.emit("translate_region")
+    selector.selected.emit((10, 10, 200, 100))
+    qtbot.waitUntil(lambda: bool(factory.workers[0].jobs), timeout=2000)
+    region_job = factory.workers[0].jobs[0]
+    assert app.region_overlay.isVisible()  # "Đang tải model…"
+    hotkeys.triggered.emit("translate_fullscreen")
+    factory.workers[0].job_failed.emit(region_job.id, "superseded")
+    assert app._region_job is None and not app.region_overlay.isVisible()
