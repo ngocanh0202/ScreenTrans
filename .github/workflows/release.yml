@@ -11,17 +11,24 @@ jobs:
   build-windows:
     uses: ./.github/workflows/build-windows.yml
 
+  build-android:
+    uses: ./.github/workflows/build-android.yml
+    secrets: inherit
+
   publish:
-    needs: build-windows
+    needs: [build-windows, build-android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: ScreenTrans-windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: ScreenTrans-android
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" ScreenTrans-windows.zip \
+          gh release create "${{ github.ref_name }}" ScreenTrans-windows.zip ScreenTrans-android.apk \
             --repo "${{ github.repository }}" --title "ScreenTrans ${{ github.ref_name }}" \
-            --notes "Windows build. Unzip and run ScreenTrans.exe; the translation model (~440 MB) downloads on first start."
+            --notes "Windows: unzip and run ScreenTrans.exe (the model downloads on first start). Android: install ScreenTrans-android.apk (model included)."
