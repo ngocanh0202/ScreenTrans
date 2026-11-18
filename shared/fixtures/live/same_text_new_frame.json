@@ -1,0 +1,63 @@
+{
+ "name": "the picture changed but the text did not: skip",
+ "events": [
+  {
+   "t": 0,
+   "diff": 50.0
+  },
+  {
+   "t": 100,
+   "diff": 0.0
+  },
+  {
+   "t": 200,
+   "diff": 0.0
+  },
+  {
+   "t": 300,
+   "diff": 0.0
+  },
+  {
+   "t": 350,
+   "ocr_text": "Hello."
+  },
+  {
+   "t": 2000,
+   "diff": 40.0
+  },
+  {
+   "t": 2100,
+   "diff": 0.0
+  },
+  {
+   "t": 2200,
+   "diff": 0.0
+  },
+  {
+   "t": 2300,
+   "diff": 0.0
+  },
+  {
+   "t": 2350,
+   "ocr_text": " Hello.  "
+  }
+ ],
+ "expected": [
+  {
+   "t": 300,
+   "action": "ocr"
+  },
+  {
+   "t": 350,
+   "action": "translate"
+  },
+  {
+   "t": 2300,
+   "action": "ocr"
+  },
+  {
+   "t": 2350,
+   "action": "skip"
+  }
+ ]
+}

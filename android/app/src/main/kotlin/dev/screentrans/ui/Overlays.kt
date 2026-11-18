@@ -43,8 +43,11 @@ class Overlays(private val context: Context) {
 
     fun add(view: View, p: WindowManager.LayoutParams) = wm.addView(view, p)
     fun update(view: View, p: WindowManager.LayoutParams) = wm.updateViewLayout(view, p)
+    /** Added views get their parent synchronously in addView; isAttachedToWindow only after the first traversal. */
+    fun isAdded(view: View?): Boolean = view?.parent != null
+
     fun remove(view: View?) {
-        if (view?.isAttachedToWindow == true) wm.removeView(view)
+        if (isAdded(view)) wm.removeView(view)
     }
 }
 

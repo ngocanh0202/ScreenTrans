@@ -17,9 +17,11 @@ PipelineFactory = Callable[[Callable[[int, int], None]], Pipeline]
 @dataclass
 class Job:
     id: int
-    mode: Literal["region", "fullscreen"]
-    image: Image.Image
+    mode: Literal["region", "fullscreen", "live_ocr", "live_translate"]
+    image: Image.Image | None
     origin: tuple[int, int]  # physical top-left of the image on the virtual screen
+    images: list | None = None       # live_ocr: one image per watched region
+    paragraphs: list | None = None   # live_translate: list of paragraphs per region
 
 
 class TranslationWorker(QObject):
@@ -30,6 +32,8 @@ class TranslationWorker(QObject):
     segment = Signal(int, object)
     job_done = Signal(int, object)
     job_failed = Signal(int, str)
+    ocr_done = Signal(int, object)   # live_ocr: list[list[Paragraph]] per region
+    partial = Signal(int, object)    # live_translate: list[list[Segment]] per region, after each sentence
     _wake = Signal()
 
     def __init__(self, factory: PipelineFactory):
@@ -38,6 +42,7 @@ class TranslationWorker(QObject):
         self._pipeline: Pipeline | None = None
         self._lock = threading.Lock()
         self._pending: Job | None = None
+        self._live_pending: Job | None = None  # Live jobs have their own slot: they never replace user jobs
         self.is_ready = False
         self.error: str | None = None
         self._wake.connect(self._process)
@@ -60,16 +65,23 @@ class TranslationWorker(QObject):
         self._process()
 
     def submit(self, job: Job) -> None:
-        """Thread-safe. Keeps only the newest waiting job; an older waiting one is superseded."""
+        """Thread-safe. Keeps only the newest waiting job of its kind (user / live); an older waiting
+        one of the same kind is superseded. User jobs run first."""
         with self._lock:
-            old, self._pending = self._pending, job
+            if job.mode.startswith("live_"):
+                old, self._live_pending = self._live_pending, job
+            else:
+                old, self._pending = self._pending, job
         if old is not None:
             self.job_failed.emit(old.id, SUPERSEDED)
         self._wake.emit()
 
     def _take(self) -> Job | None:
         with self._lock:
-            job, self._pending = self._pending, None
+            if self._pending is not None:
+                job, self._pending = self._pending, None
+            else:
+                job, self._live_pending = self._live_pending, None
         return job
 
     @Slot()
@@ -86,6 +98,28 @@ class TranslationWorker(QObject):
     def _run(self, job: Job) -> None:
         self.job_started.emit(job.id)
         try:
+            if job.mode == "live_ocr":
+                per_region = [postprocess(self._pipeline.ocr.recognize(img)) for img in job.images or []]
+                self.ocr_done.emit(job.id, per_region)
+                return
+            if job.mode == "live_translate":
+                groups = job.paragraphs or []
+                flat = [p for ps in groups for p in ps]
+                sizes = [len(ps) for ps in groups]
+
+                def regroup(segs):
+                    out, i = [], 0
+                    for n in sizes:
+                        out.append(segs[i:i + n])
+                        i += n
+                    return out
+
+                last = [[] for _ in groups]
+                for segs in self._pipeline.iter_sentences(flat):
+                    last = regroup(segs)
+                    self.partial.emit(job.id, last)
+                self.job_done.emit(job.id, last)
+                return
             if job.mode == "fullscreen":
                 paragraphs = postprocess(self._pipeline.ocr.recognize(job.image))
                 segments = []

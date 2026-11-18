@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import screentrans.text.Line
+import screentrans.text.Paragraph
 import screentrans.text.Pipeline
 import screentrans.text.Postprocess
 import screentrans.text.Segment
@@ -30,8 +31,19 @@ class EngineBundle<I>(
 /**
  * [regions] (region mode only): (l, t, r, b) px rects in [image]. OCR runs once on the image, each
  * line goes to the region containing its centre, and every region is postprocessed on its own.
+ *
+ * Live: [liveOcr] only OCRs + postprocesses [image] per region ([EngineEvent.OcrDone]);
+ * [liveParagraphs] (paragraphs per region, no image) translates sentence by sentence
+ * ([EngineEvent.Partial] after each sentence, then [EngineEvent.Done]).
  */
-data class EngineJob<I>(val id: Int, val fullScreen: Boolean, val image: I, val regions: List<IntArray> = emptyList())
+data class EngineJob<I>(
+    val id: Int,
+    val fullScreen: Boolean,
+    val image: I?,
+    val regions: List<IntArray> = emptyList(),
+    val liveOcr: Boolean = false,
+    val liveParagraphs: List<List<Paragraph>>? = null,
+)
 
 sealed interface EngineState {
     data object Loading : EngineState
@@ -43,11 +55,14 @@ sealed interface EngineEvent {
     data class SegmentReady(val jobId: Int, val segment: Segment) : EngineEvent
     data class Done(val jobId: Int, val segments: List<Segment>) : EngineEvent
     data class JobFailed(val jobId: Int, val why: String) : EngineEvent
+    data class OcrDone(val jobId: Int, val paragraphs: List<List<Paragraph>>) : EngineEvent
+    data class Partial(val jobId: Int, val segments: List<List<Segment>>) : EngineEvent
 }
 
 /**
  * Runs OCR + translation on one dispatcher (a single thread in the app), so the Pipeline is never
- * used concurrently. Only the newest waiting job is kept; older waiting ones fail with [SUPERSEDED].
+ * used concurrently. Only the newest waiting job of each kind (user / Live) is kept; older waiting ones fail with
+ * [SUPERSEDED]. User jobs run first.
  * Same contract as the Windows TranslationWorker.
  */
 class TranslationEngine<I>(
@@ -62,6 +77,7 @@ class TranslationEngine<I>(
 
     private val lock = Any()
     private var pending: EngineJob<I>? = null
+    private var livePending: EngineJob<I>? = null  // Live jobs have their own slot: they never replace user jobs
     private var bundle: EngineBundle<I>? = null
 
     fun start() {
@@ -80,7 +96,10 @@ class TranslationEngine<I>(
 
     /** Thread-safe; call from the UI thread. */
     fun submit(job: EngineJob<I>) {
-        val old = synchronized(lock) { pending.also { pending = job } }
+        val live = job.liveOcr || job.liveParagraphs != null
+        val old = synchronized(lock) {
+            if (live) livePending.also { livePending = job } else pending.also { pending = job }
+        }
         if (old != null) _events.tryEmit(EngineEvent.JobFailed(old.id, SUPERSEDED))
         scope.launch(dispatcher) { process() }
     }
@@ -96,7 +115,9 @@ class TranslationEngine<I>(
         }
     }
 
-    private fun take(): EngineJob<I>? = synchronized(lock) { pending.also { pending = null } }
+    private fun take(): EngineJob<I>? = synchronized(lock) {
+        if (pending != null) pending.also { pending = null } else livePending.also { livePending = null }
+    }
 
     private fun process() {
         val s = _state.value
@@ -115,15 +136,24 @@ class TranslationEngine<I>(
 
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
         try {
-            val lines = b.ocr(job.image)
-            val paragraphs = if (job.fullScreen || job.regions.isEmpty()) Postprocess.run(lines)
-            else job.regions.flatMap { r ->
+            val live = job.liveParagraphs
+            if (live != null) {
+                runLiveTranslate(b, job.id, live)
+                return
+            }
+            val lines = b.ocr(requireNotNull(job.image) { "job without image" })
+            fun perRegion() = job.regions.map { r ->
                 Postprocess.run(lines.filter { l ->
                     val cx = l.left + l.width / 2
                     val cy = l.top + l.height / 2
                     cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3]
                 })
             }
+            if (job.liveOcr) {
+                _events.tryEmit(EngineEvent.OcrDone(job.id, if (job.regions.isEmpty()) listOf(Postprocess.run(lines)) else perRegion()))
+                return
+            }
+            val paragraphs = if (job.fullScreen || job.regions.isEmpty()) Postprocess.run(lines) else perRegion().flatten()
             val segments = if (job.fullScreen) {
                 b.pipeline.iterSegments(paragraphs).onEach { _events.tryEmit(EngineEvent.SegmentReady(job.id, it)) }.toList()
             } else {
@@ -133,5 +163,19 @@ class TranslationEngine<I>(
         } catch (e: Throwable) {
             _events.tryEmit(EngineEvent.JobFailed(job.id, e.message ?: e.javaClass.simpleName))
         }
+    }
+
+    private fun runLiveTranslate(b: EngineBundle<I>, jobId: Int, groups: List<List<Paragraph>>) {
+        val sizes = groups.map { it.size }
+        fun regroup(segs: List<Segment>): List<List<Segment>> {
+            var i = 0
+            return sizes.map { n -> segs.subList(i, i + n).also { i += n } }
+        }
+        var last: List<List<Segment>> = groups.map { emptyList() }
+        for (segs in b.pipeline.iterSentences(groups.flatten())) {
+            last = regroup(segs)
+            _events.tryEmit(EngineEvent.Partial(jobId, last))
+        }
+        _events.tryEmit(EngineEvent.Done(jobId, last.flatten()))
     }
 }

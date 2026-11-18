@@ -1,0 +1,39 @@
+{
+ "name": "player skips the typing: one jump, OCR after settle",
+ "events": [
+  {
+   "t": 0,
+   "diff": 0.0
+  },
+  {
+   "t": 300,
+   "diff": 50.0
+  },
+  {
+   "t": 400,
+   "diff": 0.0
+  },
+  {
+   "t": 500,
+   "diff": 0.0
+  },
+  {
+   "t": 600,
+   "diff": 0.0
+  },
+  {
+   "t": 650,
+   "ocr_text": "Hi."
+  }
+ ],
+ "expected": [
+  {
+   "t": 600,
+   "action": "ocr"
+  },
+  {
+   "t": 650,
+   "action": "translate"
+  }
+ ]
+}

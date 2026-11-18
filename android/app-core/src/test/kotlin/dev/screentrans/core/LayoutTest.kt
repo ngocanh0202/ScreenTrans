@@ -47,4 +47,17 @@ class BubbleClampTest {
         assertContentEquals(intArrayOf(2268, 10), Layout.clampBubble(2500, 10, 132, 2400, 1080))
         assertContentEquals(intArrayOf(100, 200), Layout.clampBubble(100, 200, 132, 2400, 1080))
     }
+
+    @Test
+    fun `live card goes above its region and avoids every watched region`() {
+        val name = intArrayOf(0, 500, 300, 560)
+        val dialogue = intArrayOf(0, 600, 1000, 800)
+        // above the dialogue box would cover the name plate region -> below instead
+        assertEquals(listOf(0, 812), Layout.placeOutside(dialogue, 600, 100, 1080, 2400, listOf(name, dialogue))!!.toList())
+        // plain case: above
+        assertEquals(listOf(0, 488), Layout.placeOutside(dialogue, 600, 100, 1080, 2400, listOf(dialogue))!!.toList())
+        // nowhere outside: null (caller hides the card while capturing)
+        val full = intArrayOf(0, 50, 1080, 2350)
+        assertEquals(null, Layout.placeOutside(full, 600, 100, 1080, 2400, listOf(full)))
+    }
 }

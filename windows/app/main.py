@@ -1,4 +1,5 @@
-"""ScreenTrans tray app: Ctrl+Alt+T translates a dragged region, Ctrl+Alt+F the whole screen."""
+"""ScreenTrans tray app: Ctrl+Alt+T translates a dragged region, Ctrl+Alt+F the whole screen,
+Ctrl+Alt+L toggles Live (translate automatically whenever the text in the Live region changes)."""
 import argparse
 import copy
 import itertools
@@ -17,14 +18,20 @@ from app.config import Config, load_config
 from app.glossary import COMMON_GLOSSARY, Glossary, games_dir
 from app.gui.fullscreen import FullscreenOverlay
 from app.gui.hotkeys import HotkeyManager
+from app.gui.live_overlay import AreaOverlay, LiveOverlay
 from app.gui.overlay import ResultOverlay, physical_to_logical
 from app.gui.selector import RegionSelector
 from app.gui.win32 import cursor_pos_physical, monitor_rect_at
 from app.gui.worker import SUPERSEDED, Job, start_worker
+from app.live.controller import LiveController
+from app.live.machine import LiveParams
+from app.live.regions import load_live_mode, load_live_regions, save_live_mode, save_live_regions
 from app.paths import default_config_path
 
 MODELS = ["vinai-en2vi", "opus-mt-en-vi"]
-HOTKEYS = [("translate_region", "translate_region"), ("translate_fullscreen", "translate_fullscreen")]
+HOTKEYS = [("translate_region", "translate_region"), ("translate_fullscreen", "translate_fullscreen"),
+           ("toggle_live", "toggle_live")]
+LIVE_MODES = [("dialogue", "Khung thoại"), ("area", "Vùng lớn")]
 TRANSLATING_DELAY_MS = 300
 CAPTURE_DELAY_MS = 80  # let the selector shade disappear from the screen before capturing
 QUIT_WAIT_MS = 3000
@@ -99,6 +106,10 @@ class TrayApp(QObject):
         self._region_rect: tuple[int, int, int, int] | None = None
         self._fullscreen_job: int | None = None
         self._fullscreen_origin = (0, 0)
+        self.live: LiveController | None = None
+        self.live_mode = load_live_mode(self._data_dir())
+        self._live_timer_enabled = True
+        self._selecting_live = False
         self._build_tray()
         self.hotkeys.triggered.connect(self._on_hotkey)
         self.selector.selected.connect(self._on_region_selected)
@@ -111,6 +122,19 @@ class TrayApp(QObject):
         hk = self.config.hotkeys
         menu.addAction(f"Dịch vùng ({display_combo(hk.translate_region)})", self.translate_region)
         menu.addAction(f"Toàn màn hình ({display_combo(hk.translate_fullscreen)})", self.translate_fullscreen)
+        self.live_action = menu.addAction(f"Live ({display_combo(hk.toggle_live)})", self.toggle_live)
+        self.live_action.setCheckable(True)
+        modes = menu.addMenu("Chế độ Live")
+        mode_group = QActionGroup(menu)
+        self.live_mode_actions: dict[str, QAction] = {}
+        for mode, label in LIVE_MODES:
+            action = modes.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(mode == self.live_mode)
+            action.triggered.connect(lambda checked=False, m=mode: self.set_live_mode(m))
+            mode_group.addAction(action)
+            self.live_mode_actions[mode] = action
+        menu.addAction("Chọn lại vùng Live", self.select_live_region)
         menu.addSeparator()
         self.status_action = menu.addAction(LOADING)
         self.status_action.setEnabled(False)
@@ -136,8 +160,11 @@ class TrayApp(QObject):
         self.last_message = message
         self.tray.showMessage("ScreenTrans", message)
 
+    def _data_dir(self) -> Path:
+        return Path(self.config.paths.data_dir)
+
     def _open_data_dir(self) -> None:
-        path = Path(self.config.paths.data_dir)
+        path = self._data_dir()
         path.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
@@ -181,6 +208,8 @@ class TrayApp(QObject):
         worker.segment.connect(self._on_segment)
         worker.job_done.connect(self._on_job_done)
         worker.job_failed.connect(self._on_job_failed)
+        worker.ocr_done.connect(self._on_live_ocr_done)
+        worker.partial.connect(self._on_live_partial)
 
     def switch_model(self, model_id: str) -> None:
         if model_id == self.config.translator.model and self.error is None:
@@ -193,6 +222,7 @@ class TrayApp(QObject):
         return self.sender() is self.worker
 
     def quit(self) -> None:
+        self.stop_live()
         closer = getattr(self.hotkeys, "close", None)
         if callable(closer):
             closer()
@@ -241,8 +271,21 @@ class TrayApp(QObject):
             self.fullscreen_overlay.add_segment(segment, self._fullscreen_origin)
 
     @Slot(int, object)
+    def _on_live_ocr_done(self, job_id: int, per_region) -> None:
+        if self._current() and self.live is not None:
+            self.live.on_ocr_done(job_id, per_region)
+
+    @Slot(int, object)
+    def _on_live_partial(self, job_id: int, per_region) -> None:
+        if self._current() and self.live is not None:
+            self.live.on_partial(job_id, per_region)
+
+    @Slot(int, object)
     def _on_job_done(self, job_id: int, segments) -> None:
         if not self._current():
+            return
+        if self.live is not None and job_id == self.live.translate_job:
+            self.live.on_job_done(job_id, segments)
             return
         if job_id == self._region_job:
             self._region_job = None
@@ -255,6 +298,9 @@ class TrayApp(QObject):
     @Slot(int, str)
     def _on_job_failed(self, job_id: int, why: str) -> None:
         if not self._current():
+            return
+        if self.live is not None and job_id in (self.live.ocr_job, self.live.translate_job):
+            self.live.on_job_failed(job_id, why)
             return
         if why == SUPERSEDED:  # a newer job replaced it: drop its pending indicator
             if job_id == self._region_job:
@@ -281,6 +327,8 @@ class TrayApp(QObject):
             self.translate_region()
         elif name == "translate_fullscreen":
             self.translate_fullscreen()
+        elif name == "toggle_live":
+            self.toggle_live()
 
     def _close_overlays(self) -> None:
         """Results from the previous press must not grab input or end up in the next capture."""
@@ -291,10 +339,16 @@ class TrayApp(QObject):
 
     def translate_region(self) -> None:
         self._close_overlays()
+        self._selecting_live = False
         self.selector.begin()
 
     @Slot(tuple)
     def _on_region_selected(self, rect) -> None:
+        if self._selecting_live:
+            self._selecting_live = False
+            save_live_regions(self._data_dir(), [tuple(rect)])
+            self.start_live()
+            return
         QTimer.singleShot(self._capture_delay_ms, lambda r=tuple(rect): self._run_region(r))
 
     def _run_region(self, rect: tuple[int, int, int, int]) -> None:
@@ -339,6 +393,57 @@ class TrayApp(QObject):
             self.notify(self.error)
             return
         self.worker.submit(job)
+
+
+    # ---- live -------------------------------------------------------------------------------------
+    def toggle_live(self) -> None:
+        if self.live is not None and self.live.running:
+            self.stop_live()
+        elif load_live_regions(self._data_dir()):
+            self.start_live()
+        else:
+            self.select_live_region()
+
+    def select_live_region(self) -> None:
+        self.stop_live()
+        self._close_overlays()
+        self._selecting_live = True
+        self.selector.begin()
+
+    def set_live_mode(self, mode: str) -> None:
+        self.live_mode = mode
+        save_live_mode(self._data_dir(), mode)
+        if self.live is not None and self.live.running:
+            self.start_live()  # restart with the new mode
+
+    def start_live(self) -> None:
+        regions = load_live_regions(self._data_dir())
+        if not regions:
+            self.select_live_region()
+            return
+        self.stop_live()
+        lc = self.config.live
+        params = LiveParams(lc.interval_ms, lc.active_interval_ms, lc.settle_ms, lc.max_wait_ms, lc.change_threshold)
+        self.live = LiveController(
+            params, capture=self._capture, submit=lambda job: self.worker.submit(job),
+            next_id=lambda: next(self._ids), notify=self.notify, overlay_factory=self._live_overlay,
+            area=self.live_mode == "area", area_min_interval_ms=lc.area_min_interval_ms,
+            area_max_blocks=lc.area_max_blocks, use_timer=self._live_timer_enabled)
+        self.live.start(regions)
+        self.live_action.setChecked(True)
+
+    def stop_live(self) -> None:
+        if self.live is not None:
+            self.live.stop()
+        self.live_action.setChecked(False)
+
+    def _live_overlay(self, region: tuple[int, int, int, int]):
+        x, y, w, h = region
+        screen = screen_for_physical(x + w // 2, y + h // 2)
+        geometry, dpr = QRect(screen.geometry()), screen.devicePixelRatio()
+        if self.live_mode == "area":
+            return AreaOverlay(self.config.overlay, geometry, dpr)
+        return LiveOverlay(self.config.overlay, physical_to_logical(region, geometry, dpr), geometry)
 
 
 def self_test(model_dir: Path | None = None) -> int:

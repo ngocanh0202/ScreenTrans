@@ -22,6 +22,22 @@ object Layout {
         return intArrayOf(x, (screenH - h).coerceAtLeast(0))
     }
 
+    /**
+     * Live card position outside every watched region (spec §5.6: above by default, else below), so
+     * the card never enters a Live capture. Null when neither fits; the caller then hides it while capturing.
+     */
+    fun placeOutside(
+        region: IntArray, w: Int, h: Int, screenW: Int, screenH: Int, avoid: List<IntArray>, gap: Int = 12,
+    ): IntArray? {
+        val x = region[0].coerceAtMost(screenW - w).coerceAtLeast(0)
+        fun clear(y: Int) = avoid.none { a -> x < a[2] && x + w > a[0] && y < a[3] && y + h > a[1] }
+        val above = region[1] - gap - h
+        if (above >= 0 && clear(above)) return intArrayOf(x, above)
+        val below = region[3] + gap
+        if (below + h <= screenH && clear(below)) return intArrayOf(x, below)
+        return null
+    }
+
     /** Keep a size x size bubble fully on a w x h screen (a position saved in portrait may be off-screen). */
     fun clampBubble(x: Int, y: Int, size: Int, w: Int, h: Int): IntArray =
         intArrayOf(x.coerceIn(0, maxOf(0, w - size)), y.coerceIn(0, maxOf(0, h - size)))

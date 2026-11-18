@@ -116,3 +116,42 @@ def test_job_submitted_before_ready_still_runs():
     w.submit(Job(9, "region", IMG, (0, 0)))
     w.start()
     assert done == [9]
+
+
+def test_live_ocr_returns_paragraphs_per_image(qtbot, run_worker):
+    w, rec = run_worker()
+    got = []
+    w.ocr_done.connect(lambda i, per: got.append((i, per)))
+    w.submit(Job(3, "live_ocr", None, (0, 0), images=[IMG, IMG]))
+    qtbot.waitUntil(lambda: bool(got), timeout=5000)
+    job_id, per = got[0]
+    assert job_id == 3 and len(per) == 2
+    assert [p.text for p in per[0]] == ["Druvis III", "Hello there.", "Far below."]
+
+
+def test_live_translate_emits_partials_grouped_per_region(qtbot, run_worker):
+    from app.text.postprocess import Paragraph
+
+    w, rec = run_worker()
+    parts = []
+    w.partial.connect(lambda i, segs: parts.append(segs))
+    a = Paragraph("text", "One.", ["One."], 0, 0, 10, 10)
+    b = Paragraph("text", "Two.", ["Two."], 0, 20, 10, 30)
+    w.submit(Job(4, "live_translate", None, (0, 0), paragraphs=[[a], [b]]))
+    qtbot.waitUntil(lambda: bool(rec.of("done")), timeout=5000)
+    assert len(parts) >= 2 and all(len(p) == 2 for p in parts)
+    final = rec.of("done")[0][2]
+    assert [[s.translation for s in g] for g in final] == [["VI One."], ["VI Two."]]
+
+
+def test_live_jobs_never_supersede_user_jobs(qtbot, run_worker):
+    w, rec = run_worker(delay=0.3)
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: ("started", 1) in rec.events, timeout=5000)  # job 1 is now running
+    w.submit(Job(2, "region", IMG, (0, 0)))       # waits
+    w.submit(Job(3, "live_ocr", None, (0, 0), images=[IMG]))
+    w.submit(Job(4, "live_ocr", None, (0, 0), images=[IMG]))  # supersedes 3 only
+    qtbot.waitUntil(lambda: len(rec.of("done")) == 2, timeout=10000)
+    assert [e[1] for e in rec.of("job_failed")] == [3]
+    assert sorted(e[1] for e in rec.of("done")) == [1, 2]

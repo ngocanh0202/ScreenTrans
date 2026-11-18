@@ -91,4 +91,21 @@ class PipelineTest {
         assertTrue(parts.all { it.split(" ").size <= 4 })
         assertEquals("a b c,", parts[0])
     }
+
+    @Test
+    fun `iterSentences yields after each sentence with an ellipsis for the rest`() {
+        val tr = FakeTranslator { "VI:$it" }
+        val steps = pipeline(tr).iterSentences(listOf(name, text("One. Two.", 20f))).toList()
+        assertEquals(2, steps.size)
+        assertEquals("VI:One. …", steps[0][1].translation)
+        assertEquals("VI:One. VI:Two.", steps[1][1].translation)
+        assertNull(steps[1][0].translation)
+        assertEquals(listOf(listOf("One."), listOf("Two.")), tr.calls)
+    }
+
+    @Test
+    fun `iterSentences yields once for no text`() {
+        val steps = pipeline(FakeTranslator { it }).iterSentences(listOf(name)).toList()
+        assertEquals(1, steps.size)
+    }
 }

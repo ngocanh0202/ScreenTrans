@@ -18,6 +18,7 @@ import dev.screentrans.core.RelRect
 import dev.screentrans.core.SUPERSEDED
 import dev.screentrans.core.TranslationEngine
 import dev.screentrans.engine.AppEngine
+import dev.screentrans.live.LiveController
 import dev.screentrans.ui.Bubble
 import dev.screentrans.ui.FullScreenLayer
 import dev.screentrans.ui.MenuPanel
@@ -61,6 +62,9 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private var regionsPx: List<IntArray> = emptyList()
     private var fullJob = -1
     private val maybeBlocked = HashSet<Int>()  // jobs whose frame looked black (FLAG_SECURE?)
+    private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ }) { hidden ->
+        bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+    }
 
     fun start() {
         scope.launch { engine.events.collect(::onEvent) }  // collect before the first submit (no replay)
@@ -75,6 +79,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     fun onRotated() {
         capturer.resize()
         keepBubbleOnScreen()
+        if (live.running) startLive()  // region pixels changed with the screen size
     }
 
     /** A position saved in portrait can be off a landscape screen: pull the bubble back inside. */
@@ -88,6 +93,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     fun stop() {
+        live.stop()
         (listOf(menu, layer, selector, bubble) + cards).forEach { overlays.remove(it) }
         cards.clear()
         engine.close()  // queued on the engine thread: ONNX sessions + ML Kit
@@ -102,7 +108,9 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val panel = MenuPanel(context, listOf(
             "Dịch vùng" to ::translateRegion,
             "Toàn màn hình" to ::translateFullScreen,
-            "Chọn / sửa vùng" to { chooseRegion(translateAfter = false) },
+            "Chọn / sửa vùng" to { chooseRegion(null) },
+            (if (live.running) "Tắt Live" else "Bật Live") to ::toggleLive,
+            (if (prefs.liveMode == "area") "Live: Vùng lớn" else "Live: Khung thoại") to ::switchLiveMode,
         ), onClose = ::closeMenu)
         val bp = bubble.params ?: return
         val p = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -111,11 +119,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
         }
         overlays.add(panel, p)
         menu = panel
+        syncLivePause()
     }
 
     private fun closeMenu() {
         overlays.remove(menu)
         menu = null
+        syncLivePause()
     }
 
     private fun closeResults() {
@@ -123,17 +133,27 @@ class Controller(private val context: Context, projection: MediaProjection) {
         cards.clear()
         overlays.remove(layer)
         layer = null
+        syncLivePause()
+    }
+
+    /** Our menu and one-shot results are not hidden from Live frames: Live waits while they are shown. */
+    private fun syncLivePause() {
+        live.paused = menu != null || cards.isNotEmpty() || layer != null || selector != null
     }
 
     // ---- region ---------------------------------------------------------------------------------
-    private fun chooseRegion(translateAfter: Boolean) {
+    /** Edit the saved regions; [after] runs once regions were saved (none when cancelled / empty). */
+    private fun chooseRegion(after: (() -> Unit)?) {
         closeResults()
+        val wasLive = live.running
+        live.stop()
         val view = RegionEditView(context, capturer.width, capturer.height, prefs.regions) { regions ->
             overlays.remove(selector)
             selector = null
-            if (regions != null) {
-                prefs.regions = regions
-                if (translateAfter && regions.isNotEmpty()) translateRegion()
+            if (regions != null) prefs.regions = regions
+            when {
+                regions != null && regions.isNotEmpty() && after != null -> after()
+                wasLive -> startLive()
             }
         }
         overlays.add(view, overlays.params(MATCH_PARENT, MATCH_PARENT, focusable = true))
@@ -144,7 +164,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private fun translateRegion() {
         val regions = prefs.regions.filter { it.isUsable(capturer.width, capturer.height) }
         if (regions.isEmpty()) {
-            chooseRegion(translateAfter = true)
+            chooseRegion(::translateRegion)
             return
         }
         scope.launch {
@@ -154,7 +174,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 val r = rel.toPx(frame.width, frame.height)
                 Frames.clampRect(frame.width, frame.height, r[0], r[1], r[2], r[3])
             }.filter { it[2] - it[0] >= RelRect.MIN_PX && it[3] - it[1] >= RelRect.MIN_PX }
-            if (px.isEmpty()) return@launch chooseRegion(true)
+            if (px.isEmpty()) return@launch chooseRegion(::translateRegion)
             regionsPx = px
             regionJob = nextId++
             if (cap.looksBlack) maybeBlocked.add(regionJob)
@@ -187,6 +207,29 @@ class Controller(private val context: Context, projection: MediaProjection) {
         if (first) showCard(regionsPx.firstOrNull(), null, segments = emptyList())  // no text anywhere
     }
 
+    // ---- live -----------------------------------------------------------------------------------
+    private fun toggleLive() {
+        if (live.running) live.stop() else startLive()
+    }
+
+    private fun switchLiveMode() {
+        prefs.liveMode = if (prefs.liveMode == "area") "dialogue" else "area"
+        if (live.running) startLive()
+    }
+
+    private fun startLive() {
+        closeResults()
+        val px = prefs.regions.filter { it.isUsable(capturer.width, capturer.height) }.map { rel ->
+            val r = rel.toPx(capturer.width, capturer.height)
+            Frames.clampRect(capturer.width, capturer.height, r[0], r[1], r[2], r[3])
+        }.filter { it[2] - it[0] >= RelRect.MIN_PX && it[3] - it[1] >= RelRect.MIN_PX }
+        if (px.isEmpty()) {
+            chooseRegion(::startLive)
+            return
+        }
+        live.start(px, area = prefs.liveMode == "area")
+    }
+
     // ---- full screen ----------------------------------------------------------------------------
     private fun translateFullScreen() {
         scope.launch {
@@ -197,6 +240,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             val l = FullScreenLayer(context, onBlockTapped = ::showDetail, onClose = ::closeResults)
             overlays.add(l, overlays.params(MATCH_PARENT, MATCH_PARENT))
             layer = l
+            syncLivePause()
             (engine.state.value as? EngineState.Failed)?.let { l.finish(); showCard(null, it.message, true) }
             engine.submit(EngineJob(fullJob, fullScreen = true, image = frame))
         }
@@ -214,6 +258,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private suspend fun captureWithoutOverlays(): Captured? {
         closeMenu()
         closeResults()
+        live.setVisible(false)
         capturer.resize()  // the rotation callback may not fire while our activity sits in the background
         keepBubbleOnScreen()
         bubble.visibility = View.INVISIBLE
@@ -221,6 +266,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         delay(50)
         val frame = capturer.capture(newerThan = hiddenAt)
         bubble.visibility = View.VISIBLE
+        live.setVisible(true)
         if (frame == null) return null
         val small = Bitmap.createScaledBitmap(frame, 160, maxOf(1, 160 * frame.height / maxOf(1, frame.width)), false)
         val pixels = IntArray(small.width * small.height)
@@ -236,7 +282,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     ) {
         if (replace) closeCards()
         lateinit var c: ResultCard
-        c = ResultCard(context) { overlays.remove(c); cards.remove(c) }
+        c = ResultCard(context) { overlays.remove(c); cards.remove(c); syncLivePause() }
         if (segments != null) c.showSegments(segments, showSource) else c.showMessage(message ?: "", error)
         val maxW = (capturer.width * 0.9f).toInt()
         val maxH = (capturer.height * 0.8f).toInt()  // long text scrolls inside the card
@@ -252,11 +298,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val p = overlays.params(width, minOf(c.measuredHeight, maxH)).apply { x = pos[0]; y = pos[1] }
         overlays.add(c, p)
         cards.add(c)
+        syncLivePause()
     }
 
     private fun closeCards() {
         cards.forEach { overlays.remove(it) }
         cards.clear()
+        syncLivePause()
     }
 
     private fun onEvent(e: EngineEvent) {
@@ -283,6 +331,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 e.jobId == regionJob -> { regionJob = -1; showCard(regionsPx.firstOrNull(), e.why, true) }
                 e.jobId == fullJob -> { fullJob = -1; layer?.finish(); showCard(null, e.why, true) }
             }
+            else -> Unit  // live events: LiveController collects them
+
         }
     }
 }

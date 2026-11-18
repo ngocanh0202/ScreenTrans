@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import screentrans.text.Glossary
 import screentrans.text.Kind
 import screentrans.text.Line
+import screentrans.text.Paragraph
 import screentrans.text.Pipeline
 import screentrans.text.SentenceTranslator
 import screentrans.text.TranslationCache
@@ -132,5 +133,52 @@ class TranslationEngineTest {
         val done = events.filterIsInstance<EngineEvent.Done>().single()
         assertEquals(listOf("Top one.", "Bottom one."), done.segments.map { it.source })
         assertEquals(listOf(listOf("Top one.", "Bottom one.")), calls)
+    }
+
+    @Test
+    fun `live ocr returns paragraphs per region`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        engine.submit(EngineJob(8, fullScreen = false, image = "img", liveOcr = true,
+            regions = listOf(intArrayOf(0, 0, 600, 200), intArrayOf(0, 200, 600, 400))))
+        testScheduler.advanceUntilIdle()
+        val ocr = events.filterIsInstance<EngineEvent.OcrDone>().single()
+        assertEquals(8, ocr.jobId)
+        assertEquals(listOf(listOf("Druvis III", "Hello there."), listOf("Far below.")), ocr.paragraphs.map { r -> r.map { it.text } })
+        assertTrue(events.none { it is EngineEvent.Done })
+    }
+
+    @Test
+    fun `live translate emits partials before done`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        val a = Paragraph(Kind.TEXT, "One.", listOf("One."), 0f, 0f, 10f, 10f)
+        val b = Paragraph(Kind.TEXT, "Two.", listOf("Two."), 0f, 20f, 10f, 30f)
+        engine.submit(EngineJob<String>(9, fullScreen = false, image = null, liveParagraphs = listOf(listOf(a), listOf(b))))
+        testScheduler.advanceUntilIdle()
+        val partials = events.filterIsInstance<EngineEvent.Partial>()
+        assertEquals(2, partials.size)
+        assertEquals(listOf(listOf("VI One."), listOf("VI Two.")), partials.last().segments.map { r -> r.map { it.translation } })
+        assertTrue(events.indexOf(partials.last()) < events.indexOfFirst { it is EngineEvent.Done })
+    }
+
+    @Test
+    fun `live jobs never supersede user jobs`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        testScheduler.runCurrent()
+        engine.submit(EngineJob(1, false, "a"))
+        engine.submit(EngineJob(2, false, "b", liveOcr = true))
+        engine.submit(EngineJob(3, false, "c", liveOcr = true))
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf(2), events.filterIsInstance<EngineEvent.JobFailed>().map { it.jobId })
+        assertEquals(listOf(1), events.filterIsInstance<EngineEvent.Done>().map { it.jobId })
+        assertEquals(listOf(3), events.filterIsInstance<EngineEvent.OcrDone>().map { it.jobId })
     }
 }

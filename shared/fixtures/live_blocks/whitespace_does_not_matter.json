@@ -1,0 +1,49 @@
+{
+ "name": "text is compared after collapsing whitespace",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "Where are you going?",
+     "box": [
+      0,
+      0,
+      200,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "Where are you going?"
+    ],
+    "kept": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "Where  are you going?",
+     "box": [
+      0,
+      0,
+      200,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [
+     "Where are you going?"
+    ],
+    "removed": []
+   }
+  }
+ ]
+}

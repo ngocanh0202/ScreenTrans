@@ -112,6 +112,26 @@ class Pipeline(
         return paragraphs.map { segment(it, translated) }
     }
 
+    /** Live: after each translated sentence yield all segments; untranslated sentences show "…". */
+    fun iterSentences(paragraphs: List<Paragraph>): Sequence<List<Segment>> = sequence {
+        val textSentences = paragraphs.filter { it.kind == Kind.TEXT }.flatMap { it.sentences }
+        observe(textSentences)
+        val done = HashMap<String, String>()
+        fun snapshot() = paragraphs.map { p ->
+            if (p.kind == Kind.NAME) Segment(Kind.NAME, p.text, null, p.left, p.top, p.right, p.bottom)
+            else Segment(Kind.TEXT, p.text, p.sentences.joinToString(" ") { done[it] ?: "…" }, p.left, p.top, p.right, p.bottom)
+        }
+        val order = textSentences.distinct()
+        if (order.isEmpty()) {
+            yield(snapshot())
+            return@sequence
+        }
+        for (s in order) {
+            done.putAll(translateSentences(listOf(s)))
+            yield(snapshot())
+        }
+    }
+
     /** Each paragraph as soon as it is translated (full-screen mode shows blocks progressively). */
     fun iterSegments(paragraphs: List<Paragraph>): Sequence<Segment> = sequence {
         observe(paragraphs.filter { it.kind == Kind.TEXT }.flatMap { it.sentences })
