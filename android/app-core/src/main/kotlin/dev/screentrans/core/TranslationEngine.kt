@@ -27,7 +27,11 @@ class EngineBundle<I>(
     val close: () -> Unit = {},  // releases native resources (ONNX sessions, ML Kit)
 )
 
-data class EngineJob<I>(val id: Int, val fullScreen: Boolean, val image: I)
+/**
+ * [regions] (region mode only): (l, t, r, b) px rects in [image]. OCR runs once on the image, each
+ * line goes to the region containing its centre, and every region is postprocessed on its own.
+ */
+data class EngineJob<I>(val id: Int, val fullScreen: Boolean, val image: I, val regions: List<IntArray> = emptyList())
 
 sealed interface EngineState {
     data object Loading : EngineState
@@ -111,7 +115,15 @@ class TranslationEngine<I>(
 
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
         try {
-            val paragraphs = Postprocess.run(b.ocr(job.image))
+            val lines = b.ocr(job.image)
+            val paragraphs = if (job.fullScreen || job.regions.isEmpty()) Postprocess.run(lines)
+            else job.regions.flatMap { r ->
+                Postprocess.run(lines.filter { l ->
+                    val cx = l.left + l.width / 2
+                    val cy = l.top + l.height / 2
+                    cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3]
+                })
+            }
             val segments = if (job.fullScreen) {
                 b.pipeline.iterSegments(paragraphs).onEach { _events.tryEmit(EngineEvent.SegmentReady(job.id, it)) }.toList()
             } else {

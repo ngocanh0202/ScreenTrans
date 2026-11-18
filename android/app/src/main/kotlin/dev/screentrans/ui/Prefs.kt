@@ -7,9 +7,10 @@ import dev.screentrans.core.RelRect
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("screentrans", Context.MODE_PRIVATE)
 
-    var region: RelRect?
-        get() = RelRect.parse(sp.getString("region", null))
-        set(value) = sp.edit().putString("region", value?.serialize()).apply()
+    /** Translation regions; the old single "region" key is still read. */
+    var regions: List<RelRect>
+        get() = RelRect.parseList(sp.getString("regions", null) ?: sp.getString("region", null))
+        set(value) = sp.edit().putString("regions", RelRect.serializeList(value)).remove("region").apply()
 
     var bubbleX: Int
         get() = sp.getInt("bubble_x", 0)

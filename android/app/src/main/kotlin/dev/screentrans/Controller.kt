@@ -23,7 +23,7 @@ import dev.screentrans.ui.FullScreenLayer
 import dev.screentrans.ui.MenuPanel
 import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.Prefs
-import dev.screentrans.ui.RegionSelectView
+import dev.screentrans.ui.RegionEditView
 import dev.screentrans.ui.ResultCard
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
@@ -53,12 +53,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
 
     private val bubble = Bubble(context, onTap = ::showMenu, onMoved = { x, y -> prefs.bubbleX = x; prefs.bubbleY = y })
     private var menu: MenuPanel? = null
-    private var card: ResultCard? = null
+    private val cards = mutableListOf<ResultCard>()
     private var layer: FullScreenLayer? = null
     private var selector: View? = null
     private var nextId = 1
     private var regionJob = -1
-    private var regionPx = intArrayOf(0, 0, 0, 0)
+    private var regionsPx: List<IntArray> = emptyList()
     private var fullJob = -1
     private val maybeBlocked = HashSet<Int>()  // jobs whose frame looked black (FLAG_SECURE?)
 
@@ -88,7 +88,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     fun stop() {
-        listOf(menu, card, layer, selector, bubble).forEach { overlays.remove(it) }
+        (listOf(menu, layer, selector, bubble) + cards).forEach { overlays.remove(it) }
+        cards.clear()
         engine.close()  // queued on the engine thread: ONNX sessions + ML Kit
         scope.cancel()
         capturer.release()
@@ -101,7 +102,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val panel = MenuPanel(context, listOf(
             "Dịch vùng" to ::translateRegion,
             "Toàn màn hình" to ::translateFullScreen,
-            "Chọn vùng mới" to { chooseRegion(translateAfter = false) },
+            "Chọn / sửa vùng" to { chooseRegion(translateAfter = false) },
         ), onClose = ::closeMenu)
         val bp = bubble.params ?: return
         val p = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -118,8 +119,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     private fun closeResults() {
-        overlays.remove(card)
-        card = null
+        cards.forEach { overlays.remove(it) }
+        cards.clear()
         overlays.remove(layer)
         layer = null
     }
@@ -127,45 +128,63 @@ class Controller(private val context: Context, projection: MediaProjection) {
     // ---- region ---------------------------------------------------------------------------------
     private fun chooseRegion(translateAfter: Boolean) {
         closeResults()
-        val view = RegionSelectView(context, capturer.width, capturer.height) { rel ->
+        val view = RegionEditView(context, capturer.width, capturer.height, prefs.regions) { regions ->
             overlays.remove(selector)
             selector = null
-            if (rel != null) {
-                prefs.region = rel
-                if (translateAfter) translateRegion()
+            if (regions != null) {
+                prefs.regions = regions
+                if (translateAfter && regions.isNotEmpty()) translateRegion()
             }
         }
         overlays.add(view, overlays.params(MATCH_PARENT, MATCH_PARENT, focusable = true))
         selector = view
     }
 
+    /** One capture, one OCR, every saved region translated in one batch, one card per region. */
     private fun translateRegion() {
-        val rel = prefs.region
-        if (rel == null || !rel.isUsable(capturer.width, capturer.height)) {
+        val regions = prefs.regions.filter { it.isUsable(capturer.width, capturer.height) }
+        if (regions.isEmpty()) {
             chooseRegion(translateAfter = true)
             return
         }
         scope.launch {
             val cap = captureWithoutOverlays() ?: return@launch showCard(null, "Không chụp được màn hình.", true)
             val frame = cap.frame
-            val px = rel.toPx(frame.width, frame.height)
-            val r = Frames.clampRect(frame.width, frame.height, px[0], px[1], px[2], px[3])
-            if (r[2] - r[0] < RelRect.MIN_PX || r[3] - r[1] < RelRect.MIN_PX) return@launch chooseRegion(true)
-            val crop = Bitmap.createBitmap(frame, r[0], r[1], r[2] - r[0], r[3] - r[1])
-            regionPx = r
+            val px = regions.map { rel ->
+                val r = rel.toPx(frame.width, frame.height)
+                Frames.clampRect(frame.width, frame.height, r[0], r[1], r[2], r[3])
+            }.filter { it[2] - it[0] >= RelRect.MIN_PX && it[3] - it[1] >= RelRect.MIN_PX }
+            if (px.isEmpty()) return@launch chooseRegion(true)
+            regionsPx = px
             regionJob = nextId++
             if (cap.looksBlack) maybeBlocked.add(regionJob)
-            engine.submit(EngineJob(regionJob, fullScreen = false, image = crop))
+            engine.submit(EngineJob(regionJob, fullScreen = false, image = frame, regions = px))
             when (val s = engine.state.value) {
-                is EngineState.Failed -> showCard(r, s.message, true)
-                EngineState.Loading -> showCard(r, "Đang tải model…")
+                is EngineState.Failed -> showCard(px.first(), s.message, true)
+                EngineState.Loading -> showCard(px.first(), "Đang tải model…")
                 EngineState.Ready -> {
                     val id = regionJob
                     delay(300)
-                    if (regionJob == id) showCard(r, "Đang dịch…")
+                    if (regionJob == id) showCard(px.first(), "Đang dịch…")
                 }
             }
         }
+    }
+
+    private fun showRegionResults(segments: List<Segment>) {
+        fun inside(seg: Segment, r: IntArray): Boolean {
+            val cx = (seg.left + seg.right) / 2
+            val cy = (seg.top + seg.bottom) / 2
+            return cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3]
+        }
+        var first = true
+        for (r in regionsPx) {
+            val mine = segments.filter { inside(it, r) }
+            if (mine.isEmpty()) continue
+            showCard(r, null, segments = mine, replace = first)
+            first = false
+        }
+        if (first) showCard(regionsPx.firstOrNull(), null, segments = emptyList())  // no text anywhere
     }
 
     // ---- full screen ----------------------------------------------------------------------------
@@ -213,10 +232,11 @@ class Controller(private val context: Context, projection: MediaProjection) {
     // ---- results --------------------------------------------------------------------------------
     private fun showCard(
         region: IntArray?, message: String?, error: Boolean = false,
-        segments: List<Segment>? = null, showSource: Boolean = false,
+        segments: List<Segment>? = null, showSource: Boolean = false, replace: Boolean = true,
     ) {
-        overlays.remove(card)
-        val c = ResultCard(context) { overlays.remove(card); card = null }
+        if (replace) closeCards()
+        lateinit var c: ResultCard
+        c = ResultCard(context) { overlays.remove(c); cards.remove(c) }
         if (segments != null) c.showSegments(segments, showSource) else c.showMessage(message ?: "", error)
         val maxW = (capturer.width * 0.9f).toInt()
         val maxH = (capturer.height * 0.8f).toInt()  // long text scrolls inside the card
@@ -231,7 +251,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val pos = Layout.placeOverlay(reg, width, c.measuredHeight, capturer.width, capturer.height)
         val p = overlays.params(width, minOf(c.measuredHeight, maxH)).apply { x = pos[0]; y = pos[1] }
         overlays.add(c, p)
-        card = c
+        cards.add(c)
+    }
+
+    private fun closeCards() {
+        cards.forEach { overlays.remove(it) }
+        cards.clear()
     }
 
     private fun onEvent(e: EngineEvent) {
@@ -244,7 +269,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 when (e.jobId) {
                     regionJob -> {
                         regionJob = -1
-                        if (blocked) showCard(regionPx, BLOCKED, true) else showCard(regionPx, null, segments = e.segments)
+                        if (blocked) showCard(regionsPx.firstOrNull(), BLOCKED, true) else showRegionResults(e.segments)
                     }
                     fullJob -> {
                         fullJob = -1
@@ -255,7 +280,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             }
             is EngineEvent.JobFailed -> when {
                 e.why == SUPERSEDED -> Unit
-                e.jobId == regionJob -> { regionJob = -1; showCard(regionPx, e.why, true) }
+                e.jobId == regionJob -> { regionJob = -1; showCard(regionsPx.firstOrNull(), e.why, true) }
                 e.jobId == fullJob -> { fullJob = -1; layer?.finish(); showCard(null, e.why, true) }
             }
         }

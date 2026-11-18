@@ -110,4 +110,27 @@ class TranslationEngineTest {
         testScheduler.advanceUntilIdle()
         assertEquals(1, closed)
     }
+
+    @Test
+    fun `region job with several regions postprocesses each region separately in one batch`() = runTest {
+        val calls = mutableListOf<List<String>>()
+        val ocrLines = listOf(
+            Line("Top one.", 10f, 10f, 200f, 30f),
+            Line("Bottom one.", 10f, 50f, 200f, 30f),   // close below: would merge into one paragraph
+            Line("Outside.", 600f, 600f, 200f, 30f),
+        )
+        val tr = SentenceTranslator { texts -> calls.add(texts); texts.map { "VI $it" } }
+        val engine = TranslationEngine({
+            EngineBundle(ocr = { _: String -> ocrLines }, pipeline = Pipeline(tr, "fake", Glossary(emptyList()), TranslationCache(100)))
+        }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        engine.submit(EngineJob(5, fullScreen = false, image = "frame",
+            regions = listOf(intArrayOf(0, 0, 300, 45), intArrayOf(0, 45, 300, 100))))
+        testScheduler.advanceUntilIdle()
+        val done = events.filterIsInstance<EngineEvent.Done>().single()
+        assertEquals(listOf("Top one.", "Bottom one."), done.segments.map { it.source })
+        assertEquals(listOf(listOf("Top one.", "Bottom one.")), calls)
+    }
 }

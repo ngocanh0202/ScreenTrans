@@ -23,6 +23,11 @@ data class RelRect(val l: Float, val t: Float, val r: Float, val b: Float) {
             return RelRect(fx(minOf(x0, x1)), fy(minOf(y0, y1)), fx(maxOf(x0, x1)), fy(maxOf(y0, y1)))
         }
 
+        fun serializeList(rects: List<RelRect>): String = rects.joinToString(";") { it.serialize() }
+
+        /** Also reads the old single-region format ("l,t,r,b"). */
+        fun parseList(s: String?): List<RelRect> = s?.split(";")?.mapNotNull { parse(it) } ?: emptyList()
+
         fun parse(s: String?): RelRect? {
             val p = s?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: return null
             return if (p.size == 4) RelRect(p[0], p[1], p[2], p[3]) else null
