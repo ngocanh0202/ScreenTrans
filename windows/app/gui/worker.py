@@ -17,9 +17,11 @@ PipelineFactory = Callable[[Callable[[int, int], None]], Pipeline]
 @dataclass
 class Job:
     id: int
-    mode: Literal["region", "fullscreen"]
-    image: Image.Image
+    mode: Literal["region", "fullscreen", "live_ocr", "live_translate"]
+    image: Image.Image | None
     origin: tuple[int, int]  # physical top-left of the image on the virtual screen
+    images: list | None = None       # live_ocr: one image per watched region
+    paragraphs: list | None = None   # live_translate: list of paragraphs per region
 
 
 class TranslationWorker(QObject):
@@ -30,6 +32,8 @@ class TranslationWorker(QObject):
     segment = Signal(int, object)
     job_done = Signal(int, object)
     job_failed = Signal(int, str)
+    ocr_done = Signal(int, object)   # live_ocr: list[list[Paragraph]] per region
+    partial = Signal(int, object)    # live_translate: list[list[Segment]] per region, after each sentence
     _wake = Signal()
 
     def __init__(self, factory: PipelineFactory):
@@ -86,6 +90,28 @@ class TranslationWorker(QObject):
     def _run(self, job: Job) -> None:
         self.job_started.emit(job.id)
         try:
+            if job.mode == "live_ocr":
+                per_region = [postprocess(self._pipeline.ocr.recognize(img)) for img in job.images or []]
+                self.ocr_done.emit(job.id, per_region)
+                return
+            if job.mode == "live_translate":
+                groups = job.paragraphs or []
+                flat = [p for ps in groups for p in ps]
+                sizes = [len(ps) for ps in groups]
+
+                def regroup(segs):
+                    out, i = [], 0
+                    for n in sizes:
+                        out.append(segs[i:i + n])
+                        i += n
+                    return out
+
+                last = [[] for _ in groups]
+                for segs in self._pipeline.iter_sentences(flat):
+                    last = regroup(segs)
+                    self.partial.emit(job.id, last)
+                self.job_done.emit(job.id, last)
+                return
             if job.mode == "fullscreen":
                 paragraphs = postprocess(self._pipeline.ocr.recognize(job.image))
                 segments = []

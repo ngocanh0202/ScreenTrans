@@ -14,6 +14,8 @@ class FakeWorker(QObject):
     segment = Signal(int, object)
     job_done = Signal(int, object)
     job_failed = Signal(int, str)
+    ocr_done = Signal(int, object)
+    partial = Signal(int, object)
 
     def __init__(self):
         super().__init__()
@@ -99,7 +101,7 @@ SEGS = [Segment("name", "Druvis III", None, (0, 0, 10, 10)),
 
 def test_registers_both_hotkeys(qtbot):
     _, _, hotkeys, _, _ = _app(qtbot)
-    assert [n for n, _ in hotkeys.registered] == ["translate_region", "translate_fullscreen"]
+    assert [n for n, _ in hotkeys.registered] == ["translate_region", "translate_fullscreen", "toggle_live"]
 
 
 def test_region_flow_loading_then_result(qtbot):
@@ -270,3 +272,61 @@ def test_superseded_region_job_clears_its_popup(qtbot):
     hotkeys.triggered.emit("translate_fullscreen")
     factory.workers[0].job_failed.emit(region_job.id, "superseded")
     assert app._region_job is None and not app.region_overlay.isVisible()
+
+
+def _live_app(qtbot, tmp_path):
+    app, factory, hotkeys, selector, captures = _app(qtbot, tmp_path=tmp_path)
+    app._live_timer_enabled = False
+    return app, factory, hotkeys, selector, captures
+
+
+def test_toggle_live_without_regions_opens_selector_then_starts(qtbot, tmp_path):
+    from app.live.regions import load_live_regions
+
+    app, factory, hotkeys, selector, _ = _live_app(qtbot, tmp_path)
+    hotkeys.triggered.emit("toggle_live")
+    assert selector.begun == 1 and app.live is None
+    selector.selected.emit((10, 10, 300, 80))
+    assert load_live_regions(tmp_path) == [(10, 10, 300, 80)]
+    assert app.live is not None and app.live.running and app.live_action.isChecked()
+    assert factory.workers[0].jobs == []  # a live selection is not a one-shot translation
+    hotkeys.triggered.emit("toggle_live")
+    assert not app.live.running and not app.live_action.isChecked()
+
+
+def test_toggle_live_with_saved_region_starts_directly(qtbot, tmp_path):
+    from app.live.regions import save_live_regions
+
+    save_live_regions(tmp_path, [(10, 10, 300, 80)])
+    app, _, hotkeys, selector, _ = _live_app(qtbot, tmp_path)
+    hotkeys.triggered.emit("toggle_live")
+    assert selector.begun == 0 and app.live.running and app.live.regions == [(10, 10, 300, 80)]
+
+
+def test_live_results_reach_the_controller_and_quit_stops_it(qtbot, tmp_path):
+    from app.live.regions import save_live_regions
+    from app.text.postprocess import Paragraph
+
+    save_live_regions(tmp_path, [(10, 10, 300, 80)])
+    app, factory, hotkeys, _, _ = _live_app(qtbot, tmp_path)
+    w = factory.workers[0]
+    w.ready.emit()
+    hotkeys.triggered.emit("toggle_live")
+    app.live.ocr_job = 900
+    w.ocr_done.emit(900, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)]])
+    tr = w.jobs[-1]
+    assert tr.mode == "live_translate"
+    seg = Segment("text", "Hello.", "Xin chào.", (0, 0, 50, 10))
+    w.partial.emit(tr.id, [[seg]])
+    assert "Xin chào." in app.live._overlays[0].text()
+    app._exit = lambda code: None
+    app.quit()
+    assert not app.live.running
+
+
+def test_live_mode_menu_persists_area(qtbot, tmp_path):
+    from app.live.regions import load_live_mode
+
+    app, *_ = _live_app(qtbot, tmp_path)
+    app.live_mode_actions["area"].trigger()
+    assert load_live_mode(tmp_path) == "area" and app.live_mode == "area"

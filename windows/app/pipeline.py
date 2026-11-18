@@ -113,6 +113,29 @@ class Pipeline:
         translated = self._translate_sentences(sentences) if sentences else {}
         return [self._segment(p, translated) for p in paragraphs]
 
+    def iter_sentences(self, paragraphs: list[Paragraph]) -> Iterator[list[Segment]]:
+        """Live: after each translated sentence yield all segments; untranslated sentences show "…"."""
+        self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
+        order = list(dict.fromkeys(s for p in paragraphs if p.kind == "text" for s in p.sentences))
+        done: dict[str, str] = {}
+
+        def snapshot() -> list[Segment]:
+            out = []
+            for p in paragraphs:
+                box = (p.left, p.top, p.right, p.bottom)
+                if p.kind == "name":
+                    out.append(Segment("name", p.text, None, box))
+                else:
+                    out.append(Segment("text", p.text, " ".join(done.get(s, "…") for s in p.sentences), box))
+            return out
+
+        if not order:
+            yield snapshot()
+            return
+        for sentence in order:
+            done.update(self._translate_sentences([sentence]))
+            yield snapshot()
+
     def iter_segments(self, paragraphs: list[Paragraph]) -> Iterator[Segment]:
         """Yield each paragraph as soon as it is translated (full-screen mode shows blocks progressively)."""
         self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
