@@ -74,6 +74,14 @@ class LiveMachine(private val p: LiveParams = LiveParams()) {
         lastTranslated = ""
     }
 
+    /** After an OCR that was not final (max_wait): keep watching, so a final OCR follows once it is still. */
+    fun rearm(nowMs: Int) {
+        changing = true
+        changedAt = nowMs
+        lastChange = nowMs
+        lastPartial = nowMs
+    }
+
     /** "translate", "skip" or "wait". */
     fun onText(nowMs: Int, text: String): String {
         val t = normalizeText(text)
@@ -124,8 +132,7 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
             val cy = (p.top + p.bottom) / 2
             val match = free.firstOrNull { it.text == text && hypot(it.cx - cx, it.cy - cy) <= nearPx }
             val base = if (match != null) null else free.firstOrNull {
-                text.length > it.text.length && text.startsWith(it.text) &&
-                    hypot(it.paragraph.left - p.left, it.paragraph.top - p.top) <= nearPx
+                grows(it.text, text) && hypot(it.paragraph.left - p.left, it.paragraph.top - p.top) <= nearPx
             }
             val block = if (match != null) {
                 free.remove(match)
@@ -146,6 +153,14 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
     fun forget(keys: Collection<String>) {
         shown = shown.filter { it.key !in keys }
     }
+}
+
+/** [new] continues [old]: same text up to old's last word (that word may have been half drawn / misread). */
+internal fun grows(old: String, new: String): Boolean {
+    if (new == old) return false
+    if (new.startsWith(old)) return true
+    val head = if (' ' in old) old.substringBeforeLast(' ') else ""
+    return head.isNotEmpty() && new.startsWith(head + " ") && new.length >= old.length - 3
 }
 
 /** At most one OCR per minIntervalMs (large-area Live). */

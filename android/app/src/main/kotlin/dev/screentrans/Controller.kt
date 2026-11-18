@@ -84,8 +84,9 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private var liveGame: String? = null
     private var lastSegments: List<Segment> = emptyList()  // last one-shot result, for "Sửa"
     private var correctView: View? = null
+    // Live notices are toasts: a result card would pause Live until it is closed.
     private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ },
-        notify = { msg -> showCard(null, msg) }) { hidden ->
+        notify = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() }) { hidden ->
         bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
     }
 
@@ -135,6 +136,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             "Chọn / sửa vùng" to { chooseRegion(null) },
             (if (live.running) "Tắt Live" else "Bật Live") to ::toggleLive,
             (if (profile().scope == "screen") "Live dịch: Toàn màn hình" else "Live dịch: Vùng") to ::switchLiveScope,
+            (if (profile().style == "classic") "Kiểu bản dịch: Dễ đọc" else "Kiểu bản dịch: Giống game") to ::switchLiveStyle,
             "Chọn / sửa vùng bỏ qua" to ::chooseIgnore,
             "Sửa bản dịch gần nhất" to ::editLast,
             "Game: ${repo.label(gameId())} ▸" to ::showGameMenu,
@@ -309,6 +311,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
         if (live.running) startLive()
     }
 
+    private fun switchLiveStyle() {
+        val p = profile()
+        repo.save(p.copy(style = if (p.style == "classic") "match" else "classic"))
+        if (live.running) startLive()
+    }
+
     private fun startLive() {
         closeResults()
         capturer.resize()
@@ -319,7 +327,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             changeThreshold = p.changeThreshold.toFloat(), partialIntervalMs = 500)
         val ignorePx = ProfileLogic.ignoreOf(p).map { it.toPx(capturer.width, capturer.height) }
         if (p.scope == "screen") {
-            live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen", ignorePx, params)
+            live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen", ignorePx, params, p.style)
             return
         }
         val px = ProfileLogic.regionsOf(p).filter { it.isUsable(capturer.width, capturer.height) }.map { rel ->
@@ -330,7 +338,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             chooseRegion(::startLive)
             return
         }
-        live.start(px, "region", ignorePx, params)
+        live.start(px, "region", ignorePx, params, p.style)
     }
 
     // ---- corrections ----------------------------------------------------------------------------

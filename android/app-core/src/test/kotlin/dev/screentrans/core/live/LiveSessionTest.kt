@@ -15,10 +15,12 @@ class LiveSessionTest {
         val ocr = mutableListOf<Pair<Int, Boolean>>()
         val translate = mutableListOf<Pair<Int, List<List<Paragraph>>>>()
         val blocks = LinkedHashMap<String, String>()
+        val lineHeights = LinkedHashMap<String, Float>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
         override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
-        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind) {
+        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float) {
             blocks["$region:$key"] = text
+            lineHeights["$region:$key"] = lineHeight
         }
         override fun removeBlock(region: Int, key: String) {
             blocks.remove("$region:$key")
@@ -160,5 +162,67 @@ class LiveSessionTest {
         assertEquals(listOf("Hello." to "VI Hello.", "Bye." to "VI Bye."), s.shownSegments().map { it.source to it.translation })
         s.applyCorrection("Hello.", "Chào.")
         assertEquals(listOf("Chào. VI Bye."), h.blocks.values.toList())
+    }
+
+    @Test
+    fun `c1 typing that stops just before max wait still gets a final read`() {
+        val h = Host()
+        val s = session(h)
+        var t = 0
+        while (t < 4000) {
+            s.onFrame(t, if (t < 2000) 255f else 0f)
+            if (s.ocrJob != -1) s.onOcrDone(s.ocrJob, listOf(emptyList()))
+            t += 100
+        }
+        assertTrue(h.ocr.drop(1).any { it.second }, "ocr ${h.ocr}")
+    }
+
+    @Test
+    fun `c1 a lost final ocr is requested again`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onJobFailed(h.ocr.last().first)
+        s.onFrame(300, 0f)
+        assertEquals(2, h.ocr.size)
+    }
+
+    @Test
+    fun `c2 a block read twice the same is finished even while the screen animates`() {
+        val h = Host()
+        val s = session(h, scope = "screen")
+        s.debugExpectOcr(90, final = false)
+        s.onOcrDone(90, listOf(listOf(para("Continue"))))
+        assertTrue(h.translate.isEmpty())
+        s.debugExpectOcr(91, final = false)
+        s.onOcrDone(91, listOf(listOf(para("Continue"))))
+        assertEquals(listOf("Continue"), sources(h.translate.last()))
+    }
+
+    @Test
+    fun `i6 misread last glyph keeps the translation and moved blocks carry theirs`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Where are you going? The sta"))))
+        translate(s, h.translate.last())
+        s.debugExpectOcr(99, final = false)
+        s.onOcrDone(99, listOf(listOf(para("Where are you going? The sla"))))
+        assertEquals(listOf("VI Where are you going?"), h.blocks.values.toList())
+        val n = h.translate.size
+        s.debugExpectOcr(100, final = true)
+        s.onOcrDone(100, listOf(listOf(para("Where are you going?", 200f))))
+        assertEquals(n, h.translate.size)
+        assertEquals(listOf("VI Where are you going?"), h.blocks.values.toList())
+    }
+
+    @Test
+    fun `blocks carry the source line height`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hi.").copy(lineHeight = 30f))))
+        translate(s, h.translate.last())
+        assertEquals(30f, h.lineHeights.values.single())
     }
 }

@@ -87,8 +87,9 @@ class TranslationEngine<I>(
 
     private val lock = Any()
     private var pending: EngineJob<I>? = null
-    private var livePending: EngineJob<I>? = null
-    private val controls = ArrayDeque<EngineJob<I>>()  // Live jobs have their own slot: they never replace user jobs
+    private var liveOcrPending: EngineJob<I>? = null  // Live jobs: one slot per kind, never replace user jobs
+    private var liveTranslatePending: EngineJob<I>? = null
+    private val controls = ArrayDeque<EngineJob<I>>()  // control jobs: never superseded, run first
     private var bundle: EngineBundle<I>? = null
 
     fun start() {
@@ -107,11 +108,11 @@ class TranslationEngine<I>(
 
     /** Thread-safe; call from the UI thread. */
     fun submit(job: EngineJob<I>) {
-        val live = job.liveOcr || job.liveParagraphs != null
         val old = synchronized(lock) {
             when {
                 job.control != null -> null.also { controls.addLast(job) }
-                live -> livePending.also { livePending = job }
+                job.liveParagraphs != null -> liveTranslatePending.also { liveTranslatePending = job }
+                job.liveOcr -> liveOcrPending.also { liveOcrPending = job }
                 else -> pending.also { pending = job }
             }
         }
@@ -132,7 +133,9 @@ class TranslationEngine<I>(
 
     private fun take(): EngineJob<I>? = synchronized(lock) {
         controls.removeFirstOrNull()
-            ?: if (pending != null) pending.also { pending = null } else livePending.also { livePending = null }
+            ?: pending?.also { pending = null }
+            ?: liveTranslatePending?.also { liveTranslatePending = null }  // finish shown sentences first
+            ?: liveOcrPending.also { liveOcrPending = null }
     }
 
     private fun process() {

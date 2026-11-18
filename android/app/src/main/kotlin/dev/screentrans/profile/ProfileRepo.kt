@@ -88,6 +88,7 @@ class ProfileRepo(private val context: Context) {
 
 /** The app in front, from UsageStatsManager (needs Usage Access; without it: null, the user picks by hand). */
 class GameDetector(private val context: Context) {
+    private var lastKnown: String? = null  // the game keeps being "in front" while it is played
     fun hasAccess(): Boolean {
         val ops = context.getSystemService(AppOpsManager::class.java)
         return ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName) ==
@@ -98,13 +99,15 @@ class GameDetector(private val context: Context) {
         if (!hasAccess()) return null
         val usm = context.getSystemService(UsageStatsManager::class.java) ?: return null
         val now = System.currentTimeMillis()
-        val events = usm.queryEvents(now - 60_000, now)
+        // The last app resumed in the past hours is still in front (playing for a long time sends no event).
+        val events = usm.queryEvents(now - 6 * 3_600_000L, now)
         val e = UsageEvents.Event()
         var last: String? = null
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
-            if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) last = e.packageName
+            if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED && e.packageName != context.packageName) last = e.packageName
         }
-        return last
+        if (last != null) lastKnown = last
+        return lastKnown
     }
 }

@@ -11,7 +11,7 @@ interface LiveHost {
     /** Submit a sentence-by-sentence translation of [paragraphs] (per region); return its id. */
     fun requestTranslate(paragraphs: List<List<Paragraph>>): Int
     /** Draw (or redraw in place) one text block's translation over it; [box] = l, t, r, b in frame pixels. */
-    fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind)
+    fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float)
     fun removeBlock(region: Int, key: String)
 }
 
@@ -35,6 +35,7 @@ class LiveSession(
         var done = 0
         val shown = HashMap<Int, Pair<String, String>>()  // index -> (source, translation)
         var drawn = ""
+        var lineHeight = 0f
     }
 
     private data class Item(val region: Int, val key: String, val index: Int, val source: String)
@@ -76,7 +77,10 @@ class LiveSession(
     fun onFrame(nowMs: Int, diff: Float) {
         if (!running) return
         when (machine.onFrame(nowMs, diff)) {
-            LiveAction.OCR -> pending = machine.final || pending == true
+            LiveAction.OCR -> {
+                pending = machine.final || pending == true
+                if (!machine.final) machine.rearm(nowMs)  // max_wait: a final read must still follow when still
+            }
             LiveAction.PARTIAL -> if (ocrJob == -1 && pending == null) pending = false
             LiveAction.WAIT -> Unit
         }
@@ -96,12 +100,15 @@ class LiveSession(
         perRegion.take(regionCount).forEachIndexed { i, paragraphs ->
             if (paragraphs == null) return@forEachIndexed
             val d = trackers[i].update(paragraphs)
+            val carry = HashMap<String, String>()  // translations of blocks that only got a new key
             for (b in d.removed) {
-                blocks.remove(i to b.key)
+                blocks.remove(i to b.key)?.shown?.values?.forEach { (src, tr) -> carry[src] = tr }
                 host.removeBlock(i, b.key)
                 changedOverlay()
             }
-            for (b in d.added + d.grown + d.kept) request += updateBlock(i, b.key, b.paragraph, final)
+            val kept = d.kept.map { it.key }.toSet()
+            // a block read twice with the same text has stopped typing, even while the screen animates
+            for (b in d.added + d.grown + d.kept) request += updateBlock(i, b.key, b.paragraph, final || b.key in kept, carry)
         }
         if (request.isEmpty()) return
         val groups = List(regionCount) { mutableListOf<Paragraph>() }
@@ -114,9 +121,10 @@ class LiveSession(
         inflight += request
     }
 
-    private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean): List<Item> {
+    private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>): List<Item> {
         val st = blocks.getOrPut(i to key) { BlockState() }
         st.kind = p.kind
+        if (p.lineHeight > 0) st.lineHeight = p.lineHeight
         st.box = floatArrayOf(p.left, p.top, p.right, p.bottom)
         if (p.kind == Kind.NAME) {
             st.sentences = listOf(p.text)
@@ -127,6 +135,10 @@ class LiveSession(
         st.done = SentenceGate.done(p.sentences, st.sentences.ifEmpty { null }, final)
         st.sentences = p.sentences
         st.shown.keys.removeAll { k -> k >= st.sentences.size || st.sentences[k] != st.shown.getValue(k).first }
+        for (k in 0 until st.done) {
+            val tr = carry[st.sentences[k]]
+            if (k !in st.shown && tr != null) st.shown[k] = st.sentences[k] to tr
+        }
         draw(i, key)
         return (0 until st.done).map { Item(i, key, it, st.sentences[it]) }
             .filter { it.index !in st.shown && it !in inflight }
@@ -138,7 +150,7 @@ class LiveSession(
         else (0 until st.done).mapNotNull { st.shown[it]?.second }.joinToString(" ")
         if (text == st.drawn) return
         st.drawn = text
-        if (text.isEmpty()) host.removeBlock(i, key) else host.setBlock(i, key, text, st.box, st.kind)
+        if (text.isEmpty()) host.removeBlock(i, key) else host.setBlock(i, key, text, st.box, st.kind, st.lineHeight)
         changedOverlay()
     }
 
@@ -186,7 +198,7 @@ class LiveSession(
 
     /** Failed / superseded: sentences not shown are requested again on the next OCR. */
     fun onJobFailed(jobId: Int) {
-        ocrFinal.remove(jobId)
+        if (ocrFinal.remove(jobId) == true && running) pending = true  // the final read was lost: read again
         if (jobId == ocrJob) ocrJob = -1
         onJobEnded(jobId)
     }

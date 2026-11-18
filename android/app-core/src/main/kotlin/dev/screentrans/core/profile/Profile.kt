@@ -17,6 +17,8 @@ data class Profile(
     val id: String,
     val name: String = "",
     val scope: String = "region",
+    /** Live colours: "match" (sampled from the game) or "classic" (white on dark); font size always matches. */
+    val style: String = "match",
     val regions: List<List<Double>> = emptyList(),
     val ignore: List<List<Double>> = emptyList(),
     val intervalMs: Int = 300,
@@ -30,6 +32,7 @@ data class Profile(
         addProperty("name", name)
         add("live", JsonObject().apply {
             addProperty("scope", scope)
+            addProperty("style", style)
             addProperty("interval_ms", intervalMs)
             addProperty("settle_ms", settleMs)
             addProperty("change_threshold", changeThreshold)
@@ -43,6 +46,7 @@ data class Profile(
     companion object {
         const val DEFAULT_ID = "_default"
         private val SCOPES = setOf("region", "screen")
+        private val STYLES = setOf("match", "classic")
 
         private fun rects(list: List<List<Double>>) = JsonArray().apply {
             list.forEach { r -> add(JsonArray().apply { r.forEach { add(it) } }) }
@@ -89,6 +93,7 @@ data class Profile(
                 id = id,
                 name = str(o["name"]) ?: "",
                 scope = str(live["scope"])?.takeIf { it in SCOPES } ?: "region",
+                style = str(live["style"])?.takeIf { it in STYLES } ?: "match",
                 regions = rels(o["regions"]),
                 ignore = rels(o["ignore_regions"]),
                 intervalMs = positiveInt(live["interval_ms"], 300),

@@ -201,4 +201,18 @@ class TranslationEngineTest {
         val after = events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 4 }
         assertEquals(listOf("VI Hello there.", "Tít dưới."), after.segments.drop(1).map { it.translation })
     }
+
+    @Test
+    fun `live translate does not supersede a waiting live ocr`() = runTest {
+        val engine = TranslationEngine({ bundle() }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        testScheduler.runCurrent()
+        engine.submit(EngineJob(1, false, "img", liveOcr = true))
+        engine.submit(EngineJob<String>(2, false, null, liveParagraphs = listOf(emptyList())))
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        assertTrue(events.none { it is EngineEvent.JobFailed })
+        assertEquals(listOf(1), events.filterIsInstance<EngineEvent.OcrDone>().map { it.jobId })
+    }
 }

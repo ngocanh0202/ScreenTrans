@@ -11,6 +11,7 @@ import dev.screentrans.core.CaptureProbe
 import dev.screentrans.core.EngineEvent
 import dev.screentrans.core.EngineJob
 import dev.screentrans.core.TranslationEngine
+import dev.screentrans.core.live.BlockStyle
 import dev.screentrans.core.live.LiveHost
 import dev.screentrans.core.live.LiveParams
 import dev.screentrans.core.live.LiveSession
@@ -62,6 +63,10 @@ class LiveController(
     private var prev: Array<FloatArray?> = emptyArray()
     private var ignore: List<IntArray> = emptyList()
     private var masks: Array<BooleanArray?> = emptyArray()
+    private var style = "match"
+    private val frames = HashMap<Int, Bitmap>()      // OCR job -> the frame it reads (to sample colours)
+    private var lastOcrFrame: Bitmap? = null
+    private val styles = HashMap<String, BlockStyle?>()  // block -> sampled colours (null: readable style)
     private var blackTicks = 0
     private var blackReported = false
     private var layer: LiveAreaLayer? = null
@@ -96,8 +101,9 @@ class LiveController(
      * change detection (blinking arrow, animated HUD); [params]: from the game profile.
      */
     fun start(regionsPx: List<IntArray>, scopeName: String, ignorePx: List<IntArray> = emptyList(),
-              params: LiveParams = LiveParams(partialIntervalMs = 500)) {
+              params: LiveParams = LiveParams(partialIntervalMs = 500), styleName: String = "match") {
         stop()
+        style = styleName
         regions = regionsPx
         ignore = ignorePx
         prev = arrayOfNulls(regionsPx.size)
@@ -137,6 +143,9 @@ class LiveController(
         ocrCapture = null
         overlays.remove(layer)
         layer = null
+        frames.clear()
+        styles.clear()
+        lastOcrFrame = null
         if (capturing) hideOthers(false)
         capturing = false
     }
@@ -177,23 +186,28 @@ class LiveController(
     }
 
     private fun tick(s: LiveSession) {
+        val thumbs = regions.map { capturer.thumbnail(it) }
+        if (thumbs.all { it == null }) return  // no frame yet
+        if (thumbs.all { it == null || it.average() < 2.0 }) {
+            // Only a black WHOLE frame means the game is not visible (an empty dark dialogue box is fine).
+            val whole = capturer.thumbnail(intArrayOf(0, 0, capturer.width, capturer.height)) ?: return
+            if (whole.average() < 2.0) {
+                if (++blackTicks >= 10 && !blackReported) {  // ~3 s of black frames
+                    blackReported = true
+                    notify("Không thấy hình game (game chặn chụp màn hình, hoặc bạn đang ở ứng dụng khác) — Live chờ tới khi thấy lại hình.")
+                }
+                return
+            }
+        }
+        blackTicks = 0
+        blackReported = false
         var worst = 0f
-        var any = false
-        regions.forEachIndexed { i, r ->
-            val thumb = capturer.thumbnail(r) ?: return@forEachIndexed
-            if (thumb.average() < 2.0) return@forEachIndexed  // black: the captured app is not on screen
-            any = true
-            prev[i]?.let { worst = maxOf(worst, Thumb.diff(it, thumb, mask(i, r, thumb.size))) }
+        thumbs.forEachIndexed { i, thumb ->
+            if (thumb == null) return@forEachIndexed
+            prev[i]?.let { worst = maxOf(worst, Thumb.diff(it, thumb, mask(i, regions[i], thumb.size))) }
             prev[i] = thumb
         }
-        if (any) {
-            blackTicks = 0
-            blackReported = false
-            s.onFrame(now(), worst)
-        } else if (++blackTicks >= 10 && !blackReported) {  // ~3 s of black frames
-            blackReported = true
-            notify("Không thấy hình game (game chặn chụp màn hình, hoặc bạn đang ở ứng dụng khác) — Live chờ tới khi thấy lại hình.")
-        }
+        s.onFrame(now(), worst)
     }
 
     /** Thumbnails are THUMB_W wide (narrower regions are rare: no mask then). */
@@ -233,6 +247,7 @@ class LiveController(
                 s.onJobFailed(id)
                 return@launch
             }
+            frames[id] = frame
             engine.submit(EngineJob(id, fullScreen = false, image = frame, regions = regions, liveOcr = true))
         }
         return id
@@ -244,21 +259,42 @@ class LiveController(
         return id
     }
 
-    override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind) {
-        layer?.set("$region:$key", text, box, kind)
+    override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float) {
+        val k = "$region:$key"
+        val colors = if (style != "match") null else styles.getOrPut(k) { sampleStyle(box) }
+        layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors)
+    }
+
+    /** Colours of the source text block, from the frame its OCR read (null: readable white on dark). */
+    private fun sampleStyle(box: FloatArray): BlockStyle? {
+        val f = lastOcrFrame ?: return null
+        val l = box[0].toInt().coerceIn(0, f.width - 1)
+        val t = box[1].toInt().coerceIn(0, f.height - 1)
+        val w = (box[2].toInt() - l).coerceIn(1, f.width - l)
+        val h = (box[3].toInt() - t).coerceIn(1, f.height - t)
+        val px = IntArray(w * h)
+        f.getPixels(px, 0, w, l, t, w, h)
+        return BlockStyle.sample(px, w, h)
     }
 
     override fun removeBlock(region: Int, key: String) {
+        styles.remove("$region:$key")
         layer?.remove("$region:$key")
     }
 
     private fun onEvent(e: EngineEvent) {
         val s = session ?: return
         when (e) {
-            is EngineEvent.OcrDone -> s.onOcrDone(e.jobId, e.paragraphs)
+            is EngineEvent.OcrDone -> {
+                frames.remove(e.jobId)?.let { lastOcrFrame = it }
+                s.onOcrDone(e.jobId, e.paragraphs)
+            }
             is EngineEvent.Partial -> s.onPartial(e.jobId, e.segments)
             is EngineEvent.Done -> s.onJobEnded(e.jobId)
-            is EngineEvent.JobFailed -> s.onJobFailed(e.jobId)
+            is EngineEvent.JobFailed -> {
+                frames.remove(e.jobId)
+                s.onJobFailed(e.jobId)
+            }
             is EngineEvent.SegmentReady -> Unit
         }
     }
