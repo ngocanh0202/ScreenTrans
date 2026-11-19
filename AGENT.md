@@ -297,7 +297,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 5 — Model: model lớn từ xa + tối ưu model
 > Chỉ tập trung vào chất lượng / tốc độ dịch (người dùng chọn 2026-11-19).
-- [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, *(5a Windows xong — [plan](docs/superpowers/plans/2026-11-19-phase5a-llm-windows.md), chờ thử thật bằng key Gemini; 5b Android chưa làm; Claude mặc định `claude-opus-5-5` theo người dùng chọn 2026-11-19)* chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
+- [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, *(5a Windows xong — [plan](docs/superpowers/plans/2026-11-19-phase5a-llm-windows.md), chờ thử thật bằng key Gemini; 5b (Android + ngữ cảnh game) chưa làm, xem mục dưới; Claude mặc định `claude-opus-5-5` theo người dùng chọn 2026-11-19)* chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
   - Nhà cung cấp: **Gemini**, **OpenAI**, **Claude** (API chính thức, key của người dùng) và **Kaggle** (`training/kaggle_serve.ipynb`, LLM ~7B 4-bit qua ngrok, token riêng). Tên model cấu hình được (mặc định: model rẻ/nhanh của mỗi hãng, ví dụ Claude `claude-haiku-5-5`).
   - Mục đích: hết "dịch cứng" / dịch thiếu của model nhỏ. Prompt gửi kèm **ngữ cảnh**: 2–3 câu thoại trước, tên nhân vật đang nói, bảng thuật ngữ của game (keep/map), yêu cầu dịch tự nhiên đúng giọng nhân vật, giữ nguyên tên riêng; trả JSON một bản dịch cho mỗi câu (gom các câu của một lần OCR vào một lần gọi).
   - Thứ tự vẫn là `overrides` → cache → engine; cache khóa theo engine + model. Bản dịch từ xa vẫn hiện từng câu (stream hoặc theo lô nhỏ).
@@ -306,6 +306,12 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
   - **Riêng tư & chi phí:** cảnh báo rằng chữ trong game được gửi tới nhà cung cấp; giới hạn số ký tự / ngày (cấu hình được) để tránh hóa đơn bất ngờ; hiện số ký tự đã dùng.
   - Test: client giả lập (đúng / chậm / lỗi 401, 429, 5xx / JSON sai) → fallback đúng; prompt có ngữ cảnh + thuật ngữ; cache theo engine. So sánh chất lượng bằng `windows/scripts/compare_engines.py` (thêm các engine này).
   - Ghi chú: Firefox Translations (Bergamot) hiện chỉ có Việt → Anh, chưa có Anh → Việt (kiểm tra 2026-11-19) — theo dõi, chưa dùng. Lingva công khai không dùng được (bị chặn); Lingva tự chạy Docker có thể thêm như một engine `google` tùy chọn.
+- [ ] **5b — Android + ngữ cảnh game cho LLM** (người dùng chọn 2026-11-19: gộp vào 5b, làm sau):
+  - Android: port 5a (luật câu lệnh qua `shared/fixtures/llm`, client Gemini / OpenAI / Kaggle bằng HTTP, Claude bằng SDK Java chính thức, fallback / back-off 30 s / sai key / giới hạn ngày, timeout cả cuộc gọi 2,5 s Live / 6 s dịch 1 lần, key bằng Android Keystore, mục "Dịch bằng" trong ⚙). Làm đúng ngay các lỗi review 5a (key không lộ, deadline toàn cuộc gọi, đếm ký tự trước khi gọi, Gemini 400 sai key).
+  - **Ghi chú game trong hồ sơ** (`llm_notes`): bối cảnh + nhân vật và cách xưng hô (vd "Vertin: nữ, gọi Sonetto là 'em'"), gửi kèm mọi lần gọi; sửa trong Cài đặt (Windows + Android). Fixtures prompt thêm mục này.
+  - **Ngữ cảnh riêng từng game, lưu xuống đĩa**: câu trước (8–10 câu, kèm người nói của từng câu) theo game, đổi game thì dùng ngữ cảnh của game đó, mở lại app vẫn còn; không mang ngữ cảnh game cũ sang game mới.
+  - Cân nhắc prompt caching (Claude; Gemini / OpenAI tương tự) khi ghi chú game dài.
+  - Các lỗi nhỏ để lại từ 5a (báo cáo merge `phase-5a`): tên model mặc định bị lưu như lựa chọn, chưa xóa được key, chặn sai key chỉ hết khi nhập key mới, cache chung cho mọi server Kaggle, Live mất hiện từng câu khi fallback, bản dịch fallback không được cache, `usage.json` ghi không an toàn, đổi engine lỗi giữ engine cũ, toàn màn hình dùng một người nói.
 - [ ] **Tối ưu model trên máy:** đo lại bằng `windows/scripts/compare_engines.py` trên câu thoại thật; Android: thử vinai lượng tử hóa int8 / ONNX (độ trễ trên POCO X8 Pro) hoặc model en→vi khác tốt hơn opus-mt cùng cỡ; Windows: beam / số luồng; dịch theo lô câu của một lần OCR. Chỉ thay model mặc định khi tốt hơn rõ trên bộ câu thật.
 
 ### Phase 6 — Fine-tune trên Kaggle (khi đã có dữ liệu sửa thật)
