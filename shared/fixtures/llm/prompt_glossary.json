@@ -1,0 +1,17 @@
+{
+  "input": {
+    "sentences": [
+      "Druvis III is an Arcanist."
+    ],
+    "context": [],
+    "speaker": null,
+    "glossary": {
+      "Druvis III": null,
+      "Arcanist": "Thuật sĩ"
+    }
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Thuật ngữ:\n- Druvis III (giữ nguyên)\n- Arcanist → Thuật sĩ\n\nDịch các câu sau:\n[\"Druvis III is an Arcanist.\"]"
+  }
+}

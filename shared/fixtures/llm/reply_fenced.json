@@ -1,0 +1,7 @@
+{
+  "text": "```json\n{\"translations\": [\"Đi thôi.\"]}\n```",
+  "n": 1,
+  "expected": [
+    "Đi thôi."
+  ]
+}

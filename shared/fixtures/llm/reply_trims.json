@@ -1,0 +1,7 @@
+{
+  "text": "{\"translations\": [\"  Chào bạn.  \"]}",
+  "n": 1,
+  "expected": [
+    "Chào bạn."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "input": {
+    "sentences": [
+      "Where are you going?"
+    ],
+    "context": [],
+    "speaker": null,
+    "glossary": {}
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Dịch các câu sau:\n[\"Where are you going?\"]"
+  }
+}
