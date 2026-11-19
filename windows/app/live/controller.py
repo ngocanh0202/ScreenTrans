@@ -194,6 +194,15 @@ class LiveController(QObject):
     def tick(self, now_ms: int) -> None:
         if not self.running:
             return
+        try:
+            self._tick(now_ms)
+        except Exception:  # never let one bad frame stop Live: the single-shot timer must be re-armed
+            import traceback
+
+            traceback.print_exc()
+            self._schedule(self.params.interval_ms)
+
+    def _tick(self, now_ms: int) -> None:
         if self._frame_provider is not None and not self._follow_window(now_ms):
             self._schedule(self.params.interval_ms)
             return

@@ -117,7 +117,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     fun onRotated() {
-        capturer.resize()
+        if (!capturer.resize()) return  // night mode / font scale: same screen, keep Live and its translations
         // focusable panels sized for the old orientation would hide their buttons and block the game
         if (menu is LlmPanel) closeMenu()
         correctView?.let { overlays.remove(it); correctView = null; syncLivePause() }

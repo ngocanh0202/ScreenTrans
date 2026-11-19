@@ -83,9 +83,10 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
         }
 
     /** Call after a rotation / resolution change: resize the existing display and swap the reader. */
-    fun resize() {
+    /** True when the size really changed (night mode / font scale changes are configuration changes too). */
+    fun resize(): Boolean {
         val (w, h, dpi) = screenSize()
-        if (w == width && h == height) return
+        if (w == width && h == height) return false
         val old = reader
         val r = newReader(w, h)
         synchronized(lock) {
@@ -98,6 +99,7 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
         display?.resize(w, h, dpi)
         display?.surface = r.surface
         old?.close()
+        return true
     }
 
     /**

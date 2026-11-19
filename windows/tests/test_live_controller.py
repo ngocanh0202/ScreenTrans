@@ -611,3 +611,15 @@ def test_live_translate_jobs_carry_the_speaker_of_the_dialogue_box():  # review 
     c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[name, para("Where are you going?", top=30)]])
     job = translate_jobs(jobs)[-1]
     assert job.payload == {"speaker": "Vertin"}
+
+
+def test_an_unexpected_error_in_a_tick_does_not_stop_live():  # review minor: the single-shot timer was never re-armed
+    c, jobs, notes, _ = make([BLACK])
+    scheduled = []
+    c._schedule = scheduled.append
+    c._on_screen = lambda r: 1 / 0  # anything unexpected while capturing
+    try:
+        c.tick(0)
+    except ZeroDivisionError:
+        pass
+    assert scheduled  # the next tick is still scheduled
