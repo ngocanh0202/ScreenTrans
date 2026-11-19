@@ -534,3 +534,27 @@ def test_settings_window_applies_and_remembers(qtbot, tmp_path):
     assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["model"] == "opus-mt-en-vi"
     assert len(factory.workers) == 2 and app.config.translator.model == "opus-mt-en-vi"  # model switched
     assert app.live.running and app.live.style == "classic"
+
+
+def test_m2_a_corrupt_user_glossary_is_kept_aside_not_overwritten(qtbot, tmp_path):
+    import json
+
+    app, *_ = _live_app(qtbot, tmp_path, game())
+    path = tmp_path / "glossary" / "games" / "game.exe.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("[1, 2", encoding="utf-8")
+    app._save_terms("game.exe", [("Arcanist", None)])
+    assert (path.parent / "game.exe.json.bad").read_text(encoding="utf-8") == "[1, 2"
+    assert json.loads(path.read_text(encoding="utf-8"))["entries"][0]["source"] == "Arcanist"
+
+
+def test_m3_a_failed_set_game_is_sent_again(qtbot, tmp_path):
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    w = factory.workers[0]
+    hotkeys.triggered.emit("toggle_live")
+    first = [j for j in w.all_jobs if j.mode == "set_game"][-1]
+    w.job_failed.emit(first.id, "bad glossary")
+    hotkeys.triggered.emit("toggle_live")
+    hotkeys.triggered.emit("toggle_live")
+    assert len([j for j in w.all_jobs if j.mode == "set_game"]) == 2

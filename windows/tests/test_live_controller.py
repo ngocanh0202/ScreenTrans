@@ -242,6 +242,7 @@ def test_regions_follow_the_game_window():
     win.frame = (400, 300, 1000, 500)
     c.tick(300)
     assert shots[-1] == (500, 700, 800, 100)
+    c.tick(600)  # it stood still for 300 ms after the move
     assert len(ocr_jobs(jobs)) == 2  # the window moved: what is there now is read again
 
 
@@ -457,3 +458,39 @@ def test_a_tilted_block_keeps_its_angle_and_samples_inside_the_image():
     translate(c, translate_jobs(jobs)[-1])
     key = next(iter(overlays[0].blocks))
     assert overlays[0].angles[key] == -10.0
+
+
+def test_m4_dragging_the_window_waits_until_it_stops_before_reading():
+    win = Window((100, 50, 1000, 500))
+    c, jobs, _, _ = make_rel([BLACK], win, [(0, 0, 1, 1)])
+    c.tick(0)
+    n = len(ocr_jobs(jobs))
+    for t in range(100, 800, 100):  # dragged: moves every tick
+        win.frame = (100 + t, 50, 1000, 500)
+        c.tick(t)
+    assert len(ocr_jobs(jobs)) == n  # no OCR while it moves
+    for t in range(800, 1400, 100):
+        c.tick(t)
+    assert len(ocr_jobs(jobs)) == n + 1  # one read once it stood still
+
+
+def test_m7_a_late_translation_does_not_overwrite_the_users_fix():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello.")]])
+    late = translate_jobs(jobs)[-1]
+    c.apply_correction("Hello.", "Chào cậu.")
+    translate(c, late)  # the machine translation arrives after the fix
+    assert list(overlays[0].blocks.values()) == ["Chào cậu."]
+
+
+def test_m8_a_kept_block_that_moved_is_redrawn_at_its_new_place():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    draws = overlays[0].draws
+    c.ocr_job = 99
+    c._ocr_final[99] = True
+    c.on_ocr_done(99, [[Paragraph("text", "Hello.", ["Hello."], 8, 6, 308, 26)]])  # same text, 10 px away
+    assert overlays[0].draws == draws + 1

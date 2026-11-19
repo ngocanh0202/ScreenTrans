@@ -118,7 +118,9 @@ class TrayApp(QObject):
         self._live_timer_enabled = True
         self._selecting_live = False
         self._foreground = foreground
-        self._window_of = window_of
+        self._hwnd_cache: dict = {}
+        self._window_of = window_of if window_of is not game_window else (lambda exe: game_window(exe, cache=self._hwnd_cache))
+        self._set_game_job: int | None = None
         self.profiles = ProfileStore(self._data_dir() / "profiles")
         try:
             self.profiles.migrate_phase4a(self._data_dir(), self._monitor_at(0, 0))
@@ -345,6 +347,9 @@ class TrayApp(QObject):
     @Slot(int, str)
     def _on_job_failed(self, job_id: int, why: str) -> None:
         if not self._current():
+            return
+        if job_id == self._set_game_job:  # e.g. a broken user glossary: the game was not applied, try again later
+            self._worker_game = self._set_game_job = None
             return
         if self.live is not None and self.live.owns(job_id):
             self.live.on_job_failed(job_id, why)
@@ -631,7 +636,8 @@ class TrayApp(QObject):
             return
         user = self._user_glossary(p.id)
         glossaries = ([str(user)] if user.exists() else []) + [str(g) for g in game_glossaries()] + [str(COMMON_GLOSSARY)]
-        self.worker.submit(Job(next(self._ids), "set_game", None, (0, 0),
+        self._set_game_job = next(self._ids)
+        self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
                                payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides)}))
         self._worker_game = p.id
 
@@ -696,7 +702,16 @@ class TrayApp(QObject):
         path = self._user_glossary(game_id)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError:
+            data = {"entries": []}
+        except ValueError:
+            data = None
+        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+            if path.exists():  # keep the broken file for the user instead of overwriting their terms
+                try:
+                    os.replace(path, path.with_name(path.name + ".bad"))
+                except OSError:
+                    pass
             data = {"entries": []}
         for src, target in terms:
             entry = {"source": src, "type": "map" if target else "keep", "case_sensitive": True}

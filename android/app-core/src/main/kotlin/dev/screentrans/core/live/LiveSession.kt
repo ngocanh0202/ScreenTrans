@@ -38,6 +38,7 @@ class LiveSession(
         var done = 0
         val shown = HashMap<Int, Pair<String, String>>()  // index -> (source, translation)
         var drawn = ""
+        var drawnBox = FloatArray(0)
         var lineHeight = 0f
         var stableSince = 0  // when its text last changed
         var angle = 0f       // tilted text
@@ -52,6 +53,7 @@ class LiveSession(
     private val ocrFinal = HashMap<Int, Boolean>()
     private val requests = HashMap<Int, List<Item>>()
     private val inflight = HashSet<Item>()
+    private val fixed = HashMap<String, String>()  // the user's corrections: a late machine translation never wins
     private var pending: Boolean? = true  // translate what is already on screen; true = final OCR
     private var lastNow = 0
     var running = true
@@ -162,8 +164,9 @@ class LiveSession(
         val st = blocks[i to key] ?: return
         val text = if (st.kind == Kind.NAME) st.sentences.firstOrNull().orEmpty()
         else (0 until st.done).mapNotNull { st.shown[it]?.second }.joinToString(" ")
-        if (text == st.drawn) return
+        if (text == st.drawn && st.box.contentEquals(st.drawnBox)) return
         st.drawn = text
+        st.drawnBox = st.box.copyOf()
         if (text.isEmpty()) host.removeBlock(i, key) else host.setBlock(i, key, text, st.box, st.kind, st.lineHeight, st.angle)
         changedOverlay()
     }
@@ -181,7 +184,7 @@ class LiveSession(
             val st = blocks[item.region to item.key] ?: return@forEach
             val tr = seg.translation
             if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source) return@forEach
-            st.shown[item.index] = item.source to tr
+            st.shown[item.index] = item.source to (fixed[item.source] ?: tr)
             touched += item.region to item.key
         }
         touched.forEach { (i, key) -> draw(i, key) }
@@ -197,6 +200,7 @@ class LiveSession(
 
     /** The user fixed a sentence: redraw every block showing it. */
     fun applyCorrection(source: String, corrected: String) {
+        fixed[source] = corrected
         for ((key, st) in blocks) {
             val hit = st.shown.filterValues { it.first == source }.keys
             if (hit.isEmpty()) continue
