@@ -130,7 +130,7 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
             val text = normalizeText(p.text)
             val cx = (p.left + p.right) / 2
             val cy = (p.top + p.bottom) / 2
-            val match = free.firstOrNull { it.text == text && hypot(it.cx - cx, it.cy - cy) <= nearPx }
+            val match = free.firstOrNull { SentenceGate.ocrKey(it.text) == SentenceGate.ocrKey(text) && hypot(it.cx - cx, it.cy - cy) <= nearPx }
             val base = if (match != null) null else free.firstOrNull {
                 grows(it.text, text) && hypot(it.paragraph.left - p.left, it.paragraph.top - p.top) <= nearPx
             }

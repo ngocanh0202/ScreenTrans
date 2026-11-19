@@ -178,10 +178,13 @@ class LiveSession(
             draw(i, key)
             return emptyList()
         }
-        if (p.sentences != st.sentences || st.sentences.isEmpty()) st.stableSince = nowMs
+        // a jittery read of the same text does not restart the 1.5 s
+        if (p.sentences.map(SentenceGate::ocrKey) != st.sentences.map(SentenceGate::ocrKey) || st.sentences.isEmpty()) st.stableSince = nowMs
         st.done = SentenceGate.done(p.sentences, st.sentences.ifEmpty { null }, final)
         st.sentences = p.sentences
-        st.shown.keys.removeAll { k -> k >= st.sentences.size || st.sentences[k] != st.shown.getValue(k).first }
+        st.shown.keys.removeAll { k ->  // a jittery read keeps its translation (no re-request)
+            k >= st.sentences.size || SentenceGate.ocrKey(st.sentences[k]) != SentenceGate.ocrKey(st.shown.getValue(k).first)
+        }
         for (k in 0 until st.done) {
             val tr = carry[st.sentences[k]] ?: known[st.sentences[k]]
             if (k !in st.shown && tr != null) st.shown[k] = st.sentences[k] to tr

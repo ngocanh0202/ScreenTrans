@@ -15,7 +15,7 @@ from app.live.blocks import BlockTracker, RateLimiter
 from app.live.filter import worth_translating
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
-from app.live.sentences import SentenceGate
+from app.live.sentences import SentenceGate, ocr_key
 from app.live.style import BlockStyle, font_px_for, sample_style
 from app.live.thumb import diff, gray_thumb
 from app.profiles import Rel, to_px
@@ -325,11 +325,12 @@ class LiveController(QObject):
             st.sentences, st.done = [p.text], 1
             self._draw(i, key)
             return []
-        if list(p.sentences) != st.sentences or not st.sentences:
-            st.stable_since = self._clock()
+        if [ocr_key(x) for x in p.sentences] != [ocr_key(x) for x in st.sentences] or not st.sentences:
+            st.stable_since = self._clock()  # a jittery read of the same text does not restart the 1.5 s
         st.done = SentenceGate.done(p.sentences, st.sentences or None, final)
         st.sentences = list(p.sentences)
-        st.shown = {k: v for k, v in st.shown.items() if k < len(st.sentences) and st.sentences[k] == v[0]}
+        st.shown = {k: v for k, v in st.shown.items()  # a jittery read keeps its translation (no re-request)
+                    if k < len(st.sentences) and ocr_key(st.sentences[k]) == ocr_key(v[0])}
         for k in range(st.done):
             src = st.sentences[k]
             if k not in st.shown and (carry and src in carry or src in self._known):

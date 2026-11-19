@@ -1,0 +1,29 @@
+{
+ "name": "an animated background: the last sentence read as 'closing' then 'cIosing' (I/l/1, 0/O, case) is the same read",
+ "steps": [
+  {
+   "sentences": [
+    "We need to go now.",
+    "The bridge is closing."
+   ],
+   "final": false,
+   "done": 1
+  },
+  {
+   "sentences": [
+    "We need to go now.",
+    "The bridge is cIosing."
+   ],
+   "final": false,
+   "done": 2
+  },
+  {
+   "sentences": [
+    "We need to go now.",
+    "The bridge is closing!"
+   ],
+   "final": false,
+   "done": 1
+  }
+ ]
+}

@@ -587,3 +587,18 @@ def test_a_resent_job_over_several_regions_draws_each_translation_in_its_own_reg
     translate(c, translate_jobs(jobs)[-1])
     assert list(overlays[0].blocks.values()) == ["VI Where is the key?"]
     assert list(overlays[1].blocks.values()) == ["VI Good morning."]
+
+
+def test_the_last_sentence_appears_on_an_animated_background_with_jittery_reads():  # review #4
+    clock = Clock()
+    c, jobs, _, overlays = make([BLACK], clock=clock)
+    texts = ["We need to go now. The bridge is closing.", "We need to go now. The bridge is cIosing."]
+    for n in range(8):  # never a final read: the background never stands still
+        clock.now = n * 500
+        c._ocr_final[1000 + n] = False
+        c.on_ocr_done(1000 + n, [[para(texts[n % 2])]])
+        for job in translate_jobs(jobs):
+            if job.id in c._requests:
+                translate(c, job)
+    shown = list(overlays[0].blocks.values())
+    assert shown in (["VI We need to go now. VI The bridge is closing."], ["VI We need to go now. VI The bridge is cIosing."])
