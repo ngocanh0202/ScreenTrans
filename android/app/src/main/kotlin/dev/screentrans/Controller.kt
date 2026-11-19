@@ -141,6 +141,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             "Sửa bản dịch gần nhất" to ::editLast,
             "Game: ${repo.label(gameId())} ▸" to ::showGameMenu,
             "Kiểm tra chụp màn hình" to ::probeCapture,
+            "Lưu nhật ký Live" to ::saveLiveLog,
         ), onClose = ::closeMenu)
         val bp = bubble.params ?: return
         val p = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -431,6 +432,28 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 "Cả ảnh đen: ${Frames.isMostlyBlack(all)} · màu giữa ô: rgb(${avg[0]}, ${avg[1]}, ${avg[2]})\n" +
                 "Khung hình mới sau khi vẽ ô: $frameNew (cũ ${frameAge} ms)\n" +
                 (saved?.let { "Đã lưu ảnh chụp: Ảnh › Pictures/ScreenTrans/$it" } ?: "Không lưu được ảnh chụp"))
+        }
+    }
+
+    /** Save Live's event log to Download/ScreenTrans so the user can send it when something looks wrong. */
+    private fun saveLiveLog() {
+        val text = live.logText()
+        if (text.isEmpty()) return showCard(null, "Chưa có nhật ký: bật Live trước.")
+        scope.launch {
+            val name = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runCatching {
+                    val name = "live-log-${System.currentTimeMillis()}.txt"
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/ScreenTrans")
+                    }
+                    val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return@runCatching null
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } ?: return@runCatching null
+                    name
+                }.getOrNull()
+            }
+            showCard(null, if (name != null) "Đã lưu: Download/ScreenTrans/$name" else "Không lưu được nhật ký.", name == null)
         }
     }
 

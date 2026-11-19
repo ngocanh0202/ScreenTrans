@@ -33,6 +33,9 @@ class Overlays(private val context: Context) {
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
+        // Android 12+ blocks touches that pass through another app's window more opaque than 0.8:
+        // click-through overlays must stay at or below it so the game under them keeps working.
+        if (!touchable) alpha = 0.8f
         // Overlays draw in screen coordinates (OCR boxes, regions): never shift them for a display
         // cutout or the system bars.
         layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30)

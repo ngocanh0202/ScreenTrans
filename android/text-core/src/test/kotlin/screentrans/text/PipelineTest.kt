@@ -141,4 +141,12 @@ class PipelineTest {
         g.addEntry("Arcanist", null)
         assertTrue(ns != p.cacheNs)
     }
+
+    @Test
+    fun `a looping translation is collapsed`() {
+        assertEquals("Sự may ...", collapseRepeats("Sự may may may may may may may may may may ..."))
+        assertEquals("Từ từ dần dần thôi.", collapseRepeats("Từ từ dần dần thôi."))
+        val p = pipeline(FakeTranslator { "Sự may may may may may" })
+        assertEquals("Sự may", p.translateParagraphs(listOf(text("Stealio.")))[0].translation)
+    }
 }
