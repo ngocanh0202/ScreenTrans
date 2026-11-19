@@ -110,7 +110,7 @@ from app.config import _default_data_dir  # noqa: E402
 
 
 def remote_engine(engine: str, data_dir: Path, model: str, url: str, timeout: float, dry_run: bool):
-    """A remote LLM (Phase 5) with the app's prompt: each sentence with the 3 before it as context."""
+    """A remote LLM (Phase 5) with the app's prompt: each sentence with the 10 before it as context."""
     from app.secrets import KeyStore
     from app.translate.llm_prompt import build_messages, parse_reply
     from app.translate.remote import DEFAULT_MODELS, RemoteError, make_client
@@ -120,7 +120,7 @@ def remote_engine(engine: str, data_dir: Path, model: str, url: str, timeout: fl
     seen: list[str] = []
 
     def translate(s: str) -> str:
-        system, user = build_messages([s], seen[-3:], None, {})
+        system, user = build_messages([s], [(None, t) for t in seen[-10:]], None, {})
         seen.append(s)
         if client is None:
             print(f"--- {engine} ({model})\n{system}\n\n{user}\n")

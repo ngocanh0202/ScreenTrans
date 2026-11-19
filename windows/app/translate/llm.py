@@ -29,7 +29,7 @@ class LlmTranslator:
         self.usage, self.daily_limit = usage, daily_limit
         self._notify, self._clock = notify, clock
         self.timeout_s = 6.0
-        self._context: list[str] = []
+        self._context: list[tuple[str | None, str]] = []  # (speaker, line)
         self._speaker: str | None = None
         self._blocked = False          # wrong key: never call again (a new translator is made when it changes)
         self._retry_at = 0.0           # after a failure: local until then
@@ -76,7 +76,7 @@ class LlmTranslator:
         if out is None:
             return None  # this batch only: the next one tries the server again
         self._failing = False
-        self._context = (self._context + texts)[-CONTEXT_MAX:]
+        self._context = (self._context + [(self._speaker, t) for t in texts])[-CONTEXT_MAX:]
         return out
 
     def _fail(self, e: RemoteError) -> None:

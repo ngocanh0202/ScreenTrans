@@ -13,7 +13,9 @@ FIX = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "llm"
 def test_prompt_fixture(path):
     case = json.loads(path.read_text(encoding="utf-8"))
     i = case["input"]
-    system, user = build_messages(i["sentences"], i["context"], i["speaker"], i["glossary"])
+    context = [(sp, text) for sp, text in i["context"]]
+    examples = [(a, b) for a, b in i.get("examples", [])]
+    system, user = build_messages(i["sentences"], context, i["speaker"], i["glossary"], i.get("notes", ""), examples)
     assert (system, user) == (case["expected"]["system"], case["expected"]["user"])
 
 

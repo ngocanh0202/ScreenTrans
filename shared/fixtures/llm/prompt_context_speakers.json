@@ -1,0 +1,63 @@
+{
+  "input": {
+    "sentences": [
+      "Hm."
+    ],
+    "context": [
+      [
+        "Vertin",
+        "Line 1."
+      ],
+      [
+        "Vertin",
+        "Line 2."
+      ],
+      [
+        null,
+        "Line 3."
+      ],
+      [
+        "Vertin",
+        "Line 4."
+      ],
+      [
+        "Vertin",
+        "Line 5."
+      ],
+      [
+        null,
+        "Line 6."
+      ],
+      [
+        "Vertin",
+        "Line 7."
+      ],
+      [
+        "Vertin",
+        "Line 8."
+      ],
+      [
+        null,
+        "Line 9."
+      ],
+      [
+        "Vertin",
+        "Line 10."
+      ],
+      [
+        "Vertin",
+        "Line 11."
+      ],
+      [
+        null,
+        "Line 12."
+      ]
+    ],
+    "speaker": "Sonetto",
+    "glossary": {}
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Câu trước (để hiểu ngữ cảnh, không dịch):\n- Line 3.\n- Vertin: Line 4.\n- Vertin: Line 5.\n- Line 6.\n- Vertin: Line 7.\n- Vertin: Line 8.\n- Line 9.\n- Vertin: Line 10.\n- Vertin: Line 11.\n- Line 12.\n\nNgười nói: Sonetto\n\nDịch các câu sau:\n[\"Hm.\"]"
+  }
+}

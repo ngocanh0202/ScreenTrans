@@ -5,9 +5,18 @@
       "We're not done yet."
     ],
     "context": [
-      "The storm is coming.",
-      "Get inside!",
-      "Wait for me."
+      [
+        null,
+        "The storm is coming."
+      ],
+      [
+        null,
+        "Get inside!"
+      ],
+      [
+        null,
+        "Wait for me."
+      ]
     ],
     "speaker": "Vertin",
     "glossary": {}

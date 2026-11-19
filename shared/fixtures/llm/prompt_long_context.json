@@ -4,17 +4,32 @@
       "Go."
     ],
     "context": [
-      "One.",
-      "Two.",
-      "Three.",
-      "Four.",
-      "Five."
+      [
+        null,
+        "One."
+      ],
+      [
+        null,
+        "Two."
+      ],
+      [
+        null,
+        "Three."
+      ],
+      [
+        null,
+        "Four."
+      ],
+      [
+        null,
+        "Five."
+      ]
     ],
     "speaker": null,
     "glossary": {}
   },
   "expected": {
     "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
-    "user": "Câu trước (để hiểu ngữ cảnh, không dịch):\n- Three.\n- Four.\n- Five.\n\nDịch các câu sau:\n[\"Go.\"]"
+    "user": "Câu trước (để hiểu ngữ cảnh, không dịch):\n- One.\n- Two.\n- Three.\n- Four.\n- Five.\n\nDịch các câu sau:\n[\"Go.\"]"
   }
 }
