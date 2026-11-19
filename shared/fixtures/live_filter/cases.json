@@ -168,6 +168,58 @@
    "line_height": 40,
    "keep": true,
    "why": "a one-word line ending with punctuation needs only 2 letters"
+  },
+  {
+   "text": "We need to go now. The bridge is cl0sing",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    900,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "one misread word in a long line keeps the line"
+  },
+  {
+   "text": "Meet me on the 2nd floor.",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    900,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "ordinals are real words"
+  },
+  {
+   "text": "Go to B1 now.",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    900,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "a mixed word in a 4-word sentence keeps it"
+  },
+  {
+   "text": "x9z St3loo",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    300,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "short block of mixed words: OCR noise"
   }
  ]
 }
