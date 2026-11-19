@@ -72,3 +72,18 @@ def test_real_dialogue_crop():
     assert len(lines) == 2
     assert lines[1].text.endswith(".") and len(lines[1].text) > 10
     assert lines[0].bottom <= lines[1].top
+
+
+def test_tilted_words_make_a_tilted_line():
+    import math
+
+    from app.ocr.windows_ocr import line_from_words
+
+    c, s = math.cos(math.radians(12)), math.sin(math.radians(12))
+    bw, bh = 60 * c + 20 * s, 60 * s + 20 * c
+    words = [{"x": 100 + i * 80 * c - bw / 2, "y": 200 + i * 80 * s - bh / 2, "width": bw, "height": bh} for i in range(3)]
+    line = line_from_words("Trail A Determined Visitor", words, scale=1.0)
+    assert abs(line.angle - 12) < 0.5 and abs(line.width - 220) < 10
+    flat = line_from_words("Hi there", [{"x": 10, "y": 50, "width": 40, "height": 20},
+                                        {"x": 60, "y": 50, "width": 40, "height": 20}], scale=2.0)
+    assert flat.angle == 0 and (flat.left, flat.top, flat.width, flat.height) == (5, 25, 45, 10)

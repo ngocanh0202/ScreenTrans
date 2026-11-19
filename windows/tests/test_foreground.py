@@ -56,3 +56,26 @@ def test_game_window_finds_the_largest_window_of_that_exe():
     g = fg.game_window("reverseone.exe", FakeApi(WINDOWS, 2))
     assert g.client == (100, 50, 1280, 720)
     assert fg.game_window("other.exe", FakeApi(WINDOWS, 2)) is None
+
+
+def test_m5_the_game_window_is_cached_between_ticks():
+    class Counting(FakeApi):
+        def __init__(self, *a):
+            super().__init__(*a)
+            self.enumerations = 0
+
+        def top_windows(self):
+            self.enumerations += 1
+            return super().top_windows()
+
+        def is_window(self, hwnd):
+            return hwnd in self.windows
+
+    api = Counting(WINDOWS, 2)
+    cache = {}
+    assert fg.game_window("reverseone.exe", api, cache).client == (100, 50, 1280, 720)
+    assert fg.game_window("reverseone.exe", api, cache).client == (100, 50, 1280, 720)
+    assert api.enumerations == 1
+    del api.windows[1]
+    assert fg.game_window("reverseone.exe", api, cache).client == (0, 0, 20, 20)  # gone: look again
+    assert api.enumerations == 2

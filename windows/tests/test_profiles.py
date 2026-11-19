@@ -71,3 +71,17 @@ def test_ignore_mask_hides_part_of_the_region_from_the_diff():
     assert not everything.any() and diff(ta, tb, everything) == 0.0
     assert isinstance(diff(ta, tb), float) and diff(ta, tb) == pytest.approx(127.5, abs=1)
     assert np.array_equal(ignore_mask((0, 0, 640, 160), [], 64, 16), np.ones((16, 64), bool))
+
+
+def test_m1_a_profile_that_is_not_utf8_is_quarantined_not_a_crash(tmp_path, monkeypatch):
+    store = ProfileStore(tmp_path)
+    (tmp_path / "a.exe.json").write_bytes(b'{"id": "a.exe", "name": "\xe1\xbb"}\xff')
+    assert store.get("a.exe") is None and (tmp_path / "a.exe.json.bad").exists()
+    (tmp_path / "b.exe.json").write_text("{broken", encoding="utf-8")
+    import os
+
+    def fail(*a, **k):
+        raise OSError("locked")
+
+    monkeypatch.setattr(os, "replace", fail)
+    assert store.get("b.exe") is None  # cannot even rename it: still no crash

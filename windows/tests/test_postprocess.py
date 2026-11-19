@@ -16,9 +16,10 @@ def test_fixture_set_is_present():
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
 def test_fixture(path):
     data = json.loads(path.read_text(encoding="utf-8"))
-    lines = [Line(l["text"], *l["box"]) for l in data["lines"]]
-    got = [{"kind": p.kind, "text": p.text, "sentences": p.sentences} for p in postprocess(lines)]
-    assert got == data["expected"]
+    lines = [Line(l["text"], *l["box"], l.get("angle", 0.0)) for l in data["lines"]]
+    got = [{"kind": p.kind, "text": p.text, "sentences": p.sentences, "angle": p.angle} for p in postprocess(lines)]
+    want = data["expected"]
+    assert [{k: v for k, v in g.items() if k in w} for g, w in zip(got, want)] == want and len(got) == len(want)
 
 
 @pytest.mark.parametrize("text,expected", [

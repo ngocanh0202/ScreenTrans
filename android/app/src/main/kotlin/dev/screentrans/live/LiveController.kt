@@ -289,16 +289,16 @@ class LiveController(
         return id
     }
 
-    override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float) {
+    override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
         val k = "$region:$key"
-        val colors = if (style != "match") null else styles.getOrPut(k) { sampleStyle(box) }
-        val cut = layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors)
+        val colors = if (style != "match") null else styles.getOrPut(k) { sampleStyle(screentrans.text.Deskew.bounds(box, angle)) }
+        val cut = layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors, angle)
         fullText[k] = text
-        if (cut != null) showExpander(k, cut) else overlays.remove(expanders.remove(k))
+        if (cut != null) showExpander(k, cut, angle) else overlays.remove(expanders.remove(k))
     }
 
     /** A small touchable ⤢ at the bottom-right of a cut translation; tapping it shows all of it. */
-    private fun showExpander(key: String, rect: android.graphics.RectF) {
+    private fun showExpander(key: String, rect: android.graphics.RectF, angle: Float) {
         val size = context.dp(30)
         val v = expanders.getOrPut(key) {
             android.widget.TextView(context).apply {
@@ -312,10 +312,10 @@ class LiveController(
                 setOnClickListener { fullText[key]?.let(onExpand) }
             }
         }
-        val lp = overlays.params(size, size).apply {
-            x = (rect.right.toInt() - size).coerceIn(0, maxOf(0, capturer.width - size))
-            y = (rect.bottom.toInt() - size / 2).coerceIn(0, maxOf(0, capturer.height - size))
-        }
+        // the real bottom-right corner of the (possibly tilted) box, kept on screen
+        val (px, py) = dev.screentrans.core.Layout.cornerOnScreen(
+            floatArrayOf(rect.left, rect.top, rect.right, rect.bottom), angle, size, capturer.width, capturer.height)
+        val lp = overlays.params(size, size).apply { x = px; y = py }
         if (overlays.isAdded(v)) overlays.update(v, lp) else overlays.add(v, lp)
     }
 

@@ -20,6 +20,16 @@ def _to_rgb(img: Image.Image) -> Image.Image:
     return bg
 
 
+def line_from_words(text: str, rects: list[dict], scale: float) -> Line:
+    """One OCR line from its word boxes (OCR image pixels): tilted lines get their angle and a box in the
+    straightened frame (ocr/deskew.py); `scale` undoes the upscaling of small images."""
+    from app.ocr.deskew import from_words
+
+    angle, left, top, width, height = from_words(
+        [(r["x"] / scale, r["y"] / scale, r["width"] / scale, r["height"] / scale) for r in rects])
+    return Line(text, left, top, width, height, angle)
+
+
 class WindowsOcr:
     def __init__(self, lang: str = "en", min_height: int = 32):
         self.lang = lang
@@ -42,11 +52,6 @@ class WindowsOcr:
         lines = []
         for line in result.get("lines") or []:
             rects = [w["bounding_rect"] for w in line.get("words") or []]
-            if not rects:
-                continue
-            left = min(r["x"] for r in rects)
-            top = min(r["y"] for r in rects)
-            right = max(r["x"] + r["width"] for r in rects)
-            bottom = max(r["y"] + r["height"] for r in rects)
-            lines.append(Line(line["text"], left / scale, top / scale, (right - left) / scale, (bottom - top) / scale))
+            if rects:
+                lines.append(line_from_words(line["text"], rects, scale))
         return lines

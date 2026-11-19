@@ -62,6 +62,9 @@ class Win32Api:
     def minimized(self, hwnd: int) -> bool:
         return bool(self.u.IsIconic(wintypes.HWND(hwnd)))
 
+    def is_window(self, hwnd: int) -> bool:
+        return bool(self.u.IsWindow(wintypes.HWND(hwnd)))
+
     def top_windows(self) -> list[int]:
         found: list[int] = []
         proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -93,9 +96,17 @@ def current_game(api=None) -> GameWindow | None:
     return _info(api, hwnd) if hwnd else None
 
 
-def game_window(exe: str, api=None) -> GameWindow | None:
-    """The largest visible top-level window of `exe` (a game may also own small tool windows)."""
+def game_window(exe: str, api=None, cache: dict | None = None) -> GameWindow | None:
+    """The largest visible top-level window of `exe` (a game may also own small tool windows). With `cache`
+    (exe -> hwnd) the window found last time is checked first instead of enumerating every window."""
     api = api or Win32Api()
+    if cache is not None and exe in cache:
+        hwnd = cache[exe]
+        if getattr(api, "is_window", lambda h: True)(hwnd):
+            info = _info(api, hwnd)
+            if info is not None and info.exe == exe:
+                return info
+        del cache[exe]
     best = None
     for hwnd in api.top_windows():
         info = _info(api, hwnd)
@@ -103,4 +114,6 @@ def game_window(exe: str, api=None) -> GameWindow | None:
             continue
         if best is None or info.client[2] * info.client[3] > best.client[2] * best.client[3]:
             best = info
+    if cache is not None and best is not None:
+        cache[exe] = best.hwnd
     return best

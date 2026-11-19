@@ -22,6 +22,7 @@ from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
 
 Region = tuple[int, int, int, int]  # x, y, w, h in physical pixels
+MOVE_SETTLE_MS = 300  # after the game window moved, wait this long without moves before reading
 KEPT_FINAL_MS = 1500  # a block whose text did not change for this long has stopped typing / fading in
 
 
@@ -33,10 +34,12 @@ class _BlockState:
     done: int = 0                                         # leading sentences that are finished
     shown: dict[int, tuple[str, str]] = field(default_factory=dict)  # index -> (source, translation)
     drawn: str = ""
+    drawn_box: tuple = ()
     font_px: float | None = None        # the source text's size (always used)
     colors: BlockStyle | None = None    # sampled colours ("match" style), None = white on dark
     sampled: bool = False
     stable_since: int = 0               # when its text last changed
+    angle: float = 0.0                  # tilted text
 
 
 class LiveController(QObject):
@@ -76,6 +79,8 @@ class LiveController(QObject):
         self._frame_provider: Callable[[], tuple[int, int, int, int] | None] | None = None
         self._masks: list = []
         self._reported_paused = False
+        self._hold_until = 0       # window dragged: no OCR until it stood still for MOVE_SETTLE_MS
+        self._fixed: dict[str, str] = {}  # the user's corrections: a late machine translation never wins
         self.running = False
         self.regions: list[Region] = []
         self.machine = LiveMachine(params)
@@ -124,7 +129,7 @@ class LiveController(QObject):
         if frame is None:
             self.regions = []  # recomputed by the first tick that finds the window
 
-    def _follow_window(self) -> bool:
+    def _follow_window(self, now_ms: int = 0) -> bool:
         """Recompute regions from the game window; False while it is minimized / gone."""
         frame = self._frame_provider()
         if frame is None or frame[2] <= 0 or frame[3] <= 0:
@@ -147,6 +152,7 @@ class LiveController(QObject):
             self._ignore_px = [to_px(r, frame) for r in self._ignore_rel]
             self.regions = regions
             self._pending = True
+            self._hold_until = now_ms + MOVE_SETTLE_MS
         return True
 
     def _clear_blocks(self) -> None:
@@ -187,7 +193,7 @@ class LiveController(QObject):
     def tick(self, now_ms: int) -> None:
         if not self.running:
             return
-        if self._frame_provider is not None and not self._follow_window():
+        if self._frame_provider is not None and not self._follow_window(now_ms):
             self._schedule(self.params.interval_ms)
             return
         images = []
@@ -224,7 +230,7 @@ class LiveController(QObject):
                 self.machine.rearm(now_ms)  # max_wait: a final read must still follow when it gets still
         elif action is Action.PARTIAL and self.ocr_job is None and self._pending is None:
             self._pending = False
-        if self._pending is not None and any(img is not None for img in images):
+        if self._pending is not None and now_ms >= self._hold_until and any(img is not None for img in images):
             if self.scope != "screen" or self._limiter.allow(now_ms):
                 from app.gui.worker import Job
 
@@ -293,7 +299,14 @@ class LiveController(QObject):
             st.font_px = size
         if self.style == "match" and not st.sampled and image is not None:
             st.sampled = True
-            crop = image.crop((int(p.left), int(p.top), int(p.right), int(p.bottom))).convert("RGB")
+            from app.ocr.deskew import bounds
+
+            l, t, r, b = bounds((p.left, p.top, p.right, p.bottom), getattr(p, "angle", 0.0))
+            l, t = max(0, int(l)), max(0, int(t))
+            r, b = min(image.width, int(r)), min(image.height, int(b))
+            if r - l < 6 or b - t < 6:
+                return
+            crop = image.crop((l, t, r, b)).convert("RGB")
             import numpy as np
 
             st.colors = sample_style(np.asarray(crop))
@@ -301,6 +314,7 @@ class LiveController(QObject):
     def _update_block(self, i: int, key: str, p: Paragraph, final: bool, carry: dict | None = None) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())
         st.kind, st.box = p.kind, (p.left, p.top, p.right, p.bottom)
+        st.angle = getattr(p, "angle", 0.0)
         if p.kind == "name":
             st.sentences, st.done = [p.text], 1
             self._draw(i, key)
@@ -325,12 +339,13 @@ class LiveController(QObject):
             text = st.sentences[0] if st.sentences else ""
         else:
             text = " ".join(st.shown[k][1] for k in range(st.done) if k in st.shown)
-        if text == st.drawn:
+        if text == st.drawn and st.box == st.drawn_box:
             return
-        st.drawn = text
+        st.drawn, st.drawn_box = text, st.box
         if text:
             x, y = self.regions[i][0], self.regions[i][1]
-            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind, font_px=st.font_px, colors=st.colors)
+            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind, font_px=st.font_px, colors=st.colors,
+                                        angle=st.angle)
         else:
             self._overlays[i].remove_block(key)
 
@@ -345,7 +360,7 @@ class LiveController(QObject):
             if st is None or not seg.translation or seg.translation == "…" or k >= len(st.sentences) \
                     or st.sentences[k] != src:
                 continue
-            st.shown[k] = (src, seg.translation)
+            st.shown[k] = (src, self._fixed.get(src, seg.translation))
             touched.add((i, key))
         for i, key in touched:
             self._draw(i, key)
@@ -363,7 +378,8 @@ class LiveController(QObject):
         return out
 
     def apply_correction(self, source: str, corrected: str) -> None:
-        """The user fixed a sentence: redraw every block showing it."""
+        """The user fixed a sentence: redraw every block showing it (and keep it over late translations)."""
+        self._fixed[source] = corrected
         for (i, key), st in self._blocks.items():
             hit = [k for k, (src, _) in st.shown.items() if src == source]
             for k in hit:

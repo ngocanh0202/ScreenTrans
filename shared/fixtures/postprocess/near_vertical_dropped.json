@@ -1,0 +1,35 @@
+{
+ "name": "lines tilted more than 60 degrees are dropped",
+ "lines": [
+  {
+   "text": "Where are you going?",
+   "box": [
+    100,
+    360,
+    300,
+    30
+   ],
+   "angle": 0
+  },
+  {
+   "text": "XXXXXX",
+   "box": [
+    400,
+    100,
+    120,
+    20
+   ],
+   "angle": 70
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "Where are you going?",
+   "sentences": [
+    "Where are you going?"
+   ],
+   "angle": 0
+  }
+ ]
+}

@@ -18,9 +18,13 @@ class LiveSessionTest {
         val lineHeights = LinkedHashMap<String, Float>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
         override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
-        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float) {
+        val angles = LinkedHashMap<String, Float>()
+        var draws = 0
+        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
+            draws++
             blocks["$region:$key"] = text
             lineHeights["$region:$key"] = lineHeight
+            angles["$region:$key"] = angle
         }
         override fun removeBlock(region: Int, key: String) {
             blocks.remove("$region:$key")
@@ -259,5 +263,40 @@ class LiveSessionTest {
         s.onOcrDone(50, listOf(listOf(para("Bye."))))
         s.onJobFailed(h.translate.last().first, superseded = false)  // a real error: wait for the next OCR
         assertEquals(n + 1, h.translate.size)
+    }
+
+    @Test
+    fun `tilted blocks keep their angle`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there friend.").copy(angle = -10f))))
+        translate(s, h.translate.last())
+        assertEquals(-10f, h.angles.values.single())
+    }
+
+    @Test
+    fun `m7 a late translation does not overwrite the users fix`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello."))))
+        val late = h.translate.last()
+        s.applyCorrection("Hello.", "Chào cậu.")
+        translate(s, late)
+        assertEquals(listOf("Chào cậu."), h.blocks.values.toList())
+    }
+
+    @Test
+    fun `m8 a kept block that moved is redrawn at its new place`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello."))))
+        translate(s, h.translate.last())
+        val before = h.draws
+        s.debugExpectOcr(99, final = true)
+        s.onOcrDone(99, listOf(listOf(Paragraph(Kind.TEXT, "Hello.", listOf("Hello."), 8f, 6f, 308f, 26f))))
+        assertEquals(before + 1, h.draws)
     }
 }

@@ -127,11 +127,16 @@ class ProfileStore:
         path = self._path(game_id)
         try:
             text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            text = None  # saved by another editor in another encoding: treat as broken
         except OSError:
             return None
-        p = Profile.parse(text)
+        p = Profile.parse(text) if text is not None else None
         if p is None:  # keep the broken file for the user, start over with defaults
-            os.replace(path, path.with_name(path.name + ".bad"))
+            try:
+                os.replace(path, path.with_name(path.name + ".bad"))
+            except OSError:
+                pass
         return p
 
     def get_or_default(self, game_id: str, name: str = "") -> Profile:

@@ -5,7 +5,7 @@ or white on dark ("classic", or when sampling found no readable colours).
 """
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QWidget
 
@@ -31,6 +31,8 @@ class LiveBlock:
     draw_height: int
     fg: QColor
     bg: QColor
+    angle: float = 0.0          # tilted text: drawn rotated by `angle` around `pivot`
+    pivot: QPoint | None = None  # widget-local logical position of the OCR image origin
 
 
 def _font(px: int) -> QFont:
@@ -75,23 +77,26 @@ class AreaOverlay(QWidget):
         self._shown_once = False
 
     def set_block(self, key: str, text: str, box: tuple[float, float, float, float], origin: tuple[int, int],
-                  kind: str = "text", font_px: float | None = None, colors: BlockStyle | None = None) -> None:
+                  kind: str = "text", font_px: float | None = None, colors: BlockStyle | None = None,
+                  angle: float = 0.0) -> None:
         """`box`: left, top, right, bottom in the captured image; `origin`: its physical top-left;
         `font_px`: the source text size in physical px (None: the configured size)."""
         r = physical_to_logical(block_rect(box, origin), self.screen_geometry, self.dpr)
         r.translate(-self.screen_geometry.left(), -self.screen_geometry.top())
-        base = round(font_px / self.dpr) if font_px else round(self.cfg.font_size * 4 / 3)  # pt -> px
+        base = round((font_px / self.dpr if font_px else self.cfg.font_size * 4 / 3) * self.cfg.text_scale)  # pt -> px
         if colors is not None:
             fg, bg = QColor(*colors.text), QColor(*colors.bg)  # opaque: the translation replaces the source
         else:
             fg, bg = QColor(255, 255, 255), QColor(20, 20, 24, round(255 * self.cfg.opacity))
+        pivot = physical_to_logical((origin[0], origin[1], 0, 0), self.screen_geometry, self.dpr).topLeft()
+        pivot -= self.screen_geometry.topLeft()
         if kind == "name":
             fg = fg if colors is not None else NAME_COLOR
-            self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg)
+            self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg, angle, pivot)
         else:
-            room = self.height() - r.top() if self.cfg.long_text != "shrink" else None
+            room = self.height() - r.top() if self.cfg.long_text != "shrink" and not angle else None
             px, fitted, h = fit_px(text, r.width(), r.height(), base, room if room and room > r.height() else None)
-            self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg)
+            self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg, angle, pivot)
         self._refresh()
 
     def remove_block(self, key: str) -> None:
@@ -110,6 +115,11 @@ class AreaOverlay(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         for b in self.blocks.values():
             area = QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height)
+            if b.angle and b.pivot is not None:  # tilted text: draw in its frame, rotated around the image origin
+                p.save()
+                p.translate(b.pivot)
+                p.rotate(b.angle)
+                area.translate(-b.pivot)
             p.setFont(_font(b.px))
             p.setPen(Qt.NoPen)
             p.setBrush(b.bg)
@@ -119,3 +129,5 @@ class AreaOverlay(QWidget):
                 p.drawText(area.adjusted(PAD, 0, -PAD, 0), Qt.AlignLeft | Qt.AlignVCenter, b.text)
             else:
                 p.drawText(area.adjusted(PAD, PAD, -PAD, -PAD), Qt.TextWordWrap, b.text)
+            if b.angle and b.pivot is not None:
+                p.restore()

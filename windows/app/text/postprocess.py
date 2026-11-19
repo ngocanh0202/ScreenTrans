@@ -33,6 +33,7 @@ class Paragraph:
     right: float
     bottom: float
     line_height: float = 0.0  # median height of the OCR lines (Live "giống game" font size)
+    angle: float = 0.0        # tilted text: the box is in the frame rotated by -angle (ocr/deskew.py)
 
 
 @dataclass
@@ -131,12 +132,41 @@ def _name_text(text: str) -> str:
     return " ".join("I" * len(t) if _ROMAN_MISREAD.match(t) else t for t in tokens)
 
 
+MAX_TILT = 60.0     # more than this is vertical text / noise: dropped
+SAME_TILT = 2.0     # lines within this many degrees share a tilted frame
+
+
 def postprocess(lines: list[Line]) -> list[Paragraph]:
+    """Paragraphs of the OCR lines. Tilted lines are grouped per angle (shared fixtures README)."""
+    kept = sorted((l for l in lines if abs(l.angle) <= MAX_TILT), key=lambda l: l.angle)
+    clusters: list[list[Line]] = []
+    for line in kept:
+        if clusters and line.angle - clusters[-1][0].angle <= SAME_TILT:
+            clusters[-1].append(line)
+        else:
+            clusters.append([line])
+    parts = []
+    for cluster in clusters:
+        angle = statistics.median(l.angle for l in cluster)
+        angle = 0.0 if abs(angle) < SAME_TILT else angle
+        paras = _postprocess_frame(cluster)
+        for p in paras:
+            p.angle = angle
+        if paras:
+            from app.ocr.deskew import unrotate_point
+
+            first = paras[0]
+            parts.append((unrotate_point(first.left, first.top, angle)[1], paras))
+    return [p for _, paras in sorted(parts, key=lambda x: x[0]) for p in paras]
+
+
+def _postprocess_frame(lines: list[Line]) -> list[Paragraph]:
+    """The straight-text rules, for lines that share one (possibly tilted) frame."""
     cleaned = []
     for line in lines:
         t = _clean(line.text)
         if _has_letter(t) and len(t) > 1:
-            cleaned.append(Line(t, line.left, line.top, line.width, line.height))
+            cleaned.append(Line(t, line.left, line.top, line.width, line.height, line.angle))
     if not cleaned:
         return []
     h = statistics.median(l.height for l in cleaned)

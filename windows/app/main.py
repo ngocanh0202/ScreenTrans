@@ -27,6 +27,7 @@ from app.live.controller import LiveController
 from app.live.machine import LiveParams
 from app.cache import normalize
 from app.gui.correct_dialog import CorrectDialog
+from app.gui.settings_dialog import SettingsDialog, SettingsValues, load_settings, save_settings
 from app.gui.foreground import current_game, game_window
 from app.profiles import DEFAULT_ID, Profile, ProfileStore, _rel, to_rel
 from app.paths import default_config_path
@@ -117,7 +118,9 @@ class TrayApp(QObject):
         self._live_timer_enabled = True
         self._selecting_live = False
         self._foreground = foreground
-        self._window_of = window_of
+        self._hwnd_cache: dict = {}
+        self._window_of = window_of if window_of is not game_window else (lambda exe: game_window(exe, cache=self._hwnd_cache))
+        self._set_game_job: int | None = None
         self.profiles = ProfileStore(self._data_dir() / "profiles")
         try:
             self.profiles.migrate_phase4a(self._data_dir(), self._monitor_at(0, 0))
@@ -129,6 +132,8 @@ class TrayApp(QObject):
         self._select_ctx = None
         self._last_segments: list = []   # last one-shot result, for "edit the last translation"
         self._dialog_factory = CorrectDialog
+        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name)
+        self._apply_saved_settings()
         self._build_tray()
         if timers:
             self._game_timer = QTimer(self)
@@ -188,6 +193,7 @@ class TrayApp(QObject):
             action.triggered.connect(lambda checked=False, m=model_id: self.switch_model(m))
             group.addAction(action)
             self.model_actions[model_id] = action
+        menu.addAction("Cài đặt…", self.open_settings)
         menu.addAction("Mở thư mục dữ liệu", self._open_data_dir)
         menu.addSeparator()
         menu.addAction("Thoát", self.quit)
@@ -341,6 +347,9 @@ class TrayApp(QObject):
     @Slot(int, str)
     def _on_job_failed(self, job_id: int, why: str) -> None:
         if not self._current():
+            return
+        if job_id == self._set_game_job:  # e.g. a broken user glossary: the game was not applied, try again later
+            self._worker_game = self._set_game_job = None
             return
         if self.live is not None and self.live.owns(job_id):
             self.live.on_job_failed(job_id, why)
@@ -583,12 +592,52 @@ class TrayApp(QObject):
         self._send_set_game(p)
         self.live_action.setChecked(True)
 
+    # ---- settings window ----------------------------------------------------------------------------
+    def _apply_saved_settings(self) -> None:
+        """data_dir/settings.json (written by the settings window) overrides config.yaml."""
+        s = load_settings(self._data_dir())
+        o = self.config.overlay
+        if isinstance(s.get("text_scale"), (int, float)) and 0.5 <= s["text_scale"] <= 2:
+            o.text_scale = float(s["text_scale"])
+        if s.get("long_text") in ("grow", "shrink"):
+            o.long_text = s["long_text"]
+        if s.get("model") in MODELS:
+            self.config.translator.model = s["model"]
+
+    def open_settings(self) -> None:
+        hk = self.config.hotkeys
+        shown = SettingsValues(self._profile().style, self.config.overlay.text_scale, self.config.overlay.long_text,
+                               self.config.translator.model,
+                               {"Dịch vùng": display_combo(hk.translate_region),
+                                "Toàn màn hình": display_combo(hk.translate_fullscreen),
+                                "Bật/tắt Live": display_combo(hk.toggle_live),
+                                "Sửa bản dịch": display_combo(hk.edit_last)})
+        dialog = self._settings_factory(shown)
+        if not dialog.exec():
+            return
+        v = dialog.values()
+        p = self._profile()
+        if v.style != p.style:
+            p.style = v.style
+            self.profiles.save(p)
+        self.config.overlay.text_scale, self.config.overlay.long_text = v.text_scale, v.long_text
+        save_settings(self._data_dir(), {"text_scale": v.text_scale, "long_text": v.long_text, "model": v.model})
+        for st, action in self.live_style_actions.items():
+            action.setChecked(st == v.style)
+        if v.model != self.config.translator.model:
+            if v.model in self.model_actions:
+                self.model_actions[v.model].setChecked(True)
+            self.switch_model(v.model)  # restarts the worker, and Live with it
+        elif self.live is not None and self.live.running:
+            self.start_live()
+
     def _send_set_game(self, p: Profile) -> None:
         if self.worker is None or self._worker_game == p.id:
             return
         user = self._user_glossary(p.id)
         glossaries = ([str(user)] if user.exists() else []) + [str(g) for g in game_glossaries()] + [str(COMMON_GLOSSARY)]
-        self.worker.submit(Job(next(self._ids), "set_game", None, (0, 0),
+        self._set_game_job = next(self._ids)
+        self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
                                payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides)}))
         self._worker_game = p.id
 
@@ -653,7 +702,16 @@ class TrayApp(QObject):
         path = self._user_glossary(game_id)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError:
+            data = {"entries": []}
+        except ValueError:
+            data = None
+        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+            if path.exists():  # keep the broken file for the user instead of overwriting their terms
+                try:
+                    os.replace(path, path.with_name(path.name + ".bad"))
+                except OSError:
+                    pass
             data = {"entries": []}
         for src, target in terms:
             entry = {"source": src, "type": "map" if target else "keep", "case_sensitive": True}

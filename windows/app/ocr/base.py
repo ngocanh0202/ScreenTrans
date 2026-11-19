@@ -22,6 +22,7 @@ class Line:
     top: float
     width: float
     height: float
+    angle: float = 0.0  # degrees, clockwise; the box is in the frame rotated by -angle (see ocr/deskew.py)
 
     @property
     def right(self) -> float:

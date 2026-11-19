@@ -9,6 +9,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import dev.screentrans.core.EngineBundle
 import dev.screentrans.core.ModelInstall
 import screentrans.mt.Translator
+import screentrans.text.Deskew
 import screentrans.text.Glossary
 import screentrans.text.Line
 import screentrans.text.Pipeline
@@ -29,7 +30,15 @@ class MlKitOcr : AutoCloseable {
         return text.textBlocks.flatMap { block ->
             block.lines.mapNotNull { line ->
                 val b = line.boundingBox ?: return@mapNotNull null
-                Line(line.text, b.left.toFloat(), b.top.toFloat(), b.width().toFloat(), b.height().toFloat())
+                val angle = line.angle
+                val corners = line.cornerPoints
+                if (kotlin.math.abs(angle) >= Deskew.STRAIGHT_DEG && corners != null && corners.size == 4) {
+                    // tilted text: the line's box in its straightened frame (see Deskew)
+                    val box = Deskew.fromCorners(corners.map { it.x.toFloat() to it.y.toFloat() }, angle)
+                    Line(line.text, box[0], box[1], box[2], box[3], angle)
+                } else {
+                    Line(line.text, b.left.toFloat(), b.top.toFloat(), b.width().toFloat(), b.height().toFloat())
+                }
             }
         }
     }

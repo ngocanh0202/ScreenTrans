@@ -100,3 +100,28 @@ def test_area_overlay_uses_the_source_size_and_colours(qtbot):
     qtbot.addWidget(shrink)
     shrink.set_block("b2", "Một câu khá dài " * 6, (0, 100, 300, 145), (0, 0), font_px=36)
     assert shrink.blocks["b2"].px < 24 and shrink.blocks["b2"].draw_height <= int(30 * 1.5) + 1
+
+
+def test_tilted_block_is_drawn_rotated(qtbot):
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import AreaOverlay
+
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(ao)
+    ao.set_block("b1", "Một người khách kiên trì", (100, 300, 700, 330), (0, 0), font_px=24, angle=-8.0)
+    assert ao.blocks["b1"].angle == -8.0
+    ao.grab()  # paints with the rotation without errors
+
+
+def test_text_scale_multiplies_the_source_size(qtbot):
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import AreaOverlay
+
+    ao = AreaOverlay(Overlay(text_scale=1.5), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(ao)
+    ao.set_block("b", "Chào.", (0, 0, 400, 40), (0, 0), font_px=20)
+    assert ao.blocks["b"].px == 30
