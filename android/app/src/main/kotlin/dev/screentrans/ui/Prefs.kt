@@ -49,4 +49,24 @@ class Prefs(context: Context) {
     var bubbleY: Int
         get() = sp.getInt("bubble_y", 400)
         set(v) = sp.edit().putInt("bubble_y", v).apply()
+
+    /** Remote LLM model names chosen by the user (engine -> model); defaults are not stored. */
+    var llmModels: Map<String, String>
+        get() = try {
+            com.google.gson.JsonParser.parseString(sp.getString("llm_models", "{}") ?: "{}").asJsonObject.entrySet()
+                .filter { it.value.isJsonPrimitive }.associate { it.key to it.value.asString }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+        set(v) = sp.edit().putString("llm_models", com.google.gson.Gson().toJson(v)).apply()
+
+    /** The Kaggle server URL (training/kaggle_serve.ipynb). */
+    var kaggleUrl: String
+        get() = sp.getString("kaggle_url", "") ?: ""
+        set(v) = sp.edit().putString("kaggle_url", v).apply()
+
+    /** Characters sent to remote engines per day. */
+    var dailyLimit: Int
+        get() = sp.getInt("llm_daily_limit", 50_000)
+        set(v) = sp.edit().putInt("llm_daily_limit", v).apply()
 }

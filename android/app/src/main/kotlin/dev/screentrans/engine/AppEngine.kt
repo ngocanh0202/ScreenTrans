@@ -85,9 +85,12 @@ object AppEngine {
         val common = asset(context, "glossary/common_words_en.txt").lines().map { it.trim().lowercase() }.toSet()
         val pipeline = Pipeline(translator, MODEL_ID, glossary, TranslationCache(5000), ProperNounTracker(common))
         val ocr = MlKitOcr()
+        // remote LLM engines per game (Phase 5): keys from the Android Keystore, context / usage under filesDir/llm
+        val llm = dev.screentrans.core.llm.LlmEngines(File(context.filesDir, "llm"), KeyVault(context), translator, MODEL_ID)
         return EngineBundle(
             ocr = ocr::recognize, pipeline = pipeline, warmUp = { mt.translate("Hello.") },
             close = { ocr.close(); mt.close() },  // ONNX sessions + ML Kit are native memory
+            llm = llm,
         )
     }
 }

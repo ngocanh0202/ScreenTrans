@@ -317,8 +317,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val common = assets.open("glossary/common.json").bufferedReader().readText()
         val user = repo.userGlossary(p.id).takeIf { it.isFile }?.readText()
         val json = listOfNotNull(user) + shipped + common  // the user's terms win
+        val llm = dev.screentrans.core.llm.LlmSettings(
+            model = prefs.llmModels[p.engine] ?: "", url = if (p.engine == "kaggle") prefs.kaggleUrl else "",
+            dailyLimit = prefs.dailyLimit, notes = p.llmNotes,
+        )
         engine.submit(EngineJob<Bitmap>(nextId++, fullScreen = false, image = null,
-            control = EngineControl.SetGame(json, p.overrides)))
+            control = EngineControl.SetGame(json, p.overrides, game = p.id, engine = p.engine, llm = llm)))
     }
 
     private fun showGameMenu() {
@@ -664,6 +668,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 e.jobId == regionJob -> { regionJob = -1; showCard(regionsPx.firstOrNull(), e.why, true) }
                 e.jobId == fullJob -> { fullJob = -1; layer?.finish(); showCard(null, e.why, true) }
             }
+            is EngineEvent.Notice -> android.widget.Toast.makeText(context, e.message, android.widget.Toast.LENGTH_LONG).show()
             else -> Unit  // live events: LiveController collects them
 
         }

@@ -27,6 +27,7 @@ class EngineBundle<I>(
     val pipeline: Pipeline,
     val warmUp: () -> Unit = {},
     val close: () -> Unit = {},  // releases native resources (ONNX sessions, ML Kit)
+    val llm: dev.screentrans.core.llm.LlmEngines? = null,  // remote LLM engines per game (Phase 5)
 )
 
 /**
@@ -41,8 +42,14 @@ class EngineBundle<I>(
 sealed interface EngineControl {
     /** The user's corrections ([fixes]: source to corrected) and glossary terms (target null = keep). */
     data class Correct(val fixes: List<Pair<String, String>>, val terms: List<Pair<String, String?>>) : EngineControl
-    /** Another game: its glossary files (JSON text) and the user's translations for it. */
-    data class SetGame(val glossaryJson: List<String>, val overrides: Map<String, String>) : EngineControl
+    /** Another game: its glossary files (JSON text), the user's translations, its translation engine. */
+    data class SetGame(
+        val glossaryJson: List<String>,
+        val overrides: Map<String, String>,
+        val game: String? = null,
+        val engine: String = "local",
+        val llm: dev.screentrans.core.llm.LlmSettings = dev.screentrans.core.llm.LlmSettings(),
+    ) : EngineControl
 }
 
 data class EngineJob<I>(
@@ -67,6 +74,8 @@ sealed interface EngineEvent {
     data class JobFailed(val jobId: Int, val why: String) : EngineEvent
     data class OcrDone(val jobId: Int, val paragraphs: List<List<Paragraph>>) : EngineEvent
     data class Partial(val jobId: Int, val segments: List<List<Segment>>) : EngineEvent
+    /** Something the user should know (a remote engine fell back to the on-device model). */
+    data class Notice(val message: String) : EngineEvent
 }
 
 /**
@@ -96,6 +105,7 @@ class TranslationEngine<I>(
         scope.launch(dispatcher) {
             try {
                 val b = factory()
+                b.llm?.notify = { _events.tryEmit(EngineEvent.Notice(it)) }
                 b.warmUp()
                 bundle = b
                 _state.value = EngineState.Ready
@@ -126,6 +136,7 @@ class TranslationEngine<I>(
      */
     fun close() {
         CoroutineScope(dispatcher).launch {
+            bundle?.llm?.close()
             bundle?.close?.invoke()
             bundle = null
         }
@@ -153,7 +164,10 @@ class TranslationEngine<I>(
         }
     }
 
+    private var remote: dev.screentrans.core.llm.LlmTranslator? = null
+
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
+        remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
         try {
             when (val c = job.control) {
                 is EngineControl.Correct -> {
@@ -164,6 +178,13 @@ class TranslationEngine<I>(
                 }
                 is EngineControl.SetGame -> {
                     b.pipeline.setGame(Glossary.load(*c.glossaryJson.toTypedArray()), c.overrides)
+                    remote = try {
+                        b.llm?.use(c.game, c.engine, c.llm, b.pipeline.examples())
+                    } catch (e: Throwable) {  // e.g. the SDK cannot start: never block the game, never show the error
+                        _events.tryEmit(EngineEvent.Notice("Không bật được ${dev.screentrans.core.llm.NAMES[c.engine] ?: c.engine} — dùng model trên máy."))
+                        null
+                    }
+                    b.pipeline.setEngine(remote)
                     _events.tryEmit(EngineEvent.Done(job.id, emptyList()))
                     return
                 }
