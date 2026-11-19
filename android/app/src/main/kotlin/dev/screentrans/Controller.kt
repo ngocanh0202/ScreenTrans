@@ -42,6 +42,8 @@ import dev.screentrans.ui.SettingsPanel
 import dev.screentrans.ui.SettingsValues
 import dev.screentrans.ui.CorrectView
 import dev.screentrans.ui.Fix
+import dev.screentrans.ui.LlmPanel
+import dev.screentrans.ui.LlmValues
 import dev.screentrans.ui.Bubble
 import dev.screentrans.ui.FullScreenLayer
 import dev.screentrans.ui.MenuPanel
@@ -220,6 +222,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 PanelTile("🎮", "Game: ${repo.label(gameId())}", ::showGameMenu),
                 PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
                 PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
+                PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy"}", ::showLlm),
             ),
             onClose = ::closeMenu,
         )
@@ -229,6 +232,40 @@ class Controller(private val context: Context, projection: MediaProjection) {
             y = ((capturer.height - panel.measuredHeight) / 2).coerceAtLeast(0)
         }
         overlays.add(panel, lp)
+        menu = panel
+        syncLivePause()
+    }
+
+    private val keyVault by lazy { dev.screentrans.engine.KeyVault(context) }
+
+    /** 🌐 Dịch bằng: the game's engine (on-device or a remote LLM), key, model, limit, notes. */
+    private fun showLlm() {
+        closeMenu()
+        val p = profile()
+        val values = LlmValues(
+            game = repo.label(p.id), engine = p.engine,
+            savedKeys = dev.screentrans.core.llm.NAMES.keys.filter { keyVault.has(it) }.toSet(),
+            models = prefs.llmModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
+            usedToday = dev.screentrans.core.llm.UsageStore(java.io.File(context.filesDir, "llm")).used(),
+            notes = p.llmNotes,
+        )
+        lateinit var panel: LlmPanel
+        panel = LlmPanel(context, values, onSave = { e ->
+            if (e.deleteKey) keyVault.set(e.engine, "")
+            e.key?.let { keyVault.set(e.engine, it) }  // encrypted (Android Keystore), never in prefs or logs
+            if (e.engine in dev.screentrans.core.llm.NAMES) prefs.llmModels = dev.screentrans.core.ui.LlmPrefsLogic.models(prefs.llmModels, e.engine, e.model)
+            if (e.engine == "kaggle") prefs.kaggleUrl = e.kaggleUrl
+            prefs.dailyLimit = e.dailyLimit
+            repo.save(profile().copy(engine = e.engine, llmNotes = e.notes))
+            engineGame = null  // send the game (with its engine) to the engine again
+            useGame(profile())
+            closeMenu()
+        }, onClose = ::closeMenu)
+        val w = (capturer.width * 0.9f).toInt()
+        val h = (capturer.height * 0.85f).toInt()
+        overlays.add(panel, overlays.params(w, h, focusable = true).apply {
+            x = (capturer.width - w) / 2; y = (capturer.height - h) / 4
+        })
         menu = panel
         syncLivePause()
     }
@@ -434,6 +471,23 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     // ---- corrections ----------------------------------------------------------------------------
+    /** Common English words (names are not among them): term suggestions in the correction view. */
+    private val commonWords: Set<String> by lazy {
+        try {
+            context.assets.open("glossary/common_words_en.txt").bufferedReader().readLines().map { it.trim().lowercase() }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+
+    /** Terms already in the game's own glossary (not suggested again). */
+    private fun knownTerms(id: String): Set<String> = try {
+        com.google.gson.JsonParser.parseString(repo.userGlossary(id).readText()).asJsonObject["entries"].asJsonArray
+            .mapNotNull { it.asJsonObject["source"]?.asString }.toSet()
+    } catch (e: Exception) {
+        emptySet()
+    }
+
     private fun editLast() {
         val segments = live.shownSegments().ifEmpty { lastSegments }
         openCorrect(segments)
@@ -447,7 +501,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         closeResults()
         overlays.remove(correctView)
         lateinit var v: CorrectView
-        v = CorrectView(context, segments, onDone = { fixes, terms ->
+        v = CorrectView(context, segments, commonWords, knownTerms(profile().id), onDone = { fixes, terms ->
             overlays.remove(v); correctView = null; syncLivePause()
             saveCorrections(fixes, terms)
         }, onCancel = { overlays.remove(v); correctView = null; syncLivePause() })
