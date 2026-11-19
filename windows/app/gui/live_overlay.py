@@ -83,7 +83,7 @@ class AreaOverlay(QWidget):
         `font_px`: the source text size in physical px (None: the configured size)."""
         r = physical_to_logical(block_rect(box, origin), self.screen_geometry, self.dpr)
         r.translate(-self.screen_geometry.left(), -self.screen_geometry.top())
-        base = round(font_px / self.dpr) if font_px else round(self.cfg.font_size * 4 / 3)  # pt -> px
+        base = round((font_px / self.dpr if font_px else self.cfg.font_size * 4 / 3) * self.cfg.text_scale)  # pt -> px
         if colors is not None:
             fg, bg = QColor(*colors.text), QColor(*colors.bg)  # opaque: the translation replaces the source
         else:

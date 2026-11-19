@@ -27,6 +27,7 @@ from app.live.controller import LiveController
 from app.live.machine import LiveParams
 from app.cache import normalize
 from app.gui.correct_dialog import CorrectDialog
+from app.gui.settings_dialog import SettingsDialog, SettingsValues, load_settings, save_settings
 from app.gui.foreground import current_game, game_window
 from app.profiles import DEFAULT_ID, Profile, ProfileStore, _rel, to_rel
 from app.paths import default_config_path
@@ -129,6 +130,8 @@ class TrayApp(QObject):
         self._select_ctx = None
         self._last_segments: list = []   # last one-shot result, for "edit the last translation"
         self._dialog_factory = CorrectDialog
+        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name)
+        self._apply_saved_settings()
         self._build_tray()
         if timers:
             self._game_timer = QTimer(self)
@@ -188,6 +191,7 @@ class TrayApp(QObject):
             action.triggered.connect(lambda checked=False, m=model_id: self.switch_model(m))
             group.addAction(action)
             self.model_actions[model_id] = action
+        menu.addAction("Cài đặt…", self.open_settings)
         menu.addAction("Mở thư mục dữ liệu", self._open_data_dir)
         menu.addSeparator()
         menu.addAction("Thoát", self.quit)
@@ -582,6 +586,45 @@ class TrayApp(QObject):
         self._live_game = p.id
         self._send_set_game(p)
         self.live_action.setChecked(True)
+
+    # ---- settings window ----------------------------------------------------------------------------
+    def _apply_saved_settings(self) -> None:
+        """data_dir/settings.json (written by the settings window) overrides config.yaml."""
+        s = load_settings(self._data_dir())
+        o = self.config.overlay
+        if isinstance(s.get("text_scale"), (int, float)) and 0.5 <= s["text_scale"] <= 2:
+            o.text_scale = float(s["text_scale"])
+        if s.get("long_text") in ("grow", "shrink"):
+            o.long_text = s["long_text"]
+        if s.get("model") in MODELS:
+            self.config.translator.model = s["model"]
+
+    def open_settings(self) -> None:
+        hk = self.config.hotkeys
+        shown = SettingsValues(self._profile().style, self.config.overlay.text_scale, self.config.overlay.long_text,
+                               self.config.translator.model,
+                               {"Dịch vùng": display_combo(hk.translate_region),
+                                "Toàn màn hình": display_combo(hk.translate_fullscreen),
+                                "Bật/tắt Live": display_combo(hk.toggle_live),
+                                "Sửa bản dịch": display_combo(hk.edit_last)})
+        dialog = self._settings_factory(shown)
+        if not dialog.exec():
+            return
+        v = dialog.values()
+        p = self._profile()
+        if v.style != p.style:
+            p.style = v.style
+            self.profiles.save(p)
+        self.config.overlay.text_scale, self.config.overlay.long_text = v.text_scale, v.long_text
+        save_settings(self._data_dir(), {"text_scale": v.text_scale, "long_text": v.long_text, "model": v.model})
+        for st, action in self.live_style_actions.items():
+            action.setChecked(st == v.style)
+        if v.model != self.config.translator.model:
+            if v.model in self.model_actions:
+                self.model_actions[v.model].setChecked(True)
+            self.switch_model(v.model)  # restarts the worker, and Live with it
+        elif self.live is not None and self.live.running:
+            self.start_live()
 
     def _send_set_game(self, p: Profile) -> None:
         if self.worker is None or self._worker_game == p.id:
