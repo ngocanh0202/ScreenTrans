@@ -170,4 +170,29 @@ class LlmTranslatorTest {
         val tr = LlmTranslator("gemini", FakeClient(), local, "opus", usage, 50_000, {}, Clock(), null)
         assertEquals(listOf("LLM Hi."), tr.translateCtx(listOf("Hi."), emptyMap()))
     }
+
+    @Test
+    fun `at most two calls run at once, a third counts as a timeout`() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val stuck = object : FakeClient() {
+            override fun complete(system: String, user: String, timeoutMs: Int): String {
+                started.incrementAndGet()
+                while (true) {  // like a blocked socket read / DNS lookup: an interrupt does not free the thread
+                    try { gate.await(); break } catch (e: InterruptedException) { }
+                }
+                return super.complete(system, user, timeoutMs)
+            }
+        }
+        val clock = Clock()
+        val (tr, _) = make(stuck, clock = clock)
+        tr.timeoutMs = 50
+        repeat(3) {
+            assertNull(tr.translateCtx(listOf("Hi $it."), emptyMap()))
+            clock.t += 31_000  // past the back-off
+        }
+        Thread.sleep(100)
+        assertEquals(2, started.get())  // the pool is bounded like Python (max_workers=2)
+        gate.countDown()
+    }
 }

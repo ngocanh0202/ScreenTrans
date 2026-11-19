@@ -55,7 +55,8 @@ class LlmPanel(
     private var engine = v.engine
     private var deleteKey = false
     private val segments = engines.associate { (id, label) -> id to segment(label) { pick(id) } }
-    private val key = field("Dán key / token vào đây", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+    private val key = field("Dán key / token vào đây",  // no keyboard suggestions / learning of the key
+        InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
     private val deleteButton = button("Xóa key") { deleteKey = true; key.setText(""); show() }
     private val model = field("Tên model", InputType.TYPE_CLASS_TEXT)
     private val url = field("https://….ngrok-free.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)

@@ -115,6 +115,9 @@ class Controller(private val context: Context, projection: MediaProjection) {
 
     fun onRotated() {
         capturer.resize()
+        // focusable panels sized for the old orientation would hide their buttons and block the game
+        if (menu is LlmPanel) closeMenu()
+        correctView?.let { overlays.remove(it); correctView = null; syncLivePause() }
         keepBubbleOnScreen()
         if (live.running) startLive()  // region pixels changed with the screen size
     }
@@ -252,11 +255,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
         lateinit var panel: LlmPanel
         panel = LlmPanel(context, values, onSave = { e ->
             if (e.deleteKey) keyVault.set(e.engine, "")
-            e.key?.let { keyVault.set(e.engine, it) }  // encrypted (Android Keystore), never in prefs or logs
+            e.key?.let {  // encrypted (Android Keystore), never in prefs or logs
+                if (!keyVault.set(e.engine, it)) android.widget.Toast.makeText(context, "Không lưu được key (Keystore lỗi).", android.widget.Toast.LENGTH_LONG).show()
+            }
             if (e.engine in dev.screentrans.core.llm.NAMES) prefs.llmModels = dev.screentrans.core.ui.LlmPrefsLogic.models(prefs.llmModels, e.engine, e.model)
             if (e.engine == "kaggle") prefs.kaggleUrl = e.kaggleUrl
             prefs.dailyLimit = e.dailyLimit
-            repo.save(profile().copy(engine = e.engine, llmNotes = e.notes))
+            repo.save(profile(p.id).copy(engine = e.engine, llmNotes = e.notes))  // the game the panel showed
             engineGame = null  // send the game (with its engine) to the engine again
             useGame(profile())
             closeMenu()
@@ -520,7 +525,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val p = profile(id)
         repo.save(p.copy(overrides = p.overrides + fixes.associate { normalizeText(it.source) to it.corrected }))
         if (terms.isNotEmpty()) repo.addTerms(id, terms)
-        for (f in fixes) repo.logCorrection(id, AppEngine.MODEL_ID, f.source, f.machine, f.corrected)
+        val model = engine.activeModelId.ifEmpty { AppEngine.MODEL_ID }  // the engine that translated (e.g. gemini:…)
+        for (f in fixes) repo.logCorrection(id, model, f.source, f.machine, f.corrected)
         engine.submit(EngineJob<Bitmap>(nextId++, fullScreen = false, image = null,
             control = EngineControl.Correct(fixes.map { it.source to it.corrected }, terms)))
         fixes.forEach { live.applyCorrection(it.source, it.corrected) }

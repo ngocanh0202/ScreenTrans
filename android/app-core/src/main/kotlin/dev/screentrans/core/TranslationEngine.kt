@@ -107,6 +107,7 @@ class TranslationEngine<I>(
                 val b = factory()
                 b.llm?.notify = { _events.tryEmit(EngineEvent.Notice(it)) }
                 b.warmUp()
+                activeModelId = b.pipeline.activeModelId
                 bundle = b
                 _state.value = EngineState.Ready
             } catch (e: Throwable) {
@@ -166,6 +167,11 @@ class TranslationEngine<I>(
 
     private var remote: dev.screentrans.core.llm.LlmTranslator? = null
 
+    /** The model translating now (corrections.jsonl credits it), updated on each SetGame. */
+    @Volatile
+    var activeModelId: String = ""
+        private set
+
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
         remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
         try {
@@ -185,6 +191,7 @@ class TranslationEngine<I>(
                         null
                     }
                     b.pipeline.setEngine(remote)
+                    activeModelId = b.pipeline.activeModelId
                     _events.tryEmit(EngineEvent.Done(job.id, emptyList()))
                     return
                 }
