@@ -291,8 +291,17 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 5 — Hoàn thiện
 - [ ] Màn hình cài đặt (cả hai nền tảng); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
-- [ ] Engine từ xa: `training/kaggle_serve.ipynb` + client `remote` có fallback về model local (Windows + Android). Test: server tắt / chậm / sai token → en vẫn dịch bằng local, ja báo lỗi rõ ràng.
-- [ ] **Tiếng Nhật:** OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR japan; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？), fixtures tiếng Nhật; dịch qua remote LLM.
+- [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
+  - Nhà cung cấp: **Gemini**, **OpenAI**, **Claude** (API chính thức, key của người dùng) và **Kaggle** (`training/kaggle_serve.ipynb`, LLM ~7B 4-bit qua ngrok, token riêng). Tên model cấu hình được (mặc định: model rẻ/nhanh của mỗi hãng, ví dụ Claude `claude-haiku-5-5`).
+  - Mục đích: hết "dịch cứng" / dịch thiếu của model nhỏ. Prompt gửi kèm **ngữ cảnh**: 2–3 câu thoại trước, tên nhân vật đang nói, bảng thuật ngữ của game (keep/map), yêu cầu dịch tự nhiên đúng giọng nhân vật, giữ nguyên tên riêng; trả JSON một bản dịch cho mỗi câu (gom các câu của một lần OCR vào một lần gọi).
+  - Thứ tự vẫn là `overrides` → cache → engine; cache khóa theo engine + model. Bản dịch từ xa vẫn hiện từng câu (stream hoặc theo lô nhỏ).
+  - **Fallback:** lỗi mạng / hết hạn mức / quá thời gian (mặc định 2,5 s cho Live, 6 s cho dịch 1 lần) → dịch bằng model local ngay, báo một lần; sai key → báo rõ, không thử lại liên tục.
+  - **Key:** nhập trong màn hình cài đặt; Windows lưu mã hóa DPAPI trong `data_dir`, Android lưu bằng Android Keystore. Không ghi key vào log / `translations.jsonl`.
+  - **Riêng tư & chi phí:** cảnh báo rằng chữ trong game được gửi tới nhà cung cấp; giới hạn số ký tự / ngày (cấu hình được) để tránh hóa đơn bất ngờ; hiện số ký tự đã dùng.
+  - Test: client giả lập (đúng / chậm / lỗi 401, 429, 5xx / JSON sai) → fallback đúng; prompt có ngữ cảnh + thuật ngữ; cache theo engine. So sánh chất lượng bằng `windows/scripts/compare_engines.py` (thêm các engine này).
+  - Ghi chú: Firefox Translations (Bergamot) hiện chỉ có Việt → Anh, chưa có Anh → Việt (kiểm tra 2026-11-19) — theo dõi, chưa dùng. Lingva công khai không dùng được (bị chặn); Lingva tự chạy Docker có thể thêm như một engine `google` tùy chọn.
+- [ ] **Tiếng Nhật:** OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR japan; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？), fixtures tiếng Nhật; dịch qua engine LLM từ xa ở trên (Gemini / OpenAI / Claude / Kaggle).
+- [ ] **Chữ nghiêng / xoay** (bảng nhiệm vụ nghiêng trong Reverse: 1999): nhóm dòng theo khối của ML Kit / Windows OCR khi các dòng nghiêng, vẽ bản dịch xoay theo góc chữ gốc.
 
 ### Phase 6 — Fine-tune trên Kaggle (khi đã có dữ liệu sửa thật)
 - [ ] Notebook `training/kaggle_finetune.ipynb`: GPU T4/P100, checkpoint định kỳ vào `/kaggle/working` (phiên tối đa 12 h, ~30 h GPU/tuần).
