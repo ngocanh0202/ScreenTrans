@@ -20,8 +20,54 @@ def test_terms_keep_or_map():
         ("Arcanist", None), ("Vertin", "Vertin"), ("Storm", "Bão")]
 
 
-def test_terms_field_is_read(qtbot):
-    d = CorrectDialog(SEGS)
+LONG = [Segment("text", "Ms. Z, please walk Madam Constantine through this section.",
+                 "Cô Z, hãy dẫn Phu nhân Constantine qua phần này.", (0, 0, 400, 20))]
+
+
+def click(qtbot, picker, i, shift=False):
+    from PySide6.QtCore import Qt
+
+    qtbot.mouseClick(picker, Qt.LeftButton, Qt.ShiftModifier if shift else Qt.NoModifier, picker.word_rect(i).center())
+
+
+def test_pick_words_then_keep_them(qtbot):
+    d = CorrectDialog(LONG)
     qtbot.addWidget(d)
-    d.terms.setPlainText("Arcanist =")
-    assert d.parsed_terms() == [("Arcanist", None)]
+    d.show()
+    picker = d.pickers[0]
+    click(qtbot, picker, 4)
+    assert picker.selection() == "Madam"
+    click(qtbot, picker, 5, shift=True)
+    assert picker.selection() == "Madam Constantine" and "Madam Constantine" in d.selected_label.text()
+    d.keep_button.click()
+    assert d.parsed_terms() == [("Madam Constantine", None)] and picker.selection() == ""
+
+
+def test_drag_over_words_then_fix_the_translation(qtbot):
+    from PySide6.QtCore import Qt
+
+    d = CorrectDialog(LONG)
+    qtbot.addWidget(d)
+    d.show()
+    picker = d.pickers[0]
+    qtbot.mousePress(picker, Qt.LeftButton, pos=picker.word_rect(0).center())
+    qtbot.mouseMove(picker, picker.word_rect(1).center())
+    qtbot.mouseRelease(picker, Qt.LeftButton, pos=picker.word_rect(1).center())
+    assert picker.selection() == "Ms. Z"  # the comma after "Z" is not part of the term
+    d.fixed_button.click()  # no Vietnamese typed yet: nothing added
+    assert d.parsed_terms() == []
+    d.target.setText("  Cô Z ")
+    d.fixed_button.click()
+    assert d.parsed_terms() == [("Ms. Z", "Cô Z")] and d.target.text() == ""
+
+
+def test_remove_a_term_and_add_a_suggested_name(qtbot):
+    d = CorrectDialog(LONG)
+    qtbot.addWidget(d)
+    d.show()
+    suggested = [d.suggestions.item(i).data(256) for i in range(d.suggestions.count())]
+    assert suggested == ["Madam Constantine"]
+    d.add_suggestion(d.suggestions.item(0))
+    assert d.parsed_terms() == [("Madam Constantine", None)] and d.suggestions.count() == 0
+    d.remove_term(d.term_list.item(0))
+    assert d.parsed_terms() == []

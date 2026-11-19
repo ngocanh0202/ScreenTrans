@@ -720,7 +720,8 @@ class TrayApp(QObject):
         if not [s for s in segments if s.kind == "text" and s.translation]:
             self.notify("Chưa có bản dịch nào để sửa.")
             return
-        dialog = self._dialog_factory(segments)
+        p_now = self._live_profile() if live_on else self._profile()
+        dialog = self._dialog_factory(segments, known=self._known_terms(p_now.id))
         if not dialog.exec():
             return
         fixes, terms = dialog.corrections(), dialog.parsed_terms()
@@ -744,6 +745,16 @@ class TrayApp(QObject):
             if self.region_overlay is not None and self.region_overlay.isVisible():
                 self.region_overlay.show_segments(self._last_segments, self.config.overlay.show_source)
                 self._present_region()
+
+    def _known_terms(self, game_id: str) -> set[str]:
+        """Terms already in the game's own glossary (not suggested again in the correction window)."""
+        import json
+
+        try:
+            data = json.loads(self._user_glossary(game_id).read_text(encoding="utf-8"))
+            return {e["source"] for e in data.get("entries", []) if isinstance(e, dict) and isinstance(e.get("source"), str)}
+        except (OSError, ValueError, AttributeError):
+            return set()
 
     def _save_terms(self, game_id: str, terms: list[tuple[str, str | None]]) -> None:
         import json

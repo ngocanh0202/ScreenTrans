@@ -1,0 +1,32 @@
+[
+  {
+    "name": "a name mid-sentence; an all-common run (Ms. Z) is not suggested",
+    "sentences": ["Ms. Z, please walk Madam Constantine through this section."],
+    "known": [],
+    "expected": ["Madam Constantine"]
+  },
+  {
+    "name": "sentence-initial common words are not names",
+    "sentences": ["Where are you going?", "The Arcanist waits.", "Hello there."],
+    "known": [],
+    "expected": ["Arcanist"]
+  },
+  {
+    "name": "a name with a roman numeral, a sentence-initial name",
+    "sentences": ["Druvis III is here.", "Vertin, wait for me."],
+    "known": [],
+    "expected": ["Druvis III", "Vertin"]
+  },
+  {
+    "name": "known terms (any case) and repeats are left out, first seen order",
+    "sentences": ["Sonetto saw Vertin.", "Vertin smiled at Sonetto and Regulus."],
+    "known": ["vertin"],
+    "expected": ["Sonetto", "Regulus"]
+  },
+  {
+    "name": "an abbreviation keeps the run going; I and all-common runs are not names",
+    "sentences": ["I told you about Lady Morvan.", "We Will Go.", "Ask Mr. Morvan now."],
+    "known": [],
+    "expected": ["Lady Morvan", "Mr. Morvan"]
+  }
+]
