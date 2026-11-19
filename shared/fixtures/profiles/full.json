@@ -30,7 +30,8 @@
   "overrides": {
    "Hello there.": "Chào cậu."
   },
-  "ocr": "rapid"
+  "ocr": "rapid",
+  "engine": "claude"
  },
  "expected": {
   "id": "reverse1999.exe",
@@ -62,6 +63,7 @@
   "overrides": {
    "Hello there.": "Chào cậu."
   },
-  "ocr": "rapid"
+  "ocr": "rapid",
+  "engine": "claude"
  }
 }
