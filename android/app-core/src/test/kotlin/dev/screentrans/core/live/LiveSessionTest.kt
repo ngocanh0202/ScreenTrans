@@ -402,4 +402,21 @@ class LiveSessionTest {
         s.onOcrDone(h.ocr.last().first, listOf(listOf(name, para("Where are you going?", 30f))))
         assertEquals("Vertin", h.speakers.last())
     }
+
+    @Test
+    fun `clearing blocks takes every translation off the screen, the same line comes back at once`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there."))))
+        translate(s, h.translate.last())
+        assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
+        s.clearBlocks()  // a fade to black: nothing of the old scene stays on screen
+        assertTrue(h.blocks.isEmpty())
+        val n = h.translate.size
+        s.debugExpectOcr(900, true)
+        s.onOcrDone(900, listOf(listOf(para("Hello there."))))
+        assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
+        assertEquals(n, h.translate.size)  // remembered: no new translation job
+    }
 }

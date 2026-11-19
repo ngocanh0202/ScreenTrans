@@ -119,6 +119,11 @@ class BlockTracker(private val maxBlocks: Int = 30, private val nearPx: Float = 
         private set
     private var nextId = 1
 
+    /** Forget every block (the screen was cleared): the next read starts over. */
+    fun clear() {
+        shown = emptyList()
+    }
+
     fun update(paragraphs: List<Paragraph>): BlockDiff {
         val paras = paragraphs.sortedWith(compareBy({ it.top }, { it.left })).take(maxBlocks)
         val free = shown.toMutableList()

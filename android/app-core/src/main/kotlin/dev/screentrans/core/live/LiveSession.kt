@@ -156,6 +156,16 @@ class LiveSession(
         }
     }
 
+    /**
+     * The scene went away (a fade to black / loading screen): take every translation off the screen. The memo of
+     * shown translations stays, so the same lines come back at once without a new translation.
+     */
+    fun clearBlocks() {
+        for ((k, _) in blocks) host.removeBlock(k.first, k.second)
+        blocks.clear()
+        trackers.forEach { it.clear() }
+    }
+
     /** The nearest name block above the item's text block in its region (or the only name there). */
     private fun speakerFor(item: Item): String? {
         val top = blocks[item.region to item.key]?.box?.get(1) ?: return null

@@ -69,6 +69,12 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
             setOnImageAvailableListener({ r ->
                 val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
                 synchronized(lock) {
+                    // a frame of the reader that resize() just replaced: closing that reader closes its images,
+                    // so never keep one as the latest frame (reading its planes would throw)
+                    if (r !== reader) {
+                        img.close()
+                        return@setOnImageAvailableListener
+                    }
                     latest?.close()
                     latest = img
                     latestAt = SystemClock.uptimeMillis()
