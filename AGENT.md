@@ -114,7 +114,7 @@ Interface: `Translator.translate(list[str]) -> list[str]` — luôn dịch **the
 - Load model **ngầm ngay khi khởi động** (Android: khi bật foreground service), sau đó dịch một câu mẫu để làm nóng. Người dùng dịch khi chưa load xong → overlay hiện "Đang tải model…", có kết quả thì tự hiện. Benchmark ghi thêm thời gian load.
 
 **Engine từ xa tùy chọn (`remote`)**
-- Server: `training/kaggle_serve.ipynb` — load model trên GPU Kaggle (model đặt sẵn trong Kaggle Dataset để không tải lại mỗi phiên), FastAPI + ngrok. `POST /translate` `{"texts": [...], "source_lang": "ja", "context": [...], "glossary": {...}}` → `{"translations": [...]}`; `GET /health` (trả model đang chạy, ngôn ngữ hỗ trợ). Bắt buộc `Authorization: Bearer <token>` (token sinh khi chạy notebook).
+- Server: `training/kaggle_serve.ipynb` — load model trên GPU Kaggle (model đặt sẵn trong Kaggle Dataset để không tải lại mỗi phiên), FastAPI + ngrok. `POST /translate` `{"system": ..., "prompt": ..., "source_lang": "en"}` (câu lệnh app đã dựng sẵn theo `shared/fixtures/llm`, giống mọi engine LLM) → `{"translations": [...]}`; `GET /health` (trả model đang chạy, ngôn ngữ hỗ trợ). Bắt buộc `Authorization: Bearer <token>` (token sinh khi chạy notebook).
 - Model server mặc định: **LLM ~7B instruct lượng tử 4-bit qua vLLM** (dòng Qwen hoặc tương đương, chọn ở spike), prompt dịch sang tiếng Việt kèm vài câu thoại trước làm ngữ cảnh + thuật ngữ. Notebook có tùy chọn đổi sang LLM ~3B hoặc NLLB-200 3.3B (nhanh hơn). Spike: so 3 model trên cùng đoạn thoại game thật.
 - Client (`translate/remote.py`, Kotlin tương ứng): URL + token trong cài đặt; **timeout theo ngôn ngữ**: `en` 1,5 s, `ja` 8 s (cấu hình được).
   - Ngôn ngữ **có** model local (en): lỗi/quá hạn → tự dùng model trên máy, overlay hiện chấm trạng thái, thử lại server sau 30 s.
@@ -291,13 +291,13 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 
 ### Phase 4c — Hiển thị & tiện ích (trước Phase 5)
 > Người dùng chọn 2026-11-19: Phase 5 chỉ lo model (model lớn từ xa / tối ưu model); phần hiển thị và tiện ích tách ra đây.
-- [ ] **Chữ nghiêng / xoay** (vd bảng nhiệm vụ nghiêng trong Reverse: 1999): nhóm dòng theo khối và góc mà OCR trả về (ML Kit `Line.angle` / cornerPoints; Windows OCR theo vị trí từ) thay vì hình chữ nhật thẳng; tách câu, theo dõi khối và dịch như chữ thẳng; **bản dịch vẽ nghiêng theo đúng góc chữ gốc** (xoay khung + chữ quanh tâm khối), cả Live lẫn toàn màn hình một lần, Windows + Android. Fixtures dùng chung (dòng nghiêng 5°, 15°, chữ dọc → bỏ qua). Không xoay khi góc < 2°.
-- [ ] Màn hình cài đặt đầy đủ: Android đã có ⚙ (kiểu bản dịch, cỡ chữ, bản dịch dài, công cụ); thêm Windows (cửa sổ cài đặt thay cho sửa `config.yaml`); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
-- [ ] Các lỗi nhỏ để lại từ Phase 4b (danh sách trong báo cáo merge `phase-4b`): đọc hồ sơ lỗi mã hóa, thuật ngữ hỏng bị ghi đè, kéo cửa sổ khi Live, v.v.
+- [x] **Chữ nghiêng / xoay** (vd bảng nhiệm vụ nghiêng trong Reverse: 1999): nhóm dòng theo khối và góc mà OCR trả về (ML Kit `Line.angle` / cornerPoints; Windows OCR theo vị trí từ) thay vì hình chữ nhật thẳng; tách câu, theo dõi khối và dịch như chữ thẳng; **bản dịch vẽ nghiêng theo đúng góc chữ gốc** (xoay khung + chữ quanh tâm khối), cả Live lẫn toàn màn hình một lần, Windows + Android. Fixtures dùng chung (dòng nghiêng 5°, 15°, chữ dọc → bỏ qua). Không xoay khi góc < 2°.
+- [ ] Màn hình cài đặt đầy đủ: Android đã có ⚙ (kiểu bản dịch, cỡ chữ, bản dịch dài, bộ OCR, công cụ); Windows đã có cửa sổ cài đặt (kiểu, cỡ chữ, bản dịch dài, model, bộ OCR, dịch bằng); còn: xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
+- [x] Các lỗi nhỏ để lại từ Phase 4b (danh sách trong báo cáo merge `phase-4b`): đọc hồ sơ lỗi mã hóa, thuật ngữ hỏng bị ghi đè, kéo cửa sổ khi Live, v.v.
 
 ### Phase 5 — Model: model lớn từ xa + tối ưu model
 > Chỉ tập trung vào chất lượng / tốc độ dịch (người dùng chọn 2026-11-19).
-- [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
+- [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, *(5a Windows xong — [plan](docs/superpowers/plans/2026-11-19-phase5a-llm-windows.md), chờ thử thật bằng key Gemini; 5b Android chưa làm; Claude mặc định `claude-opus-5-5` theo người dùng chọn 2026-11-19)* chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
   - Nhà cung cấp: **Gemini**, **OpenAI**, **Claude** (API chính thức, key của người dùng) và **Kaggle** (`training/kaggle_serve.ipynb`, LLM ~7B 4-bit qua ngrok, token riêng). Tên model cấu hình được (mặc định: model rẻ/nhanh của mỗi hãng, ví dụ Claude `claude-haiku-5-5`).
   - Mục đích: hết "dịch cứng" / dịch thiếu của model nhỏ. Prompt gửi kèm **ngữ cảnh**: 2–3 câu thoại trước, tên nhân vật đang nói, bảng thuật ngữ của game (keep/map), yêu cầu dịch tự nhiên đúng giọng nhân vật, giữ nguyên tên riêng; trả JSON một bản dịch cho mỗi câu (gom các câu của một lần OCR vào một lần gọi).
   - Thứ tự vẫn là `overrides` → cache → engine; cache khóa theo engine + model. Bản dịch từ xa vẫn hiện từng câu (stream hoặc theo lô nhỏ).
