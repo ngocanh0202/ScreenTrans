@@ -10,7 +10,9 @@ dependencies {
     api(project(":text-core"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("com.anthropic:anthropic-java:3.3.0")  // Claude (official SDK); Gemini / OpenAI / Kaggle use HttpURLConnection
     testImplementation(kotlin("test"))
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
