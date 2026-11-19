@@ -37,6 +37,7 @@ import dev.screentrans.core.ui.PanelEffect
 import dev.screentrans.core.ui.PanelState
 import dev.screentrans.core.ui.TranslateMode
 import dev.screentrans.ui.ControlPanel
+import dev.screentrans.ui.PanelTile
 import dev.screentrans.ui.CorrectView
 import dev.screentrans.ui.Fix
 import dev.screentrans.ui.Bubble
@@ -166,12 +167,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 }
             },
             extras = listOf(
-                (if (profile().style == "classic") "Kiểu bản dịch: Dễ đọc" else "Kiểu bản dịch: Giống game") to ::switchLiveStyle,
-                "Chọn / sửa vùng bỏ qua" to ::chooseIgnore,
-                "Sửa bản dịch gần nhất" to ::editLast,
-                "Game: ${repo.label(gameId())} ▸" to ::showGameMenu,
-                "Kiểm tra chụp màn hình" to ::probeCapture,
-                "Lưu nhật ký Live" to ::saveLiveLog,
+                PanelTile("Aa", if (profile().style == "classic") "Kiểu: Dễ đọc" else "Kiểu: Giống game", ::switchLiveStyle),
+                PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
+                PanelTile("✍", "Sửa bản dịch", ::editLast),
+                PanelTile("🎮", repo.label(gameId()), ::showGameMenu),
+                PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
+                PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
             ),
             onClose = ::closeMenu,
         )

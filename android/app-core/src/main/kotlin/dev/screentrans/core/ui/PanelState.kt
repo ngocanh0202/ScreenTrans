@@ -22,7 +22,7 @@ data class PanelState(val mode: TranslateMode, val screen: Boolean, val liveRunn
     val primary: Pair<PanelAction, String>
         get() = when (mode) {
             TranslateMode.ONCE -> if (screen) PanelAction.TRANSLATE_SCREEN to "Dịch màn hình" else PanelAction.TRANSLATE_REGION to "Dịch vùng"
-            TranslateMode.LIVE -> if (liveRunning) PanelAction.STOP_LIVE to "Tắt tự động dịch" else PanelAction.START_LIVE to "Bật tự động dịch"
+            TranslateMode.LIVE -> if (liveRunning) PanelAction.STOP_LIVE to "Ngừng dịch" else PanelAction.START_LIVE to "Bắt đầu dịch"
         }
 
     fun onModeChanged(newMode: TranslateMode): PanelEffect =

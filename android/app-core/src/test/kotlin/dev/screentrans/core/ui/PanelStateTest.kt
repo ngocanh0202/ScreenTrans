@@ -17,8 +17,8 @@ class PanelStateTest {
     fun `the main button follows mode, scope and whether live runs`() {
         assertEquals(PanelAction.TRANSLATE_REGION to "Dịch vùng", PanelState(TranslateMode.ONCE, false, false).primary)
         assertEquals(PanelAction.TRANSLATE_SCREEN to "Dịch màn hình", PanelState(TranslateMode.ONCE, true, false).primary)
-        assertEquals(PanelAction.START_LIVE to "Bật tự động dịch", PanelState(TranslateMode.LIVE, false, false).primary)
-        assertEquals(PanelAction.STOP_LIVE to "Tắt tự động dịch", PanelState(TranslateMode.LIVE, true, true).primary)
+        assertEquals(PanelAction.START_LIVE to "Bắt đầu dịch", PanelState(TranslateMode.LIVE, false, false).primary)
+        assertEquals(PanelAction.STOP_LIVE to "Ngừng dịch", PanelState(TranslateMode.LIVE, true, true).primary)
     }
 
     @Test
