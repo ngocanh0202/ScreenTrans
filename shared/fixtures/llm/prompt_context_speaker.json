@@ -1,0 +1,19 @@
+{
+  "input": {
+    "sentences": [
+      "Hold on.",
+      "We're not done yet."
+    ],
+    "context": [
+      "The storm is coming.",
+      "Get inside!",
+      "Wait for me."
+    ],
+    "speaker": "Vertin",
+    "glossary": {}
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Câu trước (để hiểu ngữ cảnh, không dịch):\n- The storm is coming.\n- Get inside!\n- Wait for me.\n\nNgười nói: Vertin\n\nDịch các câu sau:\n[\"Hold on.\", \"We're not done yet.\"]"
+  }
+}

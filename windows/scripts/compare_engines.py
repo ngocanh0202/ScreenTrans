@@ -106,6 +106,34 @@ def lingva_engine(instances: list[str], timeout: float):
     return translate, state
 
 
+from app.config import _default_data_dir  # noqa: E402
+
+
+def remote_engine(engine: str, data_dir: Path, model: str, url: str, timeout: float, dry_run: bool):
+    """A remote LLM (Phase 5) with the app's prompt: each sentence with the 3 before it as context."""
+    from app.secrets import KeyStore
+    from app.translate.llm_prompt import build_messages, parse_reply
+    from app.translate.remote import DEFAULT_MODELS, RemoteError, make_client
+
+    model = model or DEFAULT_MODELS[engine]
+    client = None if dry_run else make_client(engine, KeyStore(data_dir).get(engine), model=model, url=url)
+    seen: list[str] = []
+
+    def translate(s: str) -> str:
+        system, user = build_messages([s], seen[-3:], None, {})
+        seen.append(s)
+        if client is None:
+            print(f"--- {engine} ({model})\n{system}\n\n{user}\n")
+            return "(dry run)"
+        try:
+            out = parse_reply(client.complete(system, user, timeout), 1)
+        except RemoteError as e:
+            return f"⚠ {e}"
+        return out[0] if out else "⚠ trả lời không hợp lệ"
+
+    return translate
+
+
 def run(name, fn, sentences):
     rows = []
     for s in sentences:
@@ -148,6 +176,12 @@ def main() -> int:
     ap.add_argument("--no-lingva", action="store_true")
     ap.add_argument("--timeout", type=float, default=10.0)
     ap.add_argument("--out", type=Path, default=ROOT / "windows" / "out" / "compare_engines.html")
+    ap.add_argument("--engine", action="append", choices=["gemini", "openai", "claude", "kaggle"],
+                    help="remote LLM engine (repeatable); key from the app's key store (Cài đặt → Dịch bằng)")
+    ap.add_argument("--model", default="", help="model name for --engine (default: the app's default)")
+    ap.add_argument("--kaggle-url", default="")
+    ap.add_argument("--data-dir", type=Path, default=Path(_default_data_dir()))
+    ap.add_argument("--dry-run", action="store_true", help="print the prompts for --engine, no network")
     args = ap.parse_args()
 
     logged = logged_sentences()
@@ -157,6 +191,11 @@ def main() -> int:
     print(f"{len(sentences)} câu ({len(logged)} câu thoại đã ghi, {len(extra)} từ --sentences)")
 
     results = {}
+    for engine in args.engine or []:
+        fn = remote_engine(engine, args.data_dir, args.model, args.kaggle_url, args.timeout, args.dry_run)
+        results[f"{engine} (qua mạng)"] = run(engine, fn, sentences)
+    if args.dry_run:
+        return 0
     for name, d in (("vinai (máy, Windows)", args.vinai), ("opus-mt (máy, Android)", args.opus)):
         if d.exists():
             results[name] = run(name, ct2_engine(d), sentences)

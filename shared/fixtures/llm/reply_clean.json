@@ -1,0 +1,8 @@
+{
+  "text": "{\"translations\": [\"Bạn đi đâu vậy?\", \"Đợi đã.\"]}",
+  "n": 2,
+  "expected": [
+    "Bạn đi đâu vậy?",
+    "Đợi đã."
+  ]
+}

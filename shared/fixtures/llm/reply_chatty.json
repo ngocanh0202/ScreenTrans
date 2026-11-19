@@ -1,0 +1,7 @@
+{
+  "text": "Đây là bản dịch:\n{\"translations\": [\"Chào.\"]}\nHy vọng hữu ích!",
+  "n": 1,
+  "expected": [
+    "Chào."
+  ]
+}

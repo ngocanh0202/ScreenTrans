@@ -68,6 +68,9 @@ class TranslationWorker(QObject):
             return
         self._pipeline = pipeline
         self._fast_ocr = pipeline.ocr  # Live always reads with the fast default engine
+        self._local = pipeline.translator  # the local model: default engine and fallback of the remote ones
+        self._translators: dict = {}
+        self._no_key_noticed: set[str] = set()
         self._engines: dict = {}
         self.is_ready = True
         self.ready.emit()
@@ -129,8 +132,43 @@ class TranslationWorker(QObject):
                 self.notice.emit(f"{label.split(' —')[0]} không dùng được ({e}); dùng Windows OCR.")
         self._pipeline.ocr = self._engines[name] or self._fast_ocr
 
+    def _use_engine(self, engine: str, llm: dict) -> None:
+        """The game's translation engine: the local model, or a remote LLM that falls back to it."""
+        from app.translate import remote
+
+        if engine not in remote.NAMES:
+            self._pipeline.translator = self._local
+            return
+        import hashlib
+        from pathlib import Path
+
+        from app.secrets import KeyStore
+        from app.translate.llm import LlmTranslator
+        from app.usage import Usage
+
+        data_dir = Path(llm.get("data_dir") or ".")
+        key = KeyStore(data_dir).get(engine)
+        if not key:
+            self._pipeline.translator = self._local
+            if engine not in self._no_key_noticed:
+                self._no_key_noticed.add(engine)
+                self.notice.emit(f"Chưa nhập key cho {remote.NAMES[engine]} — dùng model trên máy.")
+            return
+        self._no_key_noticed.discard(engine)
+        model, url = llm.get("model", ""), llm.get("url", "")
+        limit = int(llm.get("daily_limit") or 50000)
+        cache_key = (engine, model, url, hashlib.sha256(key.encode()).hexdigest(), limit, str(data_dir))
+        tr = self._translators.get(cache_key)
+        if tr is None:
+            tr = LlmTranslator(engine, remote.make_client(engine, key, model=model, url=url), self._local,
+                               Usage(data_dir), limit, self.notice.emit)
+            self._translators[cache_key] = tr
+        self._pipeline.translator = tr
+
     def _run(self, job: Job) -> None:
         self.job_started.emit(job.id)
+        if hasattr(self._pipeline.translator, "timeout_s"):  # remote engine: Live must not stall
+            self._pipeline.translator.timeout_s = 2.5 if job.mode == "live_translate" else 6.0
         try:
             if job.mode == "correct":
                 for src, machine, fixed in job.payload.get("corrections", []):
@@ -147,6 +185,7 @@ class TranslationWorker(QObject):
                 glossary = Glossary.load(*(Path(g) for g in job.payload.get("glossaries", [])))
                 self._pipeline.set_game(job.payload.get("game"), glossary, job.payload.get("overrides", {}))
                 self._use_ocr(job.payload.get("ocr", "auto"))
+                self._use_engine(job.payload.get("engine", "local"), job.payload.get("llm") or {})
                 self.job_done.emit(job.id, [])
                 return
             if job.mode == "live_ocr":

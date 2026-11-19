@@ -42,7 +42,8 @@
    "": "x",
    "Bye.": 3
   },
-  "ocr": 5
+  "ocr": 5,
+  "engine": "chatgpt"
  },
  "expected": {
   "id": "game.exe",
@@ -67,6 +68,7 @@
   "overrides": {
    "Hello there.": "Chào."
   },
-  "ocr": "auto"
+  "ocr": "auto",
+  "engine": "local"
  }
 }

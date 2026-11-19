@@ -21,6 +21,7 @@ data class Profile(
     val style: String = "match",
     /** OCR engine for this game: "auto" = the platform default (Android: mlkit). */
     val ocr: String = "auto",
+    val engine: String = "local",  // translation engine: local | gemini | openai | claude | kaggle
     val regions: List<List<Double>> = emptyList(),
     val ignore: List<List<Double>> = emptyList(),
     val intervalMs: Int = 300,
@@ -33,6 +34,7 @@ data class Profile(
         addProperty("id", id)
         addProperty("name", name)
         addProperty("ocr", ocr)
+        addProperty("engine", engine)
         add("live", JsonObject().apply {
             addProperty("scope", scope)
             addProperty("style", style)
@@ -49,6 +51,7 @@ data class Profile(
     companion object {
         const val DEFAULT_ID = "_default"
         private val SCOPES = setOf("region", "screen")
+        val ENGINES = setOf("local", "gemini", "openai", "claude", "kaggle")
         private val STYLES = setOf("match", "classic")
 
         private fun rects(list: List<List<Double>>) = JsonArray().apply {
@@ -96,6 +99,7 @@ data class Profile(
                 id = id,
                 name = str(o["name"]) ?: "",
                 ocr = str(o["ocr"])?.takeIf { it.isNotEmpty() } ?: "auto",
+                engine = str(o["engine"])?.takeIf { it in ENGINES } ?: "local",
                 scope = str(live["scope"])?.takeIf { it in SCOPES } ?: "region",
                 style = str(live["style"])?.takeIf { it in STYLES } ?: "match",
                 regions = rels(o["regions"]),

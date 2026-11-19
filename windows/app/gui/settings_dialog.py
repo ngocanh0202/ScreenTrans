@@ -9,13 +9,16 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                               QRadioButton, QVBoxLayout, QWidget)
+                               QLineEdit, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
 from app.gui.overlay import FONT
 
 FILE = "settings.json"
 SCALES = [(0.8, "80%"), (1.0, "100%"), (1.25, "125%"), (1.5, "150%")]
 MODELS = [("vinai-en2vi", "vinai-en2vi (chất lượng cao)"), ("opus-mt-en-vi", "opus-mt-en-vi (nhanh, nhẹ)")]
+ENGINES = [("local", "Model trên máy"), ("gemini", "Gemini"), ("openai", "OpenAI"), ("claude", "Claude"),
+           ("kaggle", "Kaggle (server riêng)")]
+DAILY_LIMIT = 50000
 
 
 @dataclass
@@ -26,6 +29,13 @@ class SettingsValues:
     model: str
     hotkeys: dict[str, str] = field(default_factory=dict)  # shown only
     ocr: str = "windows"   # OCR engine for the current game (one-shot translations)
+    engine: str = "local"  # translation engine for the current game
+    llm_models: dict[str, str] = field(default_factory=dict)  # engine -> model name (empty: the default)
+    kaggle_url: str = ""
+    daily_limit: int = DAILY_LIMIT  # characters sent to remote engines per day
+    keys: dict[str, str] = field(default_factory=dict)  # keys the user typed now (never the saved ones)
+    saved_keys: tuple[str, ...] = ()  # engines with a saved key (shown as such, never displayed)
+    used_today: int = 0
 
 
 def load_settings(data_dir: Path) -> dict:
@@ -85,6 +95,7 @@ class SettingsDialog(QDialog):
         self.ocr_note = QLabel("\n".join(notes))
         self.ocr_note.setWordWrap(True)
         self.ocr_note.setStyleSheet("color: #666;")
+        self._llm(values)
         self.model = QComboBox()
         for v, label in MODELS:
             self.model.addItem(label, v)
@@ -97,6 +108,13 @@ class SettingsDialog(QDialog):
         form.addRow("Model dịch:", self.model)
         form.addRow(f"Bộ OCR{f' ({game})' if game else ''}:", self.ocr)
         form.addRow("", self.ocr_note)
+        form.addRow(f"Dịch bằng{f' ({game})' if game else ''}:", self.engine)
+        form.addRow("Key / token:", self.key)
+        form.addRow("Tên model:", self.llm_model)
+        form.addRow("URL server Kaggle:", self.kaggle_url)
+        form.addRow("Giới hạn mỗi ngày:", self.limit)
+        form.addRow("", self.usage_label)
+        form.addRow("", self.privacy)
         for name, combo in values.hotkeys.items():
             form.addRow(f"{name}:", QLabel(combo))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -114,4 +132,73 @@ class SettingsDialog(QDialog):
             model=str(self.model.currentData()),
             hotkeys=self._hotkeys,
             ocr=str(self.ocr.currentData()) if self.ocr.currentData() in self._ocr_ok else "windows",
+            engine=str(self.engine.currentData()),
+            llm_models=self._models_now(),
+            kaggle_url=self.kaggle_url.text().strip(),
+            daily_limit=int(self.limit.value()),
+            keys=self._keys_now(),
+            saved_keys=self._saved_keys,
+            used_today=self._used_today,
         )
+
+    # ---- remote translation engines -------------------------------------------------------------------
+    def _llm(self, values: SettingsValues) -> None:
+        from app.translate.remote import DEFAULT_MODELS, NAMES
+
+        self._defaults, self._names = DEFAULT_MODELS, NAMES
+        self._models = dict(values.llm_models)
+        self._typed: dict[str, str] = {}
+        self._saved_keys, self._used_today = tuple(values.saved_keys), values.used_today
+        self.engine = QComboBox()
+        for v, label in ENGINES:
+            self.engine.addItem(label, v)
+        self.key = QLineEdit()
+        self.key.setEchoMode(QLineEdit.Password)
+        self.llm_model = QLineEdit()
+        self.kaggle_url = QLineEdit(values.kaggle_url)
+        self.kaggle_url.setPlaceholderText("https://….ngrok-free.app")
+        self.limit = QSpinBox()
+        self.limit.setRange(1000, 10_000_000)
+        self.limit.setSingleStep(10_000)
+        self.limit.setSuffix(" ký tự")
+        self.limit.setValue(values.daily_limit)
+        self.usage_label = QLabel(f"Đã dùng hôm nay: {values.used_today} ký tự")
+        self.usage_label.setStyleSheet("color: #666;")
+        self.privacy = QLabel()
+        self.privacy.setWordWrap(True)
+        self.privacy.setStyleSheet("color: #a15c00;")
+        self._shown_engine = ""
+        self.engine.setCurrentIndex(max(0, self.engine.findData(values.engine)))
+        self.engine.currentIndexChanged.connect(lambda _: self._show_engine())
+        self._show_engine()
+
+    def _remember_fields(self) -> None:
+        e = self._shown_engine
+        if e in self._names:
+            if self.key.text().strip():
+                self._typed[e] = self.key.text().strip()
+            self._models[e] = self.llm_model.text().strip()
+
+    def _show_engine(self) -> None:
+        self._remember_fields()
+        e = str(self.engine.currentData())
+        self._shown_engine = e
+        remote = e in self._names
+        for w in (self.key, self.llm_model, self.limit):
+            w.setEnabled(remote)
+        self.kaggle_url.setEnabled(e == "kaggle")
+        self.key.setText(self._typed.get(e, ""))
+        self.key.setPlaceholderText("•••• (đã lưu — nhập để thay)" if e in self._saved_keys else
+                                    ("Dán key vào đây" if remote else ""))
+        self.llm_model.setText(self._models.get(e) or self._defaults.get(e, "") if remote else "")
+        self.privacy.setText(f"Chữ trong game sẽ được gửi tới {self._names[e]} để dịch (tính phí theo tài khoản "
+                             f"của bạn). Lỗi / hết hạn mức → tự dùng model trên máy." if remote else "")
+        self.privacy.setHidden(not remote)
+
+    def _models_now(self) -> dict[str, str]:
+        self._remember_fields()
+        return {e: m for e, m in self._models.items() if m}
+
+    def _keys_now(self) -> dict[str, str]:
+        self._remember_fields()
+        return dict(self._typed)

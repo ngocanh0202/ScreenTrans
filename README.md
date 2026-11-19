@@ -24,6 +24,10 @@ Bản build mới nhất từ `main`: [Releases → nightly](https://github.com/
 | Sửa bản dịch | Lần sau gặp đúng câu sẽ dùng bản của bạn; thêm thuật ngữ | `Ctrl+Alt+E`, nút "Sửa" | "Sửa bản dịch gần nhất", nút "Sửa" |
 | Bảng thuật ngữ | Giữ nguyên hoặc dịch cố định tên riêng, thuật ngữ | ✓ | ✓ |
 | Đổi model | `vinai-en2vi` (mặc định) hoặc `opus-mt-en-vi` | Tray → "Model" | `opus-mt-en-vi` |
+| Dịch bằng mô hình lớn qua mạng | Dịch tự nhiên hơn, có ngữ cảnh câu trước và người nói: Gemini, OpenAI, Claude hoặc server Kaggle riêng; lỗi / hết hạn mức thì tự dùng model trên máy | Cài đặt → "Dịch bằng" (theo game) | Sắp có |
+| Chọn bộ OCR | Windows OCR (mặc định) hoặc RapidOCR | Cài đặt → "Bộ OCR" | ML Kit |
+
+Dịch qua mạng: nhập key trong Cài đặt (lưu mã hóa bằng DPAPI, không ghi ra file cấu hình hay nhật ký). Chữ trong game được gửi tới nhà cung cấp đã chọn; có giới hạn ký tự mỗi ngày (mặc định 50 000). Server Kaggle miễn phí: chạy [training/kaggle_serve.ipynb](training/kaggle_serve.ipynb), dán URL + token vào Cài đặt.
 
 Android: khi cấp quyền ghi màn hình, chọn **"Một ứng dụng" → game** để bản dịch Live không nháy.
 Dữ liệu Windows ở `%LOCALAPPDATA%\ScreenTrans` (tray → "Mở thư mục dữ liệu"), cấu hình ở [windows/config.yaml](windows/config.yaml).
