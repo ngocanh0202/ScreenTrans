@@ -71,6 +71,17 @@ fun collapseRepeats(text: String): String {
     return out.joinToString(" ")
 }
 
+private const val JUNK_MARKS = "#*_~|"
+
+/**
+ * Strip marks the model invented around a translation ("# Chuyển lên #", "**...**") when the source has
+ * none of them, then collapse looping words. Same as windows/app/pipeline.clean_output.
+ */
+fun cleanOutput(source: String, text: String): String {
+    val t = if (source.none { it in JUNK_MARKS }) text.trim().trim { it in JUNK_MARKS || it == ' ' }.trim() else text
+    return collapseRepeats(t)
+}
+
 data class Segment(
     val kind: Kind,
     val source: String,
@@ -138,7 +149,7 @@ class Pipeline(
         val retry = mutableListOf<String>()
         for ((i, s) in todo.withIndex()) {
             val values = protected[i].second
-            val restored = (if (values.isEmpty()) outputs[i] else glossary.restore(outputs[i], values))?.let(::collapseRepeats)
+            val restored = (if (values.isEmpty()) outputs[i] else glossary.restore(outputs[i], values))?.let { cleanOutput(s, it) }
             if (restored == null) retry.add(s) else done[s] = restored
         }
         if (retry.isNotEmpty()) {  // the model damaged a placeholder: translate without glossary protection

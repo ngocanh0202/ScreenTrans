@@ -38,6 +38,35 @@ object Layout {
         return null
     }
 
+    /** Translation box fit: font size, drawn height (px) and whether the text had to be cut ("…"). */
+    data class Fit(val px: Float, val height: Int, val truncated: Boolean)
+
+    /**
+     * Live block fit. [grow]: the box may extend below the source box — up to 3x its height or 40% of
+     * [maxH] (the room down to the screen bottom), never past [maxH] — before the font shrinks;
+     * otherwise only 1.5x. The font shrinks down to [MIN_TEXT_PX]; still too long → truncated.
+     */
+    fun fitBlock(textLen: Int, blockW: Int, blockH: Int, basePx: Float, maxH: Int, grow: Boolean): Fit {
+        val limit = if (grow) minOf(maxH.toFloat(), maxOf(blockH * 3f, blockH + maxH * 0.4f)) else blockH * GROW
+        fun needed(size: Float): Float {
+            val perLine = maxOf(1f, blockW / (CHAR_WIDTH * size))
+            return ceil(textLen / perLine) * LINE_HEIGHT * size
+        }
+        var size = basePx
+        while (true) {
+            val h = needed(size)
+            if (h <= limit) return Fit(size, maxOf(h.toInt(), blockH), false)
+            if (size <= MIN_TEXT_PX) return Fit(size, limit.toInt(), true)
+            size = maxOf(MIN_TEXT_PX, size - 1f)
+        }
+    }
+
+    private val SCALES = listOf(0.8f, 1f, 1.25f, 1.5f)
+
+    /** Translation text size steps (settings "Cỡ chữ"). */
+    fun nextScale(s: Float): Float = SCALES.firstOrNull { it > s + 0.01f } ?: SCALES.last()
+    fun prevScale(s: Float): Float = SCALES.lastOrNull { it < s - 0.01f } ?: SCALES.first()
+
     /** Keep a size x size bubble fully on a w x h screen (a position saved in portrait may be off-screen). */
     fun clampBubble(x: Int, y: Int, size: Int, w: Int, h: Int): IntArray =
         intArrayOf(x.coerceIn(0, maxOf(0, w - size)), y.coerceIn(0, maxOf(0, h - size)))

@@ -20,7 +20,7 @@ data class PanelTile(val icon: String, val label: String, val action: () -> Unit
 /**
  * The bubble's panel as a grid of tiles:
  *   [① Dịch 1 lần | ∞ Tự động]   [▭ Vùng | ⛶ Toàn màn hình]   [✎ Chọn vùng | ▶ main button]
- * and "Thêm ▾" opening a 3-column grid of the less used items. Touching outside closes it.
+ * and a last row of [extras] (✍ Sửa bản dịch, ⚙ Cài đặt). Touching outside closes it.
  * Rules (what is enabled, what the main tile does) live in [PanelState].
  */
 @SuppressLint("ViewConstructor")
@@ -44,8 +44,6 @@ class ControlPanel(
     private val scopeScreen = tile("⛶", "Toàn màn hình") { onScope(true) }
     private val chooseRegion = tile("✎", "Chọn vùng") { onChooseRegion() }
     private val primary = tile("▶", "") { onPrimary(state.primary.first) }
-    private val more = TextView(context)
-    private val extraGrid = LinearLayout(context).apply { orientation = VERTICAL; visibility = GONE }
 
     init {
         orientation = VERTICAL
@@ -55,24 +53,8 @@ class ControlPanel(
         addView(row(listOf(modeOnce, modeLive)))
         addView(row(listOf(scopeRegion, scopeScreen)))
         addView(row(listOf(chooseRegion, primary)))
-        more.apply {
-            text = "Thêm ▾"
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(170, 170, 180))
-            textSize = 13f
-            setPadding(0, context.dp(6), 0, context.dp(4))
-            setOnClickListener {
-                val open = extraGrid.visibility != VISIBLE
-                extraGrid.visibility = if (open) VISIBLE else GONE
-                text = if (open) "Thêm ▴" else "Thêm ▾"
-            }
-        }
-        addView(more, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        extras.chunked(3).forEach { chunk ->
-            val tiles = chunk.map { t -> tile(t.icon, t.label, small = true) { onClose(); t.action() }.also { paint(it, idle, true) } }
-            extraGrid.addView(row(tiles, columns = 3))
-        }
-        addView(extraGrid)
+        // last row: the two other things people need while playing (all the rest is in ⚙ Cài đặt)
+        addView(row(extras.map { t -> tile(t.icon, t.label, small = true) { onClose(); t.action() }.also { paint(it, idle, true) } }))
         render(state)
     }
 

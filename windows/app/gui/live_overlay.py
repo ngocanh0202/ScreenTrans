@@ -39,10 +39,11 @@ def _font(px: int) -> QFont:
     return f
 
 
-def fit_px(text: str, width: int, height: int, base_px: int) -> tuple[int, str, int]:
-    """Largest pixel size from base_px down to MIN_PX whose wrapped text fits width x height*GROW;
-    else MIN_PX with trailing words dropped and an ellipsis. Returns (px, text, drawn height)."""
-    limit = int(height * GROW)
+def fit_px(text: str, width: int, height: int, base_px: int, room: int | None = None) -> tuple[int, str, int]:
+    """Largest pixel size from base_px down to MIN_PX whose wrapped text fits width x limit; else MIN_PX
+    with trailing words dropped and an ellipsis. Returns (px, text, drawn height). limit = height*GROW, or
+    with `room` (space down to the screen bottom) up to 3x the height or 40% of the room, never past it."""
+    limit = int(height * GROW) if room is None else int(min(room, max(height * 3, height + room * 0.4)))
     inner = max(width - 2 * PAD, 10)
 
     def needed(px: int, t: str) -> int:
@@ -88,7 +89,8 @@ class AreaOverlay(QWidget):
             fg = fg if colors is not None else NAME_COLOR
             self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg)
         else:
-            px, fitted, h = fit_px(text, r.width(), r.height(), base)
+            room = self.height() - r.top() if self.cfg.long_text != "shrink" else None
+            px, fitted, h = fit_px(text, r.width(), r.height(), base, room if room and room > r.height() else None)
             self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg)
         self._refresh()
 

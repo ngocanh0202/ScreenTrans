@@ -41,6 +41,7 @@ class Overlay:
     font_size: int = 14
     opacity: float = 0.85
     show_source: bool = False
+    long_text: str = "grow"   # Live: "grow" = extend the box downwards first, "shrink" = smaller font only
 
 
 @dataclass

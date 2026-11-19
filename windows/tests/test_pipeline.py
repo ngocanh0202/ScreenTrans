@@ -182,3 +182,13 @@ def test_a_looping_translation_is_collapsed():
     assert collapse_repeats("Từ từ dần dần thôi.") == "Từ từ dần dần thôi."  # Vietnamese doubles stay
     tr = FakeTranslator(lambda s: "Sự may may may may may")
     assert _p(tr)._translate_sentences(["Stealio."]) == {"Stealio.": "Sự may"}
+
+
+def test_junk_marks_the_model_added_are_removed():
+    from app.pipeline import clean_output
+
+    assert clean_output("A Determined Visitor", "# Một người khách #") == "Một người khách"
+    assert clean_output("#1 fan", "# 1 người hâm mộ") == "# 1 người hâm mộ"  # the source has one
+    assert clean_output("Hi.", "**Chào.**") == "Chào."
+    tr = FakeTranslator(lambda s: "# Chuyển lên #")
+    assert _p(tr)._translate_sentences(["She jumps up."]) == {"She jumps up.": "Chuyển lên"}

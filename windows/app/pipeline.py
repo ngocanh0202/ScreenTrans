@@ -42,6 +42,17 @@ def collapse_repeats(text: str) -> str:
     return " ".join(out)
 
 
+JUNK_MARKS = "#*_~|"
+
+
+def clean_output(source: str, text: str) -> str:
+    """Strip marks the model invented around a translation ("# Chuyển lên #", "**...**") when the
+    source has none of them; then collapse looping words."""
+    if not any(c in source for c in JUNK_MARKS):
+        text = text.strip().strip(JUNK_MARKS + " ").strip()
+    return collapse_repeats(text)
+
+
 class Pipeline:
     """Use one instance from a single worker thread (glossary/tracker/cache state is not locked)."""
 
@@ -120,7 +131,7 @@ class Pipeline:
         retry: list[str] = []
         for s, (_, values), out in zip(todo, protected, outputs):
             restored = self.glossary.restore(out, values) if values else out
-            restored = collapse_repeats(restored) if restored is not None else None
+            restored = clean_output(s, restored) if restored is not None else None
             if restored is None:
                 retry.append(s)
             else:

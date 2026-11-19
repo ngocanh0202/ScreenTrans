@@ -32,6 +32,16 @@ class Prefs(context: Context) {
         get() = sp.getString("translate_mode", "once") ?: "once"
         set(v) = sp.edit().putString("translate_mode", v).apply()
 
+    /** Translation text size factor (settings "Cỡ chữ"): 0.8, 1, 1.25 or 1.5. */
+    var textScale: Float
+        get() = sp.getFloat("text_scale", 1f)
+        set(v) = sp.edit().putFloat("text_scale", v).apply()
+
+    /** Long translations: "grow" (extend the box downwards first) or "shrink" (smaller font only). */
+    var longText: String
+        get() = sp.getString("long_text", "grow") ?: "grow"
+        set(v) = sp.edit().putString("long_text", v).apply()
+
     var bubbleX: Int
         get() = sp.getInt("bubble_x", 0)
         set(v) = sp.edit().putInt("bubble_x", v).apply()
