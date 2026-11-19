@@ -234,9 +234,11 @@ class Controller(private val context: Context, projection: MediaProjection) {
             onClose = ::closeMenu,
         )
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        val lp = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
+        // at most 90% of the screen height: the sections scroll, the title and "Đóng" stay on screen
+        val h = minOf(panel.measuredHeight, (capturer.height * 0.9f).toInt())
+        val lp = overlays.params(WRAP_CONTENT, h).apply {
             x = ((capturer.width - panel.measuredWidth) / 2).coerceAtLeast(0)
-            y = ((capturer.height - panel.measuredHeight) / 2).coerceAtLeast(0)
+            y = ((capturer.height - h) / 2).coerceAtLeast(0)
         }
         overlays.add(panel, lp)
         menu = panel

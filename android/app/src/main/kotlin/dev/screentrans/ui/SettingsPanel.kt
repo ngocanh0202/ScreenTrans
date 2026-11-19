@@ -46,34 +46,42 @@ class SettingsPanel(
         setPadding(pad, pad, pad, pad)
         minimumWidth = context.dp(280)
         addView(title("⚙  Cài đặt"))
-        addView(caption("Kiểu bản dịch"))
-        addView(pair(readable, likeGame))
-        addView(caption("Cỡ chữ bản dịch"))
-        addView(LinearLayout(context).apply {
+        // the sections scroll between the title and "Đóng": in landscape (games) the panel is taller than the screen
+        val body = LinearLayout(context).apply { orientation = VERTICAL }
+        body.addView(caption("Kiểu bản dịch"))
+        body.addView(pair(readable, likeGame))
+        body.addView(caption("Cỡ chữ bản dịch"))
+        body.addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(square("−") { onScale(false) })
             addView(scaleLabel, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(square("+") { onScale(true) })
         })
-        addView(caption("Khi bản dịch dài"))
-        addView(pair(grow, shrink))
-        addView(caption("Bộ OCR"))
+        body.addView(caption("Khi bản dịch dài"))
+        body.addView(pair(grow, shrink))
+        body.addView(caption("Bộ OCR"))
         // Only the engines this platform can run: Android has ML Kit (on the phone). Phase 5/7 add more here.
-        addView(LinearLayout(context).apply {
+        body.addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
             val mlkit = segment("ML Kit (trên máy)") {}
             select(mlkit, true)
             addView(mlkit, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         })
-        addView(caption("Công cụ"))
-        tools.chunked(2).forEach { chunk ->
-            addView(LinearLayout(context).apply {
+        body.addView(caption("Công cụ"))
+        val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val columns = if (landscape) 4 else 2  // a lower panel in landscape
+        tools.chunked(columns).forEach { chunk ->
+            body.addView(LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 chunk.forEach { t -> addView(tool(t), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(context.dp(3), context.dp(3), context.dp(3), context.dp(3)) }) }
-                if (chunk.size == 1) addView(View(context), LayoutParams(0, 0, 1f))
+                repeat(columns - chunk.size) { addView(View(context), LayoutParams(0, 0, 1f)) }
             })
         }
+        addView(android.widget.ScrollView(context).apply {
+            isVerticalScrollBarEnabled = true
+            addView(body)
+        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(TextView(context).apply {
             text = "Đóng"
             gravity = Gravity.CENTER
