@@ -74,6 +74,7 @@ class LiveController(
     private val styles = HashMap<String, BlockStyle?>()  // block -> sampled colours (null: readable style)
     private var blackTicks = 0
     private var blackReported = false
+    private var sawGame = false  // a non-black frame since Live started: later black frames are scene fades
     private var layer: LiveAreaLayer? = null
     private var capturing = false
     private var startedAt = 0L
@@ -128,6 +129,7 @@ class LiveController(
         masks = arrayOfNulls(regionsPx.size)
         blackTicks = 0
         blackReported = false
+        sawGame = false
         startedAt = SystemClock.uptimeMillis()
         val s = LiveSession(params, scopeName, regionsPx.size, host = this)
         session = s
@@ -218,15 +220,20 @@ class LiveController(
             // Only a black WHOLE frame means the game is not visible (an empty dark dialogue box is fine).
             val whole = capturer.thumbnail(intArrayOf(0, 0, capturer.width, capturer.height)) ?: return
             if (whole.average() < 2.0) {
-                if (++blackTicks >= 10 && !blackReported) {  // ~3 s of black frames
+                if (++blackTicks == 1) log("black frames start (frame age ${SystemClock.uptimeMillis() - capturer.lastFrameAt} ms)")
+                // Only before the game was ever seen: afterwards a black screen is a fade / loading screen,
+                // and the warning used to linger over the next scene.
+                if (blackTicks >= 10 && !blackReported && !sawGame) {  // ~3 s of black frames
                     blackReported = true
                     notify("Không thấy hình game (game chặn chụp màn hình, hoặc bạn đang ở ứng dụng khác) — Live chờ tới khi thấy lại hình.")
                 }
                 return
             }
         }
+        if (blackTicks > 0) log("black frames end after $blackTicks ticks")
         blackTicks = 0
         blackReported = false
+        sawGame = true
         var worst = 0f
         thumbs.forEachIndexed { i, thumb ->
             if (thumb == null) return@forEachIndexed
