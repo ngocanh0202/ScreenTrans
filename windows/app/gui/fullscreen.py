@@ -22,8 +22,8 @@ def block_rect(box: tuple[float, float, float, float], origin: tuple[int, int]) 
 
 
 def fit_text(text: str, width: int, height: int, base: int) -> tuple[int, str, int]:
-    """Largest font (base..MIN_FONT) whose wrapped text fits width x height*GROW; else MIN_FONT and
-    drop trailing words with an ellipsis. Returns (font size, text, drawn height)."""
+    """Largest font (base..MIN_FONT) whose wrapped text fits width x height*GROW; else MIN_FONT and the box
+    grows to the whole text (never cut). Returns (font size, text, drawn height)."""
     limit = int(height * GROW)
     inner = max(width - 2 * PAD, 10)
 
@@ -35,10 +35,7 @@ def fit_text(text: str, width: int, height: int, base: int) -> tuple[int, str, i
         h = needed(size, text)
         if h <= limit:
             return size, text, max(h, height)
-    words = text.split()
-    while len(words) > 1 and needed(MIN_FONT, " ".join(words) + "…") > limit:
-        words.pop()
-    return MIN_FONT, " ".join(words) + "…", limit
+    return MIN_FONT, text, max(needed(MIN_FONT, text), height)
 
 
 @dataclass
@@ -80,6 +77,8 @@ class FullscreenOverlay(QWidget):
             self.blocks.append(Block(r, seg, seg.source, MIN_FONT, r.height(), angle, pivot))
         else:
             size, text, h = fit_text(seg.translation or "", r.width(), r.height(), self.cfg.font_size)
+            if not angle and r.top() + h > self.height():  # never cut, so it may run off: move up, not past the top
+                r.moveTop(max(0, self.height() - h))
             self.blocks.append(Block(r, seg, text, size, h, angle, pivot))
         self.update()
 

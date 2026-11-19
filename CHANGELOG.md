@@ -3,6 +3,7 @@
 ## Chưa phát hành
 
 - **Dịch bằng mô hình lớn qua mạng (Windows)**: chọn theo game trong Cài đặt → "Dịch bằng": Gemini, OpenAI, Claude (mặc định `claude-opus-5-5`, đổi được) hoặc server Kaggle riêng (`training/kaggle_serve.ipynb`). Gửi kèm 3 câu trước, người nói và thuật ngữ của game; Live gom các câu của một lần đọc vào một lần gọi. Lỗi / quá thời gian (Live 2,5 s, dịch 1 lần 6 s) / hết hạn mức → dùng model trên máy ngay, thử lại server sau 30 s; sai key → báo, không thử lại. Key mã hóa DPAPI; giới hạn ký tự mỗi ngày.
+- **Bản dịch luôn hiện đủ**: không cắt bằng "…" nữa, bỏ nút ⤢ (Android). Khung giữ cỡ chữ gốc và dài ra theo nội dung, được tràn ra ngoài chữ gốc; gần đáy màn hình thì đẩy lên. Chế độ "Thu nhỏ chữ" thu nhỏ trước, nhỏ hết mức thì cũng tràn ra. Áp dụng cho Live và dịch toàn màn hình.
 - **Chọn bộ OCR theo game**: Windows OCR / RapidOCR (Windows, RapidOCR cài thêm), ML Kit (Android).
 - **Live**: nhận ra lời thoại mới (đếm ô ảnh đổi thay vì trung bình cả ảnh — trước đây chỉ dịch câu đầu); bản dịch nhích lên một chút; câu đã dịch hiện lại ngay; Android không còn báo "Không thấy hình game" ở các cảnh chuyển màu đen.
 

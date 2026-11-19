@@ -47,28 +47,28 @@ object Layout {
         return if (tilted) top - lift else top - minOf(lift, maxOf(0f, top))
     }
 
-    /** Translation box fit: font size, drawn height (px) and whether the text had to be cut ("…"). */
-    data class Fit(val px: Float, val height: Int, val truncated: Boolean)
+    /** Translation box fit: font size and drawn height (px). The whole text is always shown (never cut). */
+    data class Fit(val px: Float, val height: Int)
 
     /**
-     * Live block fit. [grow]: the box may extend below the source box — up to 3x its height or 40% of
-     * [maxH] (the room down to the screen bottom), never past [maxH] — before the font shrinks;
-     * otherwise only 1.5x. The font shrinks down to [MIN_TEXT_PX]; still too long → truncated.
+     * Live block fit. [grow]: keep [basePx], the box is as tall as the text needs (it may run past the source).
+     * Otherwise the font shrinks down to [MIN_TEXT_PX] to fit 1.5x the source height; still too long → it grows.
      */
-    fun fitBlock(textLen: Int, blockW: Int, blockH: Int, basePx: Float, maxH: Int, grow: Boolean): Fit {
-        val limit = if (grow) minOf(maxH.toFloat(), maxOf(blockH * 3f, blockH + maxH * 0.4f)) else blockH * GROW
-        fun needed(size: Float): Float {
+    fun fitBlock(textLen: Int, blockW: Int, blockH: Int, basePx: Float, grow: Boolean): Fit {
+        fun needed(size: Float): Int {
             val perLine = maxOf(1f, blockW / (CHAR_WIDTH * size))
-            return ceil(textLen / perLine) * LINE_HEIGHT * size
+            return (ceil(textLen / perLine) * LINE_HEIGHT * size).toInt()
         }
         var size = basePx
-        while (true) {
-            val h = needed(size)
-            if (h <= limit) return Fit(size, maxOf(h.toInt(), blockH), false)
-            if (size <= MIN_TEXT_PX) return Fit(size, limit.toInt(), true)
-            size = maxOf(MIN_TEXT_PX, size - 1f)
+        if (!grow) {
+            while (needed(size) > blockH * GROW && size > MIN_TEXT_PX) size = maxOf(MIN_TEXT_PX, size - 1f)
         }
+        return Fit(size, maxOf(needed(size), blockH))
     }
+
+    /** Top of a box of [height] px starting at [top]: moved up so it ends on screen, never above the top. */
+    fun onScreenTop(top: Float, height: Int, screenH: Int): Float =
+        maxOf(0f, minOf(top, (screenH - height).toFloat()))
 
     /**
      * Top-left of a [size] px square button at the real bottom-right corner of [box] (l, t, r, b in a frame

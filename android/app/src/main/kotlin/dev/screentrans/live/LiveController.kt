@@ -47,11 +47,7 @@ class LiveController(
     private val notify: (String) -> Unit,
     /** Hide / show our other windows (the bubble) around an OCR capture when overlays are captured. */
     private val hideOthers: (Boolean) -> Unit,
-    /** A block's translation was cut ("…"): the user tapped its ⤢ button to read all of it. */
-    private val onExpand: (String) -> Unit = {},
 ) : LiveHost {
-    private val expanders = HashMap<String, View>()  // block key -> its small touchable ⤢ button
-    private val fullText = HashMap<String, String>()
     enum class CaptureMode { UNKNOWN, HIDDEN, CAPTURED }
 
     private companion object {
@@ -166,9 +162,6 @@ class LiveController(
         events = null
         ocrCapture = null
         overlays.remove(layer)
-        expanders.values.forEach { overlays.remove(it) }
-        expanders.clear()
-        fullText.clear()
         layer = null
         frames.clear()
         styles.clear()
@@ -180,7 +173,6 @@ class LiveController(
     /** One-shot translations hide Live windows so they are not captured. */
     fun setVisible(visible: Boolean) {
         layer?.visibility = if (visible) View.VISIBLE else View.INVISIBLE
-        expanders.values.forEach { it.visibility = if (visible) View.VISIBLE else View.INVISIBLE }
         if (visible) resetReference()
     }
 
@@ -260,7 +252,6 @@ class LiveController(
             val frame = if (s.overlaysInCapture) {
                 capturing = true
                 layer?.visibility = View.INVISIBLE
-                expanders.values.forEach { it.visibility = View.INVISIBLE }
                 hideOthers(true)
                 val hiddenAt = SystemClock.uptimeMillis()
                 delay(50)
@@ -268,7 +259,6 @@ class LiveController(
                 hideOthers(false)
                 if (session === s) {
                     layer?.visibility = View.VISIBLE
-                    expanders.values.forEach { it.visibility = View.VISIBLE }
                     delay(120)  // let a frame with our layer back arrive: it becomes the new reference
                     resetReference()
                     s.overlayChanged()
@@ -299,31 +289,7 @@ class LiveController(
     override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
         val k = "$region:$key"
         val colors = if (style != "match") null else styles.getOrPut(k) { sampleStyle(screentrans.text.Deskew.bounds(box, angle)) }
-        val cut = layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors, angle)
-        fullText[k] = text
-        if (cut != null) showExpander(k, cut, angle) else overlays.remove(expanders.remove(k))
-    }
-
-    /** A small touchable ⤢ at the bottom-right of a cut translation; tapping it shows all of it. */
-    private fun showExpander(key: String, rect: android.graphics.RectF, angle: Float) {
-        val size = context.dp(30)
-        val v = expanders.getOrPut(key) {
-            android.widget.TextView(context).apply {
-                text = "⤢"
-                gravity = android.view.Gravity.CENTER
-                textSize = 16f
-                setTextColor(Color.WHITE)
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.argb(220, 37, 99, 235)); cornerRadius = context.dp(8).toFloat()
-                }
-                setOnClickListener { fullText[key]?.let(onExpand) }
-            }
-        }
-        // the real bottom-right corner of the (possibly tilted) box, kept on screen
-        val (px, py) = dev.screentrans.core.Layout.cornerOnScreen(
-            floatArrayOf(rect.left, rect.top, rect.right, rect.bottom), angle, size, capturer.width, capturer.height)
-        val lp = overlays.params(size, size).apply { x = px; y = py }
-        if (overlays.isAdded(v)) overlays.update(v, lp) else overlays.add(v, lp)
+        layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors, angle)  // whole text, never cut
     }
 
     /** Colours of the source text block, from the frame its OCR read (null: readable white on dark). */
@@ -341,8 +307,6 @@ class LiveController(
     override fun removeBlock(region: Int, key: String) {
         styles.remove("$region:$key")
         layer?.remove("$region:$key")
-        overlays.remove(expanders.remove("$region:$key"))
-        fullText.remove("$region:$key")
     }
 
     private fun onEvent(e: EngineEvent) {
