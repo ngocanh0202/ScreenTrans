@@ -30,31 +30,43 @@ class LiveAreaLayer(context: Context) : View(context) {
     private val pad = context.dp(3).toFloat()
     private val onScreen = IntArray(2)
 
-    /** [box] = l, t, r, b in screen pixels; [fontPx] = the source text size (null: default size). */
-    fun set(key: String, text: String, box: FloatArray, kind: Kind, fontPx: Float? = null, style: BlockStyle? = null) {
+    /** Translation text size factor (settings "Cỡ chữ"). */
+    var scale = 1f
+
+    /** Long translations: extend the box downwards first (true) or only shrink the font (false). */
+    var growLong = true
+
+    /**
+     * [box] = l, t, r, b in screen pixels; [fontPx] = the source text size (null: default size).
+     * Returns the drawn rect when the text had to be cut ("…"), null when it fits.
+     */
+    fun set(key: String, text: String, box: FloatArray, kind: Kind, fontPx: Float? = null, style: BlockStyle? = null): RectF? {
         val rect = RectF(box[0], box[1], box[2], box[3])
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style?.bgArgb ?: Color.argb(204, 20, 20, 24) }
         val fg = style?.textArgb ?: if (kind == Kind.NAME) Color.rgb(255, 220, 140) else Color.WHITE
-        val base = (fontPx ?: basePx).coerceAtLeast(minPx)
+        val base = ((fontPx ?: basePx) * scale).coerceAtLeast(minPx)
+        var cut: RectF? = null
         if (kind == Kind.NAME) {
             val p = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = base; isFakeBoldText = true }
             blocks[key] = Block(kind, text, rect, null, p, bg)
         } else {
             val w = maxOf(1, (rect.width() - 2 * pad).toInt())
-            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = fg
-                // same size as the source; shrinks only when 1.5x the box height is not enough
-                textSize = maxOf(minPx, Layout.fitTextPx(text.length, rect.width().toInt(), rect.height().toInt(), base))
-            }
+            val screenH = resources.displayMetrics.heightPixels
+            val fit = Layout.fitBlock(text.length, rect.width().toInt(), rect.height().toInt(), base,
+                maxH = maxOf(rect.height().toInt(), screenH - rect.top.toInt()), grow = growLong)
+            val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = maxOf(minPx, fit.px) }
             val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, w)
                 .setAlignment(TextLayout.Alignment.ALIGN_NORMAL)
-                .setMaxLines(maxOf(1, ((rect.height() * 1.5f) / (paint.textSize * 1.25f)).toInt()))
+                .setMaxLines(maxOf(1, (fit.height / (paint.textSize * 1.25f)).toInt()))
                 .setEllipsize(android.text.TextUtils.TruncateAt.END)
                 .build()
             rect.bottom = maxOf(rect.bottom, rect.top + layout.height + 2 * pad)
             blocks[key] = Block(kind, text, rect, layout, null, bg)
+            val ellipsized = (0 until layout.lineCount).any { layout.getEllipsisCount(it) > 0 }
+            if (fit.truncated || ellipsized) cut = RectF(rect)
         }
         invalidate()
+        return cut
     }
 
     fun remove(key: String) {

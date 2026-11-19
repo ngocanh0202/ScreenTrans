@@ -3,6 +3,7 @@ package dev.screentrans.core
 import org.junit.jupiter.api.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class LayoutTest {
     @Test
@@ -59,5 +60,26 @@ class BubbleClampTest {
         // nowhere outside: null (caller hides the card while capturing)
         val full = intArrayOf(0, 50, 1080, 2350)
         assertEquals(null, Layout.placeOutside(full, 600, 100, 1080, 2400, listOf(full)))
+    }
+
+    @Test
+    fun `a long translation grows the box before the font shrinks, then reports truncation`() {
+        // 40 px font, 400 px wide box of one 50 px line: ~18 chars per line
+        val short = Layout.fitBlock(10, 400, 50, 40f, maxH = 1000, grow = true)
+        assertEquals(40f, short.px); assertEquals(false, short.truncated)
+        val long = Layout.fitBlock(90, 400, 50, 40f, maxH = 1000, grow = true)  // 5 lines: needs 250 px > 1.5x
+        assertEquals(40f, long.px); assertTrue(long.height in 151..450); assertEquals(false, long.truncated)
+        val shrink = Layout.fitBlock(90, 400, 50, 40f, maxH = 1000, grow = false)
+        assertTrue(shrink.px < 40f); assertTrue(shrink.height <= 75)
+        val huge = Layout.fitBlock(2000, 400, 50, 40f, maxH = 120, grow = true)
+        assertEquals(true, huge.truncated); assertTrue(huge.height <= 150)
+    }
+
+    @Test
+    fun `text scale steps`() {
+        assertEquals(1.25f, Layout.nextScale(1f))
+        assertEquals(0.8f, Layout.prevScale(1f))
+        assertEquals(1.5f, Layout.nextScale(1.5f))
+        assertEquals(0.8f, Layout.prevScale(0.8f))
     }
 }

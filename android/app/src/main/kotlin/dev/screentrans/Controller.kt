@@ -38,6 +38,8 @@ import dev.screentrans.core.ui.PanelState
 import dev.screentrans.core.ui.TranslateMode
 import dev.screentrans.ui.ControlPanel
 import dev.screentrans.ui.PanelTile
+import dev.screentrans.ui.SettingsPanel
+import dev.screentrans.ui.SettingsValues
 import dev.screentrans.ui.CorrectView
 import dev.screentrans.ui.Fix
 import dev.screentrans.ui.Bubble
@@ -92,9 +94,11 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private var correctView: View? = null
     // Live notices are toasts: a result card would pause Live until it is closed.
     private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ },
-        notify = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() }) { hidden ->
-        bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
-    }
+        notify = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() },
+        hideOthers = { hidden -> bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE },
+        onExpand = { text -> showCard(null, text) },  // ⤢ on a cut translation: read all of it in a card
+    )
+    private var restartLiveOnClose = false  // settings changed while Live runs: redraw with them
 
     fun start() {
         repo.migrateOnce(prefs)
@@ -167,12 +171,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 }
             },
             extras = listOf(
-                PanelTile("Aa", if (profile().style == "classic") "Kiểu: Dễ đọc" else "Kiểu: Giống game", ::switchLiveStyle),
-                PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
                 PanelTile("✍", "Sửa bản dịch", ::editLast),
-                PanelTile("🎮", repo.label(gameId()), ::showGameMenu),
-                PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
-                PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
+                PanelTile("⚙", "Cài đặt", ::showSettings),
             ),
             onClose = ::closeMenu,
         )
@@ -190,6 +190,50 @@ class Controller(private val context: Context, projection: MediaProjection) {
         syncLivePause()
     }
 
+    private fun settingsValues() = SettingsValues(
+        readable = profile().style == "classic", textScale = prefs.textScale,
+        growLong = prefs.longText != "shrink", game = repo.label(gameId()),
+    )
+
+    /** ⚙ Cài đặt: style, text size, long translations, and the tools. */
+    private fun showSettings() {
+        closeMenu()
+        lateinit var panel: SettingsPanel
+        panel = SettingsPanel(
+            context, settingsValues(),
+            onReadable = { readable ->
+                repo.save(profile().copy(style = if (readable) "classic" else "match"))
+                restartLiveOnClose = true
+                panel.render(settingsValues())
+            },
+            onScale = { up ->
+                prefs.textScale = if (up) Layout.nextScale(prefs.textScale) else Layout.prevScale(prefs.textScale)
+                restartLiveOnClose = true
+                panel.render(settingsValues())
+            },
+            onGrowLong = { growLong ->
+                prefs.longText = if (growLong) "grow" else "shrink"
+                restartLiveOnClose = true
+                panel.render(settingsValues())
+            },
+            tools = listOf(
+                PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
+                PanelTile("🎮", "Game: ${repo.label(gameId())}", ::showGameMenu),
+                PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
+                PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
+            ),
+            onClose = ::closeMenu,
+        )
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val lp = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
+            x = ((capturer.width - panel.measuredWidth) / 2).coerceAtLeast(0)
+            y = ((capturer.height - panel.measuredHeight) / 2).coerceAtLeast(0)
+        }
+        overlays.add(panel, lp)
+        menu = panel
+        syncLivePause()
+    }
+
     private fun stopLive() {
         live.stop()
         bubble.live = false
@@ -199,6 +243,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
         overlays.remove(menu)
         menu = null
         syncLivePause()
+        if (restartLiveOnClose) {
+            restartLiveOnClose = false
+            if (live.running) startLive()
+        }
     }
 
     private fun closeResults() {
@@ -354,11 +402,6 @@ class Controller(private val context: Context, projection: MediaProjection) {
         if (live.running) startLive()
     }
 
-    private fun switchLiveStyle() {
-        val p = profile()
-        repo.save(p.copy(style = if (p.style == "classic") "match" else "classic"))
-        if (live.running) startLive()
-    }
 
     private fun startLive() {
         closeResults()
@@ -370,7 +413,8 @@ class Controller(private val context: Context, projection: MediaProjection) {
             changeThreshold = p.changeThreshold.toFloat(), partialIntervalMs = 500)
         val ignorePx = ProfileLogic.ignoreOf(p).map { it.toPx(capturer.width, capturer.height) }
         if (p.scope == "screen") {
-            live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen", ignorePx, params, p.style)
+            live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen", ignorePx, params, p.style,
+                prefs.textScale, prefs.longText != "shrink")
             bubble.live = true
             return
         }
@@ -382,7 +426,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             chooseRegion(::startLive)
             return
         }
-        live.start(px, "region", ignorePx, params, p.style)
+        live.start(px, "region", ignorePx, params, p.style, prefs.textScale, prefs.longText != "shrink")
         bubble.live = true
     }
 

@@ -92,7 +92,11 @@ def test_area_overlay_uses_the_source_size_and_colours(qtbot):
     b = ao.blocks["b1"]
     assert b.px == 24  # 36 physical px on a 150% screen
     assert b.fg.getRgb()[:3] == (20, 20, 20) and b.bg.getRgb()[:3] == (250, 250, 250) and b.bg.alpha() == 255
-    ao.set_block("b2", "Một câu rất dài " * 30, (0, 100, 300, 145), (0, 0), font_px=36)
-    long = ao.blocks["b2"]
-    assert long.px < 24 and long.draw_height <= int(30 * 1.5) + 1  # shrinks only when 1.5x the box is not enough
-    assert long.fg.getRgb()[:3] == (255, 255, 255)  # no sampled colours: white on dark
+    ao.set_block("b2", "Một câu khá dài " * 6, (0, 100, 300, 145), (0, 0), font_px=36)
+    grown = ao.blocks["b2"]
+    assert grown.px == 24 and grown.draw_height > 45  # long_text "grow": the box extends, the font stays
+    assert grown.fg.getRgb()[:3] == (255, 255, 255)  # no sampled colours: white on dark
+    shrink = AreaOverlay(Overlay(long_text="shrink"), QRect(0, 0, 1920, 1080), 1.5)
+    qtbot.addWidget(shrink)
+    shrink.set_block("b2", "Một câu khá dài " * 6, (0, 100, 300, 145), (0, 0), font_px=36)
+    assert shrink.blocks["b2"].px < 24 and shrink.blocks["b2"].draw_height <= int(30 * 1.5) + 1

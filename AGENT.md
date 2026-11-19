@@ -289,8 +289,14 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [x] Fixtures dùng chung Python ↔ Kotlin: `live`, `live_blocks`, `live_sentences`, `profiles`.
 - [ ] Nghiệm thu trên game thật + đo FPS trước/sau (chờ người dùng). Release `v0.1.0` (tag khi người dùng xác nhận).
 
-### Phase 5 — Hoàn thiện
-- [ ] Màn hình cài đặt (cả hai nền tảng); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
+### Phase 4c — Hiển thị & tiện ích (trước Phase 5)
+> Người dùng chọn 2026-11-19: Phase 5 chỉ lo model (model lớn từ xa / tối ưu model); phần hiển thị và tiện ích tách ra đây.
+- [ ] **Chữ nghiêng / xoay** (vd bảng nhiệm vụ nghiêng trong Reverse: 1999): nhóm dòng theo khối và góc mà OCR trả về (ML Kit `Line.angle` / cornerPoints; Windows OCR theo vị trí từ) thay vì hình chữ nhật thẳng; tách câu, theo dõi khối và dịch như chữ thẳng; **bản dịch vẽ nghiêng theo đúng góc chữ gốc** (xoay khung + chữ quanh tâm khối), cả Live lẫn toàn màn hình một lần, Windows + Android. Fixtures dùng chung (dòng nghiêng 5°, 15°, chữ dọc → bỏ qua). Không xoay khi góc < 2°.
+- [ ] Màn hình cài đặt đầy đủ: Android đã có ⚙ (kiểu bản dịch, cỡ chữ, bản dịch dài, công cụ); thêm Windows (cửa sổ cài đặt thay cho sửa `config.yaml`); xem/sửa bảng thuật ngữ; tải/cập nhật/xóa model.
+- [ ] Các lỗi nhỏ để lại từ Phase 4b (danh sách trong báo cáo merge `phase-4b`): đọc hồ sơ lỗi mã hóa, thuật ngữ hỏng bị ghi đè, kéo cửa sổ khi Live, v.v.
+
+### Phase 5 — Model: model lớn từ xa + tối ưu model
+> Chỉ tập trung vào chất lượng / tốc độ dịch (người dùng chọn 2026-11-19).
 - [ ] **Engine dịch từ xa bằng mô hình ngôn ngữ lớn** (người dùng chọn 2026-11-19), cả Windows + Android, chọn theo từng game trong hồ sơ (`translator.engine`: `local` mặc định | `gemini` | `openai` | `claude` | `kaggle`):
   - Nhà cung cấp: **Gemini**, **OpenAI**, **Claude** (API chính thức, key của người dùng) và **Kaggle** (`training/kaggle_serve.ipynb`, LLM ~7B 4-bit qua ngrok, token riêng). Tên model cấu hình được (mặc định: model rẻ/nhanh của mỗi hãng, ví dụ Claude `claude-haiku-5-5`).
   - Mục đích: hết "dịch cứng" / dịch thiếu của model nhỏ. Prompt gửi kèm **ngữ cảnh**: 2–3 câu thoại trước, tên nhân vật đang nói, bảng thuật ngữ của game (keep/map), yêu cầu dịch tự nhiên đúng giọng nhân vật, giữ nguyên tên riêng; trả JSON một bản dịch cho mỗi câu (gom các câu của một lần OCR vào một lần gọi).
@@ -300,8 +306,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
   - **Riêng tư & chi phí:** cảnh báo rằng chữ trong game được gửi tới nhà cung cấp; giới hạn số ký tự / ngày (cấu hình được) để tránh hóa đơn bất ngờ; hiện số ký tự đã dùng.
   - Test: client giả lập (đúng / chậm / lỗi 401, 429, 5xx / JSON sai) → fallback đúng; prompt có ngữ cảnh + thuật ngữ; cache theo engine. So sánh chất lượng bằng `windows/scripts/compare_engines.py` (thêm các engine này).
   - Ghi chú: Firefox Translations (Bergamot) hiện chỉ có Việt → Anh, chưa có Anh → Việt (kiểm tra 2026-11-19) — theo dõi, chưa dùng. Lingva công khai không dùng được (bị chặn); Lingva tự chạy Docker có thể thêm như một engine `google` tùy chọn.
-- [ ] **Tiếng Nhật:** OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR japan; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？), fixtures tiếng Nhật; dịch qua engine LLM từ xa ở trên (Gemini / OpenAI / Claude / Kaggle).
-- [ ] **Chữ nghiêng / xoay** (bảng nhiệm vụ nghiêng trong Reverse: 1999): nhóm dòng theo khối của ML Kit / Windows OCR khi các dòng nghiêng, vẽ bản dịch xoay theo góc chữ gốc.
+- [ ] **Tối ưu model trên máy:** đo lại bằng `windows/scripts/compare_engines.py` trên câu thoại thật; Android: thử vinai lượng tử hóa int8 / ONNX (độ trễ trên POCO X8 Pro) hoặc model en→vi khác tốt hơn opus-mt cùng cỡ; Windows: beam / số luồng; dịch theo lô câu của một lần OCR. Chỉ thay model mặc định khi tốt hơn rõ trên bộ câu thật.
 
 ### Phase 6 — Fine-tune trên Kaggle (khi đã có dữ liệu sửa thật)
 - [ ] Notebook `training/kaggle_finetune.ipynb`: GPU T4/P100, checkpoint định kỳ vào `/kaggle/working` (phiên tối đa 12 h, ~30 h GPU/tuần).
@@ -309,10 +314,13 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [ ] Fine-tune `Seq2SeqTrainer`, `fp16=True`, tập con ~500k–1M cặp.
 - [ ] Đánh giá sacreBLEU + COMET trên test PhoMT, so với model gốc. Chỉ thay nếu tốt hơn → export qua `models.yml`, cập nhật manifest trên HF Hub.
 
+### Phase 7 — Tiếng Nhật
+- [ ] OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR japan; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？), fixtures tiếng Nhật; dịch qua engine LLM từ xa của Phase 5 (Gemini / OpenAI / Claude / Kaggle).
+
 ## 16. Ghi chú cho Claude Code
 
 - Làm tuần tự theo Phase; cuối mỗi Phase chạy test + benchmark và báo cáo số liệu.
 - Giữ code đơn giản; tách interface `OcrEngine` / `Translator` để dễ thay engine.
-- Không gọi API dịch online. Không dùng GPU cho OCR/dịch.
+- Mặc định không gọi API dịch online: chỉ engine từ xa người dùng tự bật (Phase 5), luôn có fallback về model trên máy. Không dùng GPU cho OCR/dịch trên máy.
 - Khi không chắc về thư viện (`winocr`, token mBART với CT2, ONNX decoder trên Android), viết script/spike kiểm tra nhỏ trước khi tích hợp.
 - Logic hậu xử lý: Python là bản chuẩn; mọi thay đổi phải cập nhật fixtures dùng chung trước.

@@ -14,6 +14,7 @@ overlay:
   font_size: 14
   opacity: 0.85
   show_source: false
+  long_text: grow          # Live, bản dịch dài: grow = kéo dài khung | shrink = thu nhỏ chữ
 live:
   interval_ms: 300
   active_interval_ms: 100

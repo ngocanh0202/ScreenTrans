@@ -149,4 +149,12 @@ class PipelineTest {
         val p = pipeline(FakeTranslator { "Sự may may may may may" })
         assertEquals("Sự may", p.translateParagraphs(listOf(text("Stealio.")))[0].translation)
     }
+
+    @Test
+    fun `junk marks the model added are removed`() {
+        assertEquals("Một người khách", cleanOutput("A Determined Visitor", "# Một người khách #"))
+        assertEquals("# 1 người hâm mộ", cleanOutput("#1 fan", "# 1 người hâm mộ"))
+        assertEquals("Chào.", cleanOutput("Hi.", "**Chào.**"))
+        assertEquals("Chuyển lên", pipeline(FakeTranslator { "# Chuyển lên #" }).translateParagraphs(listOf(text("She jumps up.")))[0].translation)
+    }
 }
