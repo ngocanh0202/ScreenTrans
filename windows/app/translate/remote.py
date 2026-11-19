@@ -7,6 +7,7 @@ import http.client
 import json
 import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Callable, Literal, Protocol
 
@@ -189,8 +190,10 @@ def make_client(engine: str, key: str, model: str = "", url: str = "", opener: C
         return GeminiClient(key, model, opener)
     if engine == "openai":
         return OpenAiClient(key, model, opener)
-    if engine == "kaggle":
-        return KaggleClient(key, model, url.strip(), opener)
+    if engine == "kaggle":  # the server's host names it: each server gets its own cache namespace
+        url = url.strip()
+        host = urllib.parse.urlparse(url).netloc or "server"
+        return KaggleClient(key, host, url, opener)
     if engine == "claude":
         return ClaudeClient(key, model, http_client)
     raise ValueError(f"not a remote engine: {engine}")

@@ -181,3 +181,89 @@ def test_characters_are_counted_even_when_the_call_fails(tmp_path):  # review I3
     tr, _, _ = make(tmp_path, FakeClient(error=RemoteError("timeout", "Gemini")))
     tr.translate_ctx(["Hello."], {})
     assert tr.usage.used() == 6
+
+
+# ---- 5b-1: per-game context, notes, examples ---------------------------------------------------------------
+from app.translate.context_store import ContextStore  # noqa: E402
+
+
+def make_ctx(tmp_path, client=None, clock=None, today=None):
+    notes = []
+    local = FakeTranslator(lambda t: f"LOCAL {t}", "vinai")
+    day = today or [date(2026, 11, 19)]
+    tr = LlmTranslator("gemini", client or FakeClient(), local, Usage(tmp_path, clock=lambda: day[0]), 50_000,
+                       notes.append, clock=clock or Clock(), contexts=ContextStore(tmp_path))
+    return tr, notes
+
+
+def test_context_notes_and_examples_are_per_game_and_saved(tmp_path):
+    c = FakeClient()
+    tr, _ = make_ctx(tmp_path, c)
+    tr.set_game("a.exe", "Game A notes.", [("Hi.", "Chào em.")])
+    tr.set_speaker("Vertin")
+    tr.translate_ctx(["Line A."], {})
+    tr.set_game("b.exe", "", [])
+    tr.translate_ctx(["Line B."], {})
+    user_b = c.calls[-1][1]
+    assert "Line A." not in user_b and "Game A notes." not in user_b and "Chào em." not in user_b
+    tr2, _ = make_ctx(tmp_path, c)  # a new run (app restarted)
+    tr2.set_game("a.exe", "Game A notes.", [("Hi.", "Chào em.")])
+    tr2.translate_ctx(["Next."], {})
+    user = c.calls[-1][1]
+    assert "Về game:\nGame A notes." in user and "- Hi. → Chào em." in user and "- Vertin: Line A." in user
+
+
+def test_unsafe_game_ids_and_corrupt_files(tmp_path):  # RF1, RF2
+    store = ContextStore(tmp_path)
+    game = "C:" + chr(92) + "games" + chr(92) + "x?.exe"  # backslashes, colon and ? are not allowed in file names
+    store.save(game, [(None, "One.")])
+    assert store.load(game) == [(None, "One.")]
+    path = next((tmp_path / "llm_context").iterdir())
+    path.write_text("{broken", encoding="utf-8")
+    assert store.load(game) == []
+
+
+def test_set_game_clears_a_wrong_key_block_and_back_off(tmp_path):
+    c = FakeClient(error=RemoteError("auth", "Gemini"))
+    tr, _ = make_ctx(tmp_path, c)
+    tr.translate_ctx(["Hi."], {})
+    assert not tr.available()
+    c.error = None
+    tr.set_game("a.exe", "", [])  # settings applied again (e.g. billing fixed on the provider side)
+    assert tr.available() and tr.translate_ctx(["Hi."], {}) == ["LLM Hi."]
+
+
+def test_a_late_result_is_saved_to_the_game_it_was_asked_for(tmp_path):  # RF5
+    tr, _ = make_ctx(tmp_path)
+
+    class SwitchMidCall(FakeClient):
+        def complete(self, system, user, timeout_s):
+            tr.set_game("b.exe", "", [])  # the user switched game while the call was running
+            return super().complete(system, user, timeout_s)
+
+    tr.client = SwitchMidCall()
+    tr.set_game("a.exe", "", [])
+    tr.translate_ctx(["From A."], {})
+    store = ContextStore(tmp_path)
+    assert store.load("a.exe") == [(None, "From A.")] and store.load("b.exe") == []
+
+
+def test_the_limit_notice_comes_again_after_midnight(tmp_path):
+    day = [date(2026, 11, 19)]
+    tr, notes = make_ctx(tmp_path, today=day)
+    tr.daily_limit = 3
+    tr.translate_ctx(["Hello."], {})
+    tr.translate_ctx(["Hello."], {})
+    assert len(notes) == 1
+    day[0] = date(2026, 11, 20)
+    tr.daily_limit = 3
+    tr.translate_ctx(["Hello."], {})  # still over the limit on the new day: told again, once
+    assert len(notes) == 2
+
+
+def test_kaggle_servers_get_their_own_cache_namespace():
+    from app.translate.remote import make_client
+
+    a = make_client("kaggle", "t", url="https://abc.ngrok-free.app/")
+    b = make_client("kaggle", "t", url="https://xyz.ngrok-free.app")
+    assert a.model == "abc.ngrok-free.app" and b.model == "xyz.ngrok-free.app"
