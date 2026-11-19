@@ -177,8 +177,8 @@ class TranslationEngine<I>(
             val lines = b.ocr(requireNotNull(job.image) { "job without image" })
             fun perRegion() = job.regions.map { r ->
                 Postprocess.run(lines.filter { l ->
-                    val cx = l.left + l.width / 2
-                    val cy = l.top + l.height / 2
+                    // the line's centre on screen (tilted lines are boxed in their tilted frame)
+                    val (cx, cy) = screentrans.text.Deskew.unrotate(l.left + l.width / 2, l.top + l.height / 2, l.angle)
                     cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3]
                 })
             }

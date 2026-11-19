@@ -127,13 +127,21 @@ object Postprocess {
     fun run(lines: List<Line>): List<Paragraph> {
         val clusters = mutableListOf<MutableList<Line>>()
         for (line in lines.filter { abs(it.angle) <= MAX_TILT }.sortedBy { it.angle }) {
-            val last = clusters.lastOrNull()
-            if (last != null && line.angle - last.first().angle <= SAME_TILT) last.add(line) else clusters.add(mutableListOf(line))
+            val last = clusters.lastOrNull()  // a new cluster where neighbouring angles are SAME_TILT or more apart
+            if (last != null && line.angle - last.last().angle < SAME_TILT) last.add(line) else clusters.add(mutableListOf(line))
         }
         val parts = clusters.mapNotNull { cluster ->
             val a = median(cluster.map { it.angle })
             val angle = if (abs(a) < SAME_TILT) 0f else a
-            val paras = runFrame(cluster).map { it.copy(angle = angle) }
+            // express every line in the cluster's frame: measured angles differ a little per line
+            val reprojected = cluster.map { l ->
+                if (l.angle == angle) l else {
+                    val (sx, sy) = Deskew.unrotate(l.left + l.width / 2, l.top + l.height / 2, l.angle)
+                    val (cx, cy) = Deskew.rotate(sx, sy, angle)
+                    Line(l.text, cx - l.width / 2, cy - l.height / 2, l.width, l.height, angle)
+                }
+            }
+            val paras = runFrame(reprojected).map { it.copy(angle = angle) }
             paras.firstOrNull()?.let { first -> Deskew.unrotate(first.left, first.top, angle).second to paras }
         }
         return parts.sortedBy { it.first }.flatMap { it.second }

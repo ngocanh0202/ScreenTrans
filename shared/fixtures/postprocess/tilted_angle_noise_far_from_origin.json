@@ -1,0 +1,36 @@
+{
+ "name": "lines of one tilted paragraph measured 15.0 and 14.2 degrees far from the origin stay one paragraph (re-projected into the cluster angle)",
+ "lines": [
+  {
+   "text": "At the moment, you are not too keen on accepting any",
+   "box": [
+    1336.9971064174683,
+    685.1717457744462,
+    600,
+    30
+   ],
+   "angle": 15.0
+  },
+  {
+   "text": "invitations. You feel comfortable and free in the woods.",
+   "box": [
+    1336.5031271063115,
+    747.9556456147013,
+    580,
+    30
+   ],
+   "angle": 14.2
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "At the moment, you are not too keen on accepting any invitations. You feel comfortable and free in the woods.",
+   "sentences": [
+    "At the moment, you are not too keen on accepting any invitations.",
+    "You feel comfortable and free in the woods."
+   ],
+   "angle": 14.6
+  }
+ ]
+}

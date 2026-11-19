@@ -30,11 +30,12 @@ class MlKitOcr : AutoCloseable {
         return text.textBlocks.flatMap { block ->
             block.lines.mapNotNull { line ->
                 val b = line.boundingBox ?: return@mapNotNull null
-                val angle = line.angle
-                val corners = line.cornerPoints
-                if (kotlin.math.abs(angle) >= Deskew.STRAIGHT_DEG && corners != null && corners.size == 4) {
+                val corners = line.cornerPoints?.takeIf { it.size == 4 }?.map { it.x.toFloat() to it.y.toFloat() }
+                // the angle from the corners themselves: no dependence on how ML Kit signs Line.angle
+                val angle = corners?.let(Deskew::angleOf) ?: 0f
+                if (corners != null && kotlin.math.abs(angle) >= Deskew.STRAIGHT_DEG) {
                     // tilted text: the line's box in its straightened frame (see Deskew)
-                    val box = Deskew.fromCorners(corners.map { it.x.toFloat() to it.y.toFloat() }, angle)
+                    val box = Deskew.fromCorners(corners, angle)
                     Line(line.text, box[0], box[1], box[2], box[3], angle)
                 } else {
                     Line(line.text, b.left.toFloat(), b.top.toFloat(), b.width().toFloat(), b.height().toFloat())

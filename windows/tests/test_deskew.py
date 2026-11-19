@@ -49,3 +49,11 @@ def test_bounds_of_a_tilted_box_contains_its_corners():
     for x, y in [(l, t), (r, t), (r, b), (l, b)]:
         sx, sy = unrotate_point(x, y, 20)
         assert xl - 1e-6 <= sx <= xr + 1e-6 and yt - 1e-6 <= sy <= yb + 1e-6
+
+
+def test_i4_a_short_straight_line_with_uneven_word_heights_stays_straight():
+    # "The" (caps) next to "was" (x-height): centres 2 px apart over a 50 px span
+    angle, *_ = from_words([(10, 50, 40, 22), (60, 54, 40, 18)])
+    assert angle == 0
+    angle, *_ = from_words([(10, 50, 40, 20), (60, 52, 40, 20)])
+    assert angle == 0

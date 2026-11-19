@@ -215,4 +215,21 @@ class TranslationEngineTest {
         assertTrue(events.none { it is EngineEvent.JobFailed })
         assertEquals(listOf(1), events.filterIsInstance<EngineEvent.OcrDone>().map { it.jobId })
     }
+
+    @Test
+    fun `i1 a tilted line far from the origin goes to the region it is drawn in`() = runTest {
+        // a 15 degree line drawn centred at screen (800, 1300); its box is in the tilted frame
+        val (dcx, dcy) = screentrans.text.Deskew.rotate(800f, 1300f, 15f)
+        val tilted = listOf(Line("A tilted line of the quest.", dcx - 150f, dcy - 15f, 300f, 30f, 15f))
+        val tr = SentenceTranslator { texts -> texts.map { "VI $it" } }
+        val engine = TranslationEngine({
+            EngineBundle(ocr = { _: String -> tilted }, pipeline = Pipeline(tr, "fake", Glossary(emptyList()), TranslationCache(100)))
+        }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        engine.submit(EngineJob(30, fullScreen = false, image = "frame", liveOcr = true, regions = listOf(intArrayOf(200, 1000, 900, 1600))))
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf("A tilted line of the quest."), events.filterIsInstance<EngineEvent.OcrDone>().single().paragraphs[0].map { it.text })
+    }
 }

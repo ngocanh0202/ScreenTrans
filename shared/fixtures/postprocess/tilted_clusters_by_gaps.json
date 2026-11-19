@@ -1,0 +1,52 @@
+{
+ "name": "angles are clustered by gaps between consecutive angles: 13.5 / 15.0 / 15.6 keep the 15.x paragraph whole",
+ "lines": [
+  {
+   "text": "A different note pinned elsewhere.",
+   "box": [
+    161.7445852760746,
+    206.67736696253138,
+    400,
+    30
+   ],
+   "angle": 13.5
+  },
+  {
+   "text": "At the moment, you are not too keen on accepting any",
+   "box": [
+    1336.9971064174683,
+    685.1717457744462,
+    600,
+    30
+   ],
+   "angle": 15.0
+  },
+  {
+   "text": "invitations. You feel comfortable and free in the woods.",
+   "box": [
+    1354.6582675581637,
+    707.9888813906723,
+    580,
+    30
+   ],
+   "angle": 15.6
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "A different note pinned elsewhere.",
+   "sentences": [
+    "A different note pinned elsewhere."
+   ]
+  },
+  {
+   "kind": "text",
+   "text": "At the moment, you are not too keen on accepting any invitations. You feel comfortable and free in the woods.",
+   "sentences": [
+    "At the moment, you are not too keen on accepting any invitations.",
+    "You feel comfortable and free in the woods."
+   ]
+  }
+ ]
+}

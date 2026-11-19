@@ -33,6 +33,10 @@ object Deskew {
         return floatArrayOf(dcx - width / 2, dcy - height / 2, width, height)
     }
 
+    /** Angle (degrees, clockwise) of a line from its corners (top-left -> top-right), sign-proof. */
+    fun angleOf(points: List<Pair<Float, Float>>): Float =
+        Math.toDegrees(kotlin.math.atan2((points[1].second - points[0].second).toDouble(), (points[1].first - points[0].first).toDouble())).toFloat()
+
     /** Screen bounding box [l, t, r, b] of a tilted-frame box [l, t, r, b] (e.g. to crop the image). */
     fun bounds(box: FloatArray, angle: Float): FloatArray {
         if (angle == 0f) return box.copyOf()
