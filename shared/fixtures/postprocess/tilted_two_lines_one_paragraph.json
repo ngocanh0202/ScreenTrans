@@ -1,0 +1,36 @@
+{
+ "name": "two lines tilted 15 degrees (tilted frame boxes) make one paragraph",
+ "lines": [
+  {
+   "text": "At the moment, you are not too keen on accepting any",
+   "box": [
+    100,
+    300,
+    600,
+    30
+   ],
+   "angle": 15
+  },
+  {
+   "text": "invitations. You feel comfortable and free in the woods.",
+   "box": [
+    100,
+    340,
+    580,
+    30
+   ],
+   "angle": 15
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "At the moment, you are not too keen on accepting any invitations. You feel comfortable and free in the woods.",
+   "sentences": [
+    "At the moment, you are not too keen on accepting any invitations.",
+    "You feel comfortable and free in the woods."
+   ],
+   "angle": 15
+  }
+ ]
+}

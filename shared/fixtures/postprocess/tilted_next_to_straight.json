@@ -1,0 +1,54 @@
+{
+ "name": "a tilted block next to a straight one is never merged with it",
+ "lines": [
+  {
+   "text": "At the moment, you are not too keen on accepting any",
+   "box": [
+    100,
+    300,
+    600,
+    30
+   ],
+   "angle": 15
+  },
+  {
+   "text": "invitations. You feel comfortable and free in the woods.",
+   "box": [
+    100,
+    340,
+    580,
+    30
+   ],
+   "angle": 15
+  },
+  {
+   "text": "Where are you going?",
+   "box": [
+    100,
+    360,
+    300,
+    30
+   ],
+   "angle": 0
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "At the moment, you are not too keen on accepting any invitations. You feel comfortable and free in the woods.",
+   "sentences": [
+    "At the moment, you are not too keen on accepting any invitations.",
+    "You feel comfortable and free in the woods."
+   ],
+   "angle": 15
+  },
+  {
+   "kind": "text",
+   "text": "Where are you going?",
+   "sentences": [
+    "Where are you going?"
+   ],
+   "angle": 0
+  }
+ ]
+}

@@ -1,10 +1,13 @@
 package screentrans.text
 
+import kotlin.math.abs
+
 /**
  * OCR lines -> paragraphs (name / text) -> sentences. Port of windows/app/text/postprocess.py;
  * the rules live in shared/fixtures/postprocess/README.md and both versions pass the same fixtures.
  */
-data class Line(val text: String, val left: Float, val top: Float, val width: Float, val height: Float) {
+/** [angle]: degrees, clockwise; the box is in the frame rotated by -angle ([Deskew]). */
+data class Line(val text: String, val left: Float, val top: Float, val width: Float, val height: Float, val angle: Float = 0f) {
     val right: Float get() = left + width
     val bottom: Float get() = top + height
 }
@@ -21,6 +24,8 @@ data class Paragraph(
     val bottom: Float,
     /** Median height of the OCR lines (Live: the translation uses the same font size). */
     val lineHeight: Float = 0f,
+    /** Tilted text: the box is in the frame rotated by -angle ([Deskew]). */
+    val angle: Float = 0f,
 )
 
 object Postprocess {
@@ -115,10 +120,30 @@ object Postprocess {
         return if (v.size % 2 == 1) v[mid] else (v[mid - 1] + v[mid]) / 2f
     }
 
+    private const val MAX_TILT = 60f   // more than this is vertical text / noise: dropped
+    private const val SAME_TILT = 2f   // lines within this many degrees share a tilted frame
+
+    /** Paragraphs of the OCR lines; tilted lines are grouped per angle (shared fixtures README). */
     fun run(lines: List<Line>): List<Paragraph> {
+        val clusters = mutableListOf<MutableList<Line>>()
+        for (line in lines.filter { abs(it.angle) <= MAX_TILT }.sortedBy { it.angle }) {
+            val last = clusters.lastOrNull()
+            if (last != null && line.angle - last.first().angle <= SAME_TILT) last.add(line) else clusters.add(mutableListOf(line))
+        }
+        val parts = clusters.mapNotNull { cluster ->
+            val a = median(cluster.map { it.angle })
+            val angle = if (abs(a) < SAME_TILT) 0f else a
+            val paras = runFrame(cluster).map { it.copy(angle = angle) }
+            paras.firstOrNull()?.let { first -> Deskew.unrotate(first.left, first.top, angle).second to paras }
+        }
+        return parts.sortedBy { it.first }.flatMap { it.second }
+    }
+
+    /** The straight-text rules, for lines that share one (possibly tilted) frame. */
+    private fun runFrame(lines: List<Line>): List<Paragraph> {
         val cleaned = lines.mapNotNull { line ->
             val t = clean(line.text)
-            if (t.any { it.isLetter() } && t.length > 1) Line(t, line.left, line.top, line.width, line.height) else null
+            if (t.any { it.isLetter() } && t.length > 1) Line(t, line.left, line.top, line.width, line.height, line.angle) else null
         }
         if (cleaned.isEmpty()) return emptyList()
         val h = median(cleaned.map { it.height })

@@ -23,14 +23,13 @@ class PostprocessFixturesTest {
             val lines = root["lines"].asJsonArray.map { e ->
                 val o = e.asJsonObject
                 val b = o["box"].asJsonArray.map { it.asFloat }
-                Line(o["text"].asString, b[0], b[1], b[2], b[3])
+                Line(o["text"].asString, b[0], b[1], b[2], b[3], o["angle"]?.asFloat ?: 0f)
             }
-            val expected = root["expected"].asJsonArray.map { e ->
-                val o = e.asJsonObject
-                Triple(o["kind"].asString, o["text"].asString, o["sentences"].asJsonArray.map { it.asString })
-            }
-            val got = Postprocess.run(lines).map { Triple(it.kind.name.lowercase(), it.text, it.sentences) }
-            assertEquals(expected, got)
+            val wantJson = root["expected"].asJsonArray.map { it.asJsonObject }
+            val expected = wantJson.map { o -> Triple(o["kind"].asString, o["text"].asString, o["sentences"].asJsonArray.map { it.asString }) }
+            val paras = Postprocess.run(lines)
+            assertEquals(expected, paras.map { Triple(it.kind.name.lowercase(), it.text, it.sentences) })
+            wantJson.zip(paras).forEach { (o, p) -> o["angle"]?.let { assertEquals(it.asFloat, p.angle, 0.01f, "angle") } }
         }
     }
 
