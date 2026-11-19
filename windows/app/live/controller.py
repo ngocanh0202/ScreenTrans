@@ -12,6 +12,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, QTimer
 
 from app.live.blocks import BlockTracker, RateLimiter
+from app.live.filter import worth_translating
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
 from app.live.sentences import SentenceGate
@@ -21,6 +22,7 @@ from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
 
 Region = tuple[int, int, int, int]  # x, y, w, h in physical pixels
+KEPT_FINAL_MS = 1500  # a block whose text did not change for this long has stopped typing / fading in
 
 
 @dataclass
@@ -34,6 +36,7 @@ class _BlockState:
     font_px: float | None = None        # the source text's size (always used)
     colors: BlockStyle | None = None    # sampled colours ("match" style), None = white on dark
     sampled: bool = False
+    stable_since: int = 0               # when its text last changed
 
 
 class LiveController(QObject):
@@ -245,29 +248,42 @@ class LiveController(QObject):
         for i, paragraphs in enumerate(paragraphs_per_region[: len(self.regions)]):
             if paragraphs is None:
                 continue
-            d = self._trackers[i].update(paragraphs)
+            d = self._trackers[i].update([p for p in paragraphs if worth_translating(p)])  # no OCR noise / labels
             carry: dict[str, str] = {}  # translations of blocks that only got a new key (moved / re-read)
             for b in d.removed:
                 old = self._blocks.pop((i, b.key), None)
                 if old is not None:
                     carry.update({src: vi for src, vi in old.shown.values()})
                 self._overlays[i].remove_block(b.key)
-            kept = {b.key for b in d.kept}
+            now = self._clock()
+            # same text for KEPT_FINAL_MS: stopped typing, even while the screen animates (and not just faded in)
+            kept = {b.key for b in d.kept
+                    if (st := self._blocks.get((i, b.key))) is not None and now - st.stable_since >= KEPT_FINAL_MS}
             for b in d.added + d.grown + d.kept:
                 self._style_block(i, b.key, b.paragraph, images[i] if i < len(images) else None)
                 # a block read twice with the same text has stopped typing, even while the screen animates
                 request += self._update_block(i, b.key, b.paragraph, final or b.key in kept, carry)
-        if request:
-            from app.gui.worker import Job
+        self._request(request)
 
-            tr_id = self._next_id()
-            self._requests[tr_id] = request
-            self._inflight.update(request)
-            groups: list[list[Paragraph]] = [[] for _ in self.regions]
-            for i, key, _, src in request:
-                st = self._blocks[(i, key)]
-                groups[i].append(Paragraph("text", src, [src], *st.box))
-            self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups))
+    def _request(self, request: list) -> None:
+        if not request:
+            return
+        from app.gui.worker import Job
+
+        tr_id = self._next_id()
+        self._requests[tr_id] = request
+        self._inflight.update(request)
+        groups: list[list[Paragraph]] = [[] for _ in self.regions]
+        for i, key, _, src in request:
+            st = self._blocks[(i, key)]
+            groups[i].append(Paragraph("text", src, [src], *st.box))
+        self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups))
+
+    def _missing(self) -> list:
+        """Finished sentences that are neither shown nor being translated."""
+        return [(i, key, k, st.sentences[k]) for (i, key), st in self._blocks.items() if st.kind == "text"
+                for k in range(st.done)
+                if k not in st.shown and (i, key, k, st.sentences[k]) not in self._inflight]
 
     def _style_block(self, i: int, key: str, p: Paragraph, image) -> None:
         """Font size from the source line height; colours sampled once from the block's pixels."""
@@ -289,6 +305,8 @@ class LiveController(QObject):
             st.sentences, st.done = [p.text], 1
             self._draw(i, key)
             return []
+        if list(p.sentences) != st.sentences or not st.sentences:
+            st.stable_since = self._clock()
         st.done = SentenceGate.done(p.sentences, st.sentences or None, final)
         st.sentences = list(p.sentences)
         st.shown = {k: v for k, v in st.shown.items() if k < len(st.sentences) and st.sentences[k] == v[0]}
@@ -362,7 +380,11 @@ class LiveController(QObject):
         self._ocr_images.pop(job_id, None)
         if job_id == self.ocr_job:
             self.ocr_job = None
-        self._finish(job_id)  # sentences not shown are requested again on the next OCR
+        was_translation = job_id in self._requests
+        self._finish(job_id)
+        if was_translation and why == "superseded" and self.running:
+            # The screen may stay still now (the line is complete): ask again at once, not on the next OCR.
+            self._request(self._missing())
 
     def _finish(self, job_id: int) -> None:
         for item in self._requests.pop(job_id, []):

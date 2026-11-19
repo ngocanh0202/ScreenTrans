@@ -172,3 +172,13 @@ def test_set_game_switches_glossary_and_overrides():
     p = _p(FakeTranslator(lambda s: "VI " + s), overrides={"A.": "a"})
     p.set_game("other.exe", Glossary([]), {"B.": "b"})
     assert p.game == "other.exe" and p._translate_sentences(["A.", "B."]) == {"A.": "VI A.", "B.": "b"}
+
+
+
+def test_a_looping_translation_is_collapsed():
+    from app.pipeline import collapse_repeats
+
+    assert collapse_repeats("Sự may may may may may may may may may may ...") == "Sự may ..."
+    assert collapse_repeats("Từ từ dần dần thôi.") == "Từ từ dần dần thôi."  # Vietnamese doubles stay
+    tr = FakeTranslator(lambda s: "Sự may may may may may")
+    assert _p(tr)._translate_sentences(["Stealio."]) == {"Stealio.": "Sự may"}

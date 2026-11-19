@@ -27,6 +27,21 @@ class PipelineResult:
     timings_ms: dict[str, float]
 
 
+def collapse_repeats(text: str) -> str:
+    """A model stuck in a loop ("may may may may"): a word repeated 3+ times in a row is kept once
+    (Vietnamese doubles such as "từ từ" stay)."""
+    words = text.split(" ")
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        j = i
+        while j + 1 < len(words) and words[j + 1].lower() == words[i].lower() and words[i]:
+            j += 1
+        out.extend(words[i:j + 1] if j - i < 2 else [words[i]])
+        i = j + 1
+    return " ".join(out)
+
+
 class Pipeline:
     """Use one instance from a single worker thread (glossary/tracker/cache state is not locked)."""
 
@@ -105,6 +120,7 @@ class Pipeline:
         retry: list[str] = []
         for s, (_, values), out in zip(todo, protected, outputs):
             restored = self.glossary.restore(out, values) if values else out
+            restored = collapse_repeats(restored) if restored is not None else None
             if restored is None:
                 retry.append(s)
             else:
