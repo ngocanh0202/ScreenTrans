@@ -61,6 +61,15 @@ object Layout {
         }
     }
 
+    /**
+     * Top-left of a [size] px square button at the real bottom-right corner of [box] (l, t, r, b in a frame
+     * tilted by [angle] around (0, 0)), kept inside the screen.
+     */
+    fun cornerOnScreen(box: FloatArray, angle: Float, size: Int, screenW: Int, screenH: Int): Pair<Int, Int> {
+        val (cx, cy) = screentrans.text.Deskew.unrotate(box[2], box[3], angle)
+        return (cx - size).toInt().coerceIn(0, maxOf(0, screenW - size)) to (cy - size / 2).toInt().coerceIn(0, maxOf(0, screenH - size))
+    }
+
     private val SCALES = listOf(0.8f, 1f, 1.25f, 1.5f)
 
     /** Translation text size steps (settings "Cỡ chữ"). */

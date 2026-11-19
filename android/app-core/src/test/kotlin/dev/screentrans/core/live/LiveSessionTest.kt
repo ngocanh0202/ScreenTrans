@@ -18,9 +18,11 @@ class LiveSessionTest {
         val lineHeights = LinkedHashMap<String, Float>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
         override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
-        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float) {
+        val angles = LinkedHashMap<String, Float>()
+        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
             blocks["$region:$key"] = text
             lineHeights["$region:$key"] = lineHeight
+            angles["$region:$key"] = angle
         }
         override fun removeBlock(region: Int, key: String) {
             blocks.remove("$region:$key")
@@ -259,5 +261,15 @@ class LiveSessionTest {
         s.onOcrDone(50, listOf(listOf(para("Bye."))))
         s.onJobFailed(h.translate.last().first, superseded = false)  // a real error: wait for the next OCR
         assertEquals(n + 1, h.translate.size)
+    }
+
+    @Test
+    fun `tilted blocks keep their angle`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there friend.").copy(angle = -10f))))
+        translate(s, h.translate.last())
+        assertEquals(-10f, h.angles.values.single())
     }
 }

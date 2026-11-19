@@ -157,4 +157,11 @@ class PipelineTest {
         assertEquals("Chào.", cleanOutput("Hi.", "**Chào.**"))
         assertEquals("Chuyển lên", pipeline(FakeTranslator { "# Chuyển lên #" }).translateParagraphs(listOf(text("She jumps up.")))[0].translation)
     }
+
+    @Test
+    fun `segments keep the angle of tilted paragraphs`() {
+        val p = Paragraph(Kind.TEXT, "Hi.", listOf("Hi."), 0f, 0f, 10f, 10f, 0f, -12f)
+        assertEquals(-12f, pipeline(FakeTranslator { it }).translateParagraphs(listOf(p))[0].angle)
+        assertEquals(-12f, pipeline(FakeTranslator { it }).iterSentences(listOf(p)).last()[0].angle)
+    }
 }

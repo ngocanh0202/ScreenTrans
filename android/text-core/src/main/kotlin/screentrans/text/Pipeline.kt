@@ -90,6 +90,8 @@ data class Segment(
     val top: Float,
     val right: Float,
     val bottom: Float,
+    /** Tilted text: the box is in the frame rotated by -angle ([Deskew]). */
+    val angle: Float = 0f,
 )
 
 /** Port of windows/app/pipeline.py (without OCR). Use one instance from a single thread. */
@@ -160,8 +162,8 @@ class Pipeline(
     }
 
     private fun segment(p: Paragraph, translated: Map<String, String>) =
-        if (p.kind == Kind.NAME) Segment(Kind.NAME, p.text, null, p.left, p.top, p.right, p.bottom)
-        else Segment(Kind.TEXT, p.text, p.sentences.joinToString(" ") { translated.getValue(it) }, p.left, p.top, p.right, p.bottom)
+        if (p.kind == Kind.NAME) Segment(Kind.NAME, p.text, null, p.left, p.top, p.right, p.bottom, p.angle)
+        else Segment(Kind.TEXT, p.text, p.sentences.joinToString(" ") { translated.getValue(it) }, p.left, p.top, p.right, p.bottom, p.angle)
 
     /** One translator batch for every sentence (region mode). */
     fun translateParagraphs(paragraphs: List<Paragraph>): List<Segment> {
@@ -177,8 +179,8 @@ class Pipeline(
         observe(textSentences)
         val done = HashMap<String, String>()
         fun snapshot() = paragraphs.map { p ->
-            if (p.kind == Kind.NAME) Segment(Kind.NAME, p.text, null, p.left, p.top, p.right, p.bottom)
-            else Segment(Kind.TEXT, p.text, p.sentences.joinToString(" ") { done[it] ?: "…" }, p.left, p.top, p.right, p.bottom)
+            if (p.kind == Kind.NAME) Segment(Kind.NAME, p.text, null, p.left, p.top, p.right, p.bottom, p.angle)
+            else Segment(Kind.TEXT, p.text, p.sentences.joinToString(" ") { done[it] ?: "…" }, p.left, p.top, p.right, p.bottom, p.angle)
         }
         val order = textSentences.distinct()
         if (order.isEmpty()) {

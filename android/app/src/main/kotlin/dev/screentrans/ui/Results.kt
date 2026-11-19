@@ -172,14 +172,15 @@ class FullScreenLayer(
         canvas.save()
         canvas.translate(-onScreen[0].toFloat(), -onScreen[1].toFloat())  // blocks are in screen coords
         for (b in blocks) {
+            canvas.save()
+            if (b.segment.angle != 0f) canvas.rotate(b.segment.angle)  // tilted text: its frame turns around (0, 0)
             if (b.layout == null) {
                 canvas.drawText(b.segment.source, b.rect.left, b.rect.bottom - namePaint.descent(), namePaint)
-                continue
+            } else {
+                canvas.drawRoundRect(b.rect, pad, pad, bg)
+                canvas.translate(b.rect.left + pad, b.rect.top + pad)
+                b.layout.draw(canvas)
             }
-            canvas.drawRoundRect(b.rect, pad, pad, bg)
-            canvas.save()
-            canvas.translate(b.rect.left + pad, b.rect.top + pad)
-            b.layout.draw(canvas)
             canvas.restore()
         }
         canvas.restore()
@@ -195,7 +196,10 @@ class FullScreenLayer(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked != MotionEvent.ACTION_UP) return true
-        val hit = blocks.lastOrNull { it.layout != null && it.rect.contains(e.rawX, e.rawY) }
+        val hit = blocks.lastOrNull { b ->
+            val (x, y) = screentrans.text.Deskew.rotate(e.rawX, e.rawY, b.segment.angle)  // into the block's frame
+            b.layout != null && b.rect.contains(x, y)
+        }
         if (hit == null) onClose() else onBlockTapped(hit.segment)
         return true
     }

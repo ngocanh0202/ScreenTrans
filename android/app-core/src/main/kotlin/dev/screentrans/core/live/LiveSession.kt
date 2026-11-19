@@ -11,7 +11,7 @@ interface LiveHost {
     /** Submit a sentence-by-sentence translation of [paragraphs] (per region); return its id. */
     fun requestTranslate(paragraphs: List<List<Paragraph>>): Int
     /** Draw (or redraw in place) one text block's translation over it; [box] = l, t, r, b in frame pixels. */
-    fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float)
+    fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float)
     fun removeBlock(region: Int, key: String)
 }
 
@@ -40,6 +40,7 @@ class LiveSession(
         var drawn = ""
         var lineHeight = 0f
         var stableSince = 0  // when its text last changed
+        var angle = 0f       // tilted text
     }
 
     private data class Item(val region: Int, val key: String, val index: Int, val source: String)
@@ -136,6 +137,7 @@ class LiveSession(
         val st = blocks.getOrPut(i to key) { BlockState() }
         st.kind = p.kind
         if (p.lineHeight > 0) st.lineHeight = p.lineHeight
+        st.angle = p.angle
         st.box = floatArrayOf(p.left, p.top, p.right, p.bottom)
         if (p.kind == Kind.NAME) {
             st.sentences = listOf(p.text)
@@ -162,7 +164,7 @@ class LiveSession(
         else (0 until st.done).mapNotNull { st.shown[it]?.second }.joinToString(" ")
         if (text == st.drawn) return
         st.drawn = text
-        if (text.isEmpty()) host.removeBlock(i, key) else host.setBlock(i, key, text, st.box, st.kind, st.lineHeight)
+        if (text.isEmpty()) host.removeBlock(i, key) else host.setBlock(i, key, text, st.box, st.kind, st.lineHeight, st.angle)
         changedOverlay()
     }
 

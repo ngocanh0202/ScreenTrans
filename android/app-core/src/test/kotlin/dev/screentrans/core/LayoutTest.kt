@@ -82,4 +82,15 @@ class BubbleClampTest {
         assertEquals(1.5f, Layout.nextScale(1.5f))
         assertEquals(0.8f, Layout.prevScale(0.8f))
     }
+
+    @Test
+    fun `the expand button sits at the real bottom-right corner of a tilted box, inside the screen`() {
+        // a 300 x 60 box at (100, 200) in a frame tilted 20 degrees around (0, 0)
+        val (x, y) = Layout.cornerOnScreen(floatArrayOf(100f, 200f, 400f, 260f), 20f, size = 40, screenW = 1080, screenH = 2400)
+        val cx = (400 * Math.cos(Math.toRadians(20.0)) - 260 * Math.sin(Math.toRadians(20.0))).toFloat()
+        val cy = (400 * Math.sin(Math.toRadians(20.0)) + 260 * Math.cos(Math.toRadians(20.0))).toFloat()
+        assertEquals((cx - 40).toInt(), x); assertEquals((cy - 20).toInt(), y)
+        val (ex, ey) = Layout.cornerOnScreen(floatArrayOf(900f, 2300f, 1200f, 2420f), 0f, size = 40, screenW = 1080, screenH = 2400)
+        assertEquals(1040, ex); assertEquals(2360, ey)  // clamped inside the screen
+    }
 }
