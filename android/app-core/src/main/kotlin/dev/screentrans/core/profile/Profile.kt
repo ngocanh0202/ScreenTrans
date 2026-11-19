@@ -21,7 +21,8 @@ data class Profile(
     val style: String = "match",
     /** OCR engine for this game: "auto" = the platform default (Android: mlkit). */
     val ocr: String = "auto",
-    val engine: String = "local",  // translation engine: local | gemini | openai | claude | kaggle
+    val engine: String = "local",
+    val llmNotes: String = "",  // about the game / characters, sent with LLM requests  // translation engine: local | gemini | openai | claude | kaggle
     val regions: List<List<Double>> = emptyList(),
     val ignore: List<List<Double>> = emptyList(),
     val intervalMs: Int = 300,
@@ -35,6 +36,7 @@ data class Profile(
         addProperty("name", name)
         addProperty("ocr", ocr)
         addProperty("engine", engine)
+        addProperty("llm_notes", llmNotes)
         add("live", JsonObject().apply {
             addProperty("scope", scope)
             addProperty("style", style)
@@ -100,6 +102,7 @@ data class Profile(
                 name = str(o["name"]) ?: "",
                 ocr = str(o["ocr"])?.takeIf { it.isNotEmpty() } ?: "auto",
                 engine = str(o["engine"])?.takeIf { it in ENGINES } ?: "local",
+                llmNotes = str(o["llm_notes"]) ?: "",
                 scope = str(live["scope"])?.takeIf { it in SCOPES } ?: "region",
                 style = str(live["style"])?.takeIf { it in STYLES } ?: "match",
                 regions = rels(o["regions"]),

@@ -18,6 +18,7 @@
   "glossary": null,
   "overrides": {},
   "ocr": "auto",
-  "engine": "local"
+  "engine": "local",
+  "llm_notes": ""
  }
 }
