@@ -32,3 +32,15 @@ def test_settings_file_round_trip_and_junk(tmp_path):
     assert load_settings(tmp_path) == {"text_scale": 1.5, "long_text": "shrink", "model": "opus-mt-en-vi"}
     (tmp_path / "settings.json").write_text("{broken", encoding="utf-8")
     assert load_settings(tmp_path) == {}
+
+
+def test_an_engine_missing_on_this_machine_is_never_returned(qtbot, monkeypatch):
+    """CI / the exe have no RapidOCR: a saved "rapid" or a programmatic pick still gives Windows OCR."""
+    from app.ocr import engines
+
+    monkeypatch.setattr(engines, "available", lambda name: name == "windows")
+    d = SettingsDialog(SettingsValues(**{**V.__dict__, "ocr": "rapid"}))
+    qtbot.addWidget(d)
+    assert d.values().ocr == "windows"
+    d.ocr.setCurrentIndex(d.ocr.findData("rapid"))
+    assert d.values().ocr == "windows"

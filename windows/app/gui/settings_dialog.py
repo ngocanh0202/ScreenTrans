@@ -79,7 +79,9 @@ class SettingsDialog(QDialog):
             ok = engines.available(e.name)
             self.ocr.model().item(self.ocr.count() - 1).setEnabled(ok)
             notes.append(f"• {e.label}: {e.note}" + ("" if ok else " Chưa có trong bản này (cần cài thêm ~190 MB, xem windows/requirements-rapidocr.txt)."))
-        self.ocr.setCurrentIndex(max(0, self.ocr.findData(values.ocr if values.ocr != "auto" else "windows")))
+        self._ocr_ok = {e.name for e in engines.WINDOWS if engines.available(e.name)}
+        wanted = values.ocr if values.ocr in self._ocr_ok else "windows"  # a saved engine missing here: the default
+        self.ocr.setCurrentIndex(max(0, self.ocr.findData(wanted)))
         self.ocr_note = QLabel("\n".join(notes))
         self.ocr_note.setWordWrap(True)
         self.ocr_note.setStyleSheet("color: #666;")
@@ -111,5 +113,5 @@ class SettingsDialog(QDialog):
             long_text="shrink" if self.shrink.isChecked() else "grow",
             model=str(self.model.currentData()),
             hotkeys=self._hotkeys,
-            ocr=str(self.ocr.currentData()),
+            ocr=str(self.ocr.currentData()) if self.ocr.currentData() in self._ocr_ok else "windows",
         )
