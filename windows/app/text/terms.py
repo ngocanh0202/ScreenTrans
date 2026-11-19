@@ -48,6 +48,8 @@ def suggest_names(sentences: list[str], common: set[str], known: set[str]) -> li
         if not run or all(core(toks[i]).lower() in common for i in run):
             return
         name = span(toks, run[0], run[-1])
+        if name[-2:].lower() in ("'s", "’s"):  # "Vertin's book": the name is "Vertin"
+            name = name[:-2]
         key = name.lower()
         if key not in seen and key not in known_lower:
             seen.add(key)

@@ -44,7 +44,8 @@ object Terms {
                 }
             }
             if (run.isEmpty() || run.all { core(toks[it]).lowercase() in common }) return
-            val name = span(toks, run.first(), run.last())
+            var name = span(toks, run.first(), run.last())
+            if (name.lowercase().endsWith("'s") || name.lowercase().endsWith("’s")) name = name.dropLast(2)  // "Vertin's book"
             val key = name.lowercase()
             if (key !in knownLower && seen.add(key)) out.add(name)
         }

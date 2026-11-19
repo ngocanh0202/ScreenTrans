@@ -311,3 +311,14 @@ def test_a_correction_becomes_an_example_for_the_next_call(tmp_path):
     p.correct("You're late.", "Bạn muộn rồi.", "Em đến muộn đấy.")
     p.translate_paragraphs([Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)])
     assert "- You're late. → Em đến muộn đấy." in c.calls[-1][1]
+
+
+def test_a_locked_usage_file_does_not_fail_the_job(tmp_path, monkeypatch):  # review M4
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+
+    def locked(chars):
+        raise PermissionError("usage.json is locked")
+
+    monkeypatch.setattr(tr.usage, "add", locked)
+    assert tr.translate_ctx(["Hi."], {}) == ["LLM Hi."]

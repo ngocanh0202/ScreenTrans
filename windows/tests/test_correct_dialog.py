@@ -71,3 +71,17 @@ def test_remove_a_term_and_add_a_suggested_name(qtbot):
     assert d.parsed_terms() == [("Madam Constantine", None)] and d.suggestions.count() == 0
     d.remove_term(d.term_list.item(0))
     assert d.parsed_terms() == []
+
+
+def test_enter_in_the_fixed_translation_adds_the_term_and_keeps_the_dialog_open(qtbot):  # review I1
+    from PySide6.QtCore import Qt
+
+    d = CorrectDialog(LONG)
+    qtbot.addWidget(d)
+    d.show()
+    picker = d.pickers[0]
+    click(qtbot, picker, 5)
+    d.target.setFocus()
+    d.target.setText("Hằng")  # (QTest cannot type non-Latin-1 characters)
+    qtbot.keyClick(d.target, Qt.Key_Return)
+    assert d.parsed_terms() == [("Constantine", "Hằng")] and d.isVisible() and d.result() == 0

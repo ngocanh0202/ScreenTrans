@@ -3,7 +3,8 @@
 Python (`windows/app/text/terms.py`) is the reference; the Kotlin port (5b-2) must pass the same files.
 Common words: `shared/glossary/common_words_en.txt` (lowercase, one per line).
 
-Tokens: the sentence split on whitespace. A token's *core* is the token with leading / trailing
+Tokens: the sentence split on Unicode whitespace, like Python `str.split()` (spaces, tabs, newlines, NBSP
+U+00A0, thin space U+2009 and the other `Zs` spaces). A token's *core* is the token with leading / trailing
 punctuation removed (`.,!?;:"'()[]…“”‘’—-`). Abbreviations: `Mr Mrs Ms Dr St Mt Jr Sr` (core, any case).
 
 `span.json` — `span(sentence, from, to)`: tokens `from..to` (inclusive) joined with one space, then leading
@@ -16,4 +17,4 @@ last core is an abbreviation (`Ms.`).
 - At the start of a sentence, leading tokens whose core is a common word (and not an abbreviation) are
   dropped from the run.
 - A run is a name when at least one core is not a common word (case-insensitive).
-- The name is `span` of the run. Unique (case-insensitive), first-seen order, minus `known` (case-insensitive).
+- The name is `span` of the run, then a trailing `'s` / `’s` removed ("Vertin's book" → `Vertin`). Unique (case-insensitive), first-seen order, minus `known` (case-insensitive).

@@ -80,7 +80,10 @@ class LlmTranslator:
             return None
         system, user = build_messages(texts, self._context, self._speaker, glossary, self._notes, self._examples)
         game, speaker = self._game, self._speaker  # the reply belongs to this game even if it changes meanwhile
-        self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
+        try:
+            self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
+        except OSError:
+            pass  # usage.json locked (scanner / indexer): never fail the translation over the counter
         future = self._pool.submit(self.client.complete, system, user, self.timeout_s)
         try:
             reply = future.result(timeout=self.timeout_s)

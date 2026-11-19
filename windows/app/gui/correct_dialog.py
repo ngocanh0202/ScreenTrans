@@ -5,7 +5,7 @@ Terms are picked, not typed: select words of a source sentence (click, shift-cli
 """
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QPushButton, QScrollArea, QVBoxLayout, QWidget)
@@ -81,7 +81,7 @@ class CorrectDialog(QDialog):
         self.fixed_button = QPushButton("Dịch cố định")
         self.keep_button.clicked.connect(lambda: self._add_picked(None))
         self.fixed_button.clicked.connect(lambda: self._add_picked(self.target.text().strip() or ""))
-        self.target.returnPressed.connect(self.fixed_button.click)
+        self.target.installEventFilter(self)  # Enter adds the term; it must not press "Save" and close the window
         bar = QHBoxLayout()
         bar.addWidget(self.keep_button)
         bar.addWidget(self.target, 1)
@@ -118,6 +118,12 @@ class CorrectDialog(QDialog):
             layout.addWidget(self.suggestions)
         layout.addWidget(buttons)
         self.resize(680, min(640, 300 + 70 * len(self._segments)))
+
+    def eventFilter(self, obj, event):
+        if obj is self.target and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.fixed_button.click()
+            return True
+        return super().eventFilter(obj, event)
 
     # ---- picking ------------------------------------------------------------------------------------------
     def _enable_bar(self, on: bool) -> None:
