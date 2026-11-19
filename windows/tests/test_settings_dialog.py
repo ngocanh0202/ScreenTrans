@@ -44,3 +44,25 @@ def test_an_engine_missing_on_this_machine_is_never_returned(qtbot, monkeypatch)
     assert d.values().ocr == "windows"
     d.ocr.setCurrentIndex(d.ocr.findData("rapid"))
     assert d.values().ocr == "windows"
+
+
+def test_translation_engines_key_model_and_privacy_warning(qtbot):
+    d = SettingsDialog(SettingsValues(**{**V.__dict__, "saved_keys": ("gemini",), "used_today": 1234}), game="game.exe")
+    qtbot.addWidget(d)
+    assert [d.engine.itemData(i) for i in range(d.engine.count())] == ["local", "gemini", "openai", "claude", "kaggle"]
+    assert d.engine.currentData() == "local" and not d.key.isEnabled() and d.privacy.isHidden()
+    assert "1234" in d.usage_label.text()
+    d.engine.setCurrentIndex(d.engine.findData("gemini"))
+    assert d.key.isEnabled() and not d.privacy.isHidden() and "Gemini" in d.privacy.text()
+    assert d.key.text() == "" and "đã lưu" in d.key.placeholderText()  # a saved key is never shown
+    assert d.values().keys == {}  # untouched: nothing to save
+    d.engine.setCurrentIndex(d.engine.findData("claude"))
+    assert d.llm_model.text() == "claude-opus-5-5"
+    d.key.setText("  sk-ant-1\n")
+    d.llm_model.setText("claude-haiku-5-5")
+    d.limit.setValue(1000)
+    v = d.values()
+    assert (v.engine, v.keys, v.llm_models["claude"], v.daily_limit) == ("claude", {"claude": "sk-ant-1"},
+                                                                         "claude-haiku-5-5", 1000)
+    d.engine.setCurrentIndex(d.engine.findData("kaggle"))
+    assert d.kaggle_url.isEnabled()

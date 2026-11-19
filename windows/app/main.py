@@ -610,29 +610,61 @@ class TrayApp(QObject):
         if s.get("model") in MODELS:
             self.config.translator.model = s["model"]
 
+    def _llm_settings(self) -> dict:
+        """Non-secret remote-engine settings from settings.json: models, Kaggle URL, daily limit."""
+        from app.gui.settings_dialog import DAILY_LIMIT
+
+        llm = load_settings(self._data_dir()).get("llm")
+        llm = llm if isinstance(llm, dict) else {}
+        models = llm.get("models") if isinstance(llm.get("models"), dict) else {}
+        limit = llm.get("daily_limit")
+        return {"models": {k: v for k, v in models.items() if isinstance(k, str) and isinstance(v, str)},
+                "kaggle_url": llm.get("kaggle_url") if isinstance(llm.get("kaggle_url"), str) else "",
+                "daily_limit": limit if isinstance(limit, int) and limit > 0 else DAILY_LIMIT}
+
+    def _llm_payload(self, engine: str) -> dict:
+        llm = self._llm_settings()
+        return {"model": llm["models"].get(engine, ""), "url": llm["kaggle_url"] if engine == "kaggle" else "",
+                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir())}
+
     def open_settings(self) -> None:
+        from app.secrets import KeyStore
+        from app.translate.remote import NAMES
+        from app.usage import Usage
+
         hk = self.config.hotkeys
         p0 = self._profile()
+        llm = self._llm_settings()
+        keys = KeyStore(self._data_dir())
         shown = SettingsValues(p0.style, self.config.overlay.text_scale, self.config.overlay.long_text,
                                self.config.translator.model,
                                {"Dịch vùng": display_combo(hk.translate_region),
                                 "Toàn màn hình": display_combo(hk.translate_fullscreen),
                                 "Bật/tắt Live": display_combo(hk.toggle_live),
                                 "Sửa bản dịch": display_combo(hk.edit_last)},
-                               p0.ocr if p0.ocr != "auto" else "windows")
+                               p0.ocr if p0.ocr != "auto" else "windows",
+                               engine=p0.engine, llm_models=llm["models"], kaggle_url=llm["kaggle_url"],
+                               daily_limit=llm["daily_limit"],
+                               saved_keys=tuple(e for e in NAMES if keys.get(e)),
+                               used_today=Usage(self._data_dir()).used())
         dialog = self._settings_factory(shown)
         if not dialog.exec():
             return
         v = dialog.values()
         p = self._profile()
-        ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows")
+        for engine, key in v.keys.items():  # encrypted, never in settings.json
+            keys.set(engine, key)
+        new_llm = {"models": dict(v.llm_models), "kaggle_url": v.kaggle_url, "daily_limit": v.daily_limit}
+        engine_changed = v.engine != p.engine or bool(v.keys) or new_llm != llm
+        ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows") or engine_changed
         if v.style != p.style or ocr_changed:
-            p.style, p.ocr = v.style, v.ocr
+            p.style, p.ocr, p.engine = v.style, v.ocr, v.engine
             self.profiles.save(p)
         if ocr_changed:
             self._worker_game = None  # send the game (with its OCR engine) to the worker again
         self.config.overlay.text_scale, self.config.overlay.long_text = v.text_scale, v.long_text
-        save_settings(self._data_dir(), {"text_scale": v.text_scale, "long_text": v.long_text, "model": v.model})
+        save_settings(self._data_dir(), {"text_scale": v.text_scale, "long_text": v.long_text, "model": v.model,
+                                         "llm": new_llm})
         for st, action in self.live_style_actions.items():
             action.setChecked(st == v.style)
         if v.model != self.config.translator.model:
@@ -652,7 +684,7 @@ class TrayApp(QObject):
         self._set_game_job = next(self._ids)
         self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
                                payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides),
-                                        "ocr": p.ocr}))
+                                        "ocr": p.ocr, "engine": p.engine, "llm": self._llm_payload(p.engine)}))
         self._worker_game = p.id
 
     def _user_glossary(self, game_id: str) -> Path:
