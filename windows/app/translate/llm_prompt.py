@@ -5,7 +5,8 @@ import re
 SYSTEM = ('Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, '
           'không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {"translations": [...]}, mỗi câu đầu vào đúng một bản '
           'dịch, cùng thứ tự.')
-CONTEXT_MAX = 3
+CONTEXT_MAX = 10
+EXAMPLES_MAX = 5
 REPLY_SCHEMA = {
     "type": "object",
     "properties": {"translations": {"type": "array", "items": {"type": "string"}}},
@@ -14,16 +15,22 @@ REPLY_SCHEMA = {
 }
 
 
-def build_messages(sentences: list[str], context: list[str], speaker: str | None,
-                   glossary: dict[str, str | None]) -> tuple[str, str]:
+def build_messages(sentences: list[str], context: list[tuple[str | None, str]], speaker: str | None,
+                   glossary: dict[str, str | None], notes: str = "",
+                   examples: list[tuple[str, str]] = ()) -> tuple[str, str]:
     """(system, user) for one call translating `sentences`."""
     parts = []
+    if notes.strip():
+        parts.append("Về game:\n" + notes.strip())
     if glossary:
         parts.append("Thuật ngữ:\n" + "\n".join(f"- {src} (giữ nguyên)" if dst is None else f"- {src} → {dst}"
                                                 for src, dst in glossary.items()))
+    if examples:
+        parts.append("Cách dịch người dùng đã sửa (làm theo giọng này):\n"
+                     + "\n".join(f"- {src} → {fixed}" for src, fixed in list(examples)[-EXAMPLES_MAX:]))
     if context:
         parts.append("Câu trước (để hiểu ngữ cảnh, không dịch):\n"
-                     + "\n".join(f"- {s}" for s in context[-CONTEXT_MAX:]))
+                     + "\n".join(f"- {sp}: {text}" if sp else f"- {text}" for sp, text in context[-CONTEXT_MAX:]))
     if speaker:
         parts.append(f"Người nói: {speaker}")
     parts.append("Dịch các câu sau:\n" + json.dumps(sentences, ensure_ascii=False))

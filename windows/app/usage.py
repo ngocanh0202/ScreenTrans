@@ -17,14 +17,18 @@ class Usage:
         except (OSError, ValueError, KeyError, TypeError):
             return "", 0
 
+    def today(self) -> str:
+        return self._clock().isoformat()
+
     def used(self) -> int:
         day, chars = self._read()
-        return chars if day == self._clock().isoformat() else 0
+        return chars if day == self.today() else 0
 
     def allows(self, chars: int, limit: int) -> bool:
         return self.used() + chars <= limit
 
     def add(self, chars: int) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"date": self._clock().isoformat(), "chars": self.used() + chars}),
-                             encoding="utf-8")
+        tmp = self.path.with_suffix(".tmp")  # a crash mid-write must not reset the counter
+        tmp.write_text(json.dumps({"date": self.today(), "chars": self.used() + chars}), encoding="utf-8")
+        tmp.replace(self.path)

@@ -58,6 +58,7 @@ class Profile:
     name: str = ""
     scope: str = "region"
     style: str = "match"
+    llm_notes: str = ""  # about the game / characters / how they address each other, sent with LLM requests
     engine: str = "local"  # translation engine for this game: local | gemini | openai | claude | kaggle
     ocr: str = "auto"  # OCR engine for this game: "auto" = the platform default (Windows: windows | rapid)
     regions: list[Rel] = field(default_factory=list)
@@ -87,6 +88,7 @@ class Profile:
             name=d["name"] if isinstance(d.get("name"), str) else "",
             ocr=d["ocr"] if isinstance(d.get("ocr"), str) and d["ocr"] else "auto",
             engine=d["engine"] if d.get("engine") in ENGINES else "local",
+            llm_notes=d["llm_notes"] if isinstance(d.get("llm_notes"), str) else "",
             scope=live.get("scope") if live.get("scope") in SCOPES else "region",
             style=live.get("style") if live.get("style") in STYLES else "match",
             regions=_rels(d.get("regions")),
@@ -101,7 +103,7 @@ class Profile:
 
     def to_json(self) -> dict:
         return {
-            "id": self.id, "name": self.name, "ocr": self.ocr, "engine": self.engine,
+            "id": self.id, "name": self.name, "ocr": self.ocr, "engine": self.engine, "llm_notes": self.llm_notes,
             "live": {"scope": self.scope, "style": self.style, "interval_ms": self.interval_ms, "settle_ms": self.settle_ms,
                      "change_threshold": self.change_threshold},
             "regions": [list(r) for r in self.regions], "ignore_regions": [list(r) for r in self.ignore],

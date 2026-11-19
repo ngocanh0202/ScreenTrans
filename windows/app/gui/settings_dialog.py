@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
+                               QLineEdit, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QVBoxLayout, QWidget)
 
 from app.gui.overlay import FONT
 
@@ -36,6 +36,8 @@ class SettingsValues:
     keys: dict[str, str] = field(default_factory=dict)  # keys the user typed now (never the saved ones)
     saved_keys: tuple[str, ...] = ()  # engines with a saved key (shown as such, never displayed)
     used_today: int = 0
+    llm_notes: str = ""   # about the game / characters, for the current game
+    delete_keys: tuple[str, ...] = ()  # saved keys the user chose to delete
 
 
 def load_settings(data_dir: Path) -> dict:
@@ -109,12 +111,18 @@ class SettingsDialog(QDialog):
         form.addRow(f"Bộ OCR{f' ({game})' if game else ''}:", self.ocr)
         form.addRow("", self.ocr_note)
         form.addRow(f"Dịch bằng{f' ({game})' if game else ''}:", self.engine)
-        form.addRow("Key / token:", self.key)
+        key_row = QWidget()
+        key_box = QHBoxLayout(key_row)
+        key_box.setContentsMargins(0, 0, 0, 0)
+        key_box.addWidget(self.key, 1)
+        key_box.addWidget(self.delete_key)
+        form.addRow("Key / token:", key_row)
         form.addRow("Tên model:", self.llm_model)
         form.addRow("URL server Kaggle:", self.kaggle_url)
         form.addRow("Giới hạn mỗi ngày:", self.limit)
         form.addRow("", self.usage_label)
         form.addRow("", self.privacy)
+        form.addRow(f"Ghi chú game cho LLM{f' ({game})' if game else ''}:", self.notes)
         for name, combo in values.hotkeys.items():
             form.addRow(f"{name}:", QLabel(combo))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -139,6 +147,8 @@ class SettingsDialog(QDialog):
             keys=self._keys_now(),
             saved_keys=self._saved_keys,
             used_today=self._used_today,
+            llm_notes=self.notes.toPlainText().strip(),
+            delete_keys=tuple(self._deleted),
         )
 
     # ---- remote translation engines -------------------------------------------------------------------
@@ -149,6 +159,13 @@ class SettingsDialog(QDialog):
         self._models = dict(values.llm_models)
         self._typed: dict[str, str] = {}
         self._saved_keys, self._used_today = tuple(values.saved_keys), values.used_today
+        self._deleted: list[str] = []
+        self.delete_key = QPushButton("Xóa key đã lưu")
+        self.delete_key.clicked.connect(self._delete_key)
+        self.notes = QPlainTextEdit(values.llm_notes)
+        self.notes.setPlaceholderText("Bối cảnh, nhân vật và cách xưng hô — gửi kèm mỗi lần dịch bằng LLM.\n"
+                                      "Ví dụ: Vertin: nữ, gọi Sonetto là \"em\". Sonetto gọi Vertin là \"chị\".")
+        self.notes.setFixedHeight(70)
         self.engine = QComboBox()
         for v, label in ENGINES:
             self.engine.addItem(label, v)
@@ -184,8 +201,9 @@ class SettingsDialog(QDialog):
         e = str(self.engine.currentData())
         self._shown_engine = e
         remote = e in self._names
-        for w in (self.key, self.llm_model, self.limit):
+        for w in (self.key, self.llm_model, self.limit, self.notes):
             w.setEnabled(remote)
+        self.delete_key.setEnabled(e in self._saved_keys and e not in self._deleted)
         self.kaggle_url.setEnabled(e == "kaggle")
         self.key.setText(self._typed.get(e, ""))
         self.key.setPlaceholderText("•••• (đã lưu — nhập để thay)" if e in self._saved_keys else
@@ -195,9 +213,18 @@ class SettingsDialog(QDialog):
                              f"của bạn). Lỗi / hết hạn mức → tự dùng model trên máy." if remote else "")
         self.privacy.setHidden(not remote)
 
+    def _delete_key(self) -> None:
+        e = str(self.engine.currentData())
+        if e in self._names and e not in self._deleted:
+            self._deleted.append(e)
+            self._typed.pop(e, None)
+            self.key.clear()
+            self.key.setPlaceholderText("Dán key vào đây")
+        self.delete_key.setEnabled(False)
+
     def _models_now(self) -> dict[str, str]:
         self._remember_fields()
-        return {e: m for e, m in self._models.items() if m}
+        return {e: m for e, m in self._models.items() if m and m != self._defaults.get(e)}  # defaults are no choice
 
     def _keys_now(self) -> dict[str, str]:
         self._remember_fields()

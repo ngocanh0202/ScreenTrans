@@ -43,7 +43,8 @@
    "Bye.": 3
   },
   "ocr": 5,
-  "engine": "chatgpt"
+  "engine": "chatgpt",
+  "llm_notes": 7
  },
  "expected": {
   "id": "game.exe",
@@ -69,6 +70,7 @@
    "Hello there.": "Chào."
   },
   "ocr": "auto",
-  "engine": "local"
+  "engine": "local",
+  "llm_notes": ""
  }
 }

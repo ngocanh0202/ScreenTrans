@@ -301,3 +301,54 @@ def test_a_remote_engine_without_a_key_stays_local_with_one_notice(qtbot, run_wo
     assert [s.translation for s in segs if s.kind == "text"][0].startswith("VI ")
     notes = [e[1] for e in rec.of("notice")]
     assert len(notes) == 1 and "Claude" in notes[0] and "key" in notes[0]
+
+
+def test_set_game_passes_notes_and_corrections_to_the_remote_engine(qtbot, run_worker, monkeypatch, tmp_path):
+    from app.secrets import KeyStore
+    from app.translate import remote
+
+    clients = []
+
+    class Recording(FakeLlm):
+        def __init__(self, model):
+            super().__init__(model)
+            self.users = []
+
+        def complete(self, system, user, timeout_s):
+            self.users.append(user)
+            return super().complete(system, user, timeout_s)
+
+    monkeypatch.setattr(remote, "make_client", lambda engine, key, model="", url="", **kw: clients.append(
+        Recording(model)) or clients[-1])
+    KeyStore(tmp_path).set("gemini", "AIza-1")
+    payload = _llm_game(tmp_path)
+    payload["llm"]["notes"] = "Vertin: nữ."
+    payload["overrides"] = {"You're late.": "Em đến muộn đấy."}
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload=payload))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    user = clients[0].users[0]
+    assert "Về game:\nVertin: nữ." in user and "- You're late. → Em đến muộn đấy." in user
+
+
+def test_an_engine_that_cannot_start_falls_back_with_a_notice(qtbot, run_worker, monkeypatch, tmp_path):
+    from app.secrets import KeyStore
+    from app.translate import remote
+
+    def boom(*a, **kw):
+        raise ImportError("No module named 'anthropic'")
+
+    monkeypatch.setattr(remote, "make_client", boom)
+    KeyStore(tmp_path).set("claude", "sk-ant-1")
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload=_llm_game(tmp_path, "claude")))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    assert not rec.of("job_failed")
+    segs = [e for e in rec.of("done") if e[1] == 2][0][2]
+    assert [s.translation for s in segs if s.kind == "text"][0].startswith("VI ")
+    notes = [e[1] for e in rec.of("notice")]
+    assert len(notes) == 1 and "Claude" in notes[0] and "anthropic" not in notes[0]

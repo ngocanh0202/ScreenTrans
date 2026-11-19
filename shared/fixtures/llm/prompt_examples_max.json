@@ -1,0 +1,44 @@
+{
+  "input": {
+    "sentences": [
+      "X."
+    ],
+    "context": [],
+    "speaker": null,
+    "glossary": {},
+    "examples": [
+      [
+        "S1.",
+        "V1."
+      ],
+      [
+        "S2.",
+        "V2."
+      ],
+      [
+        "S3.",
+        "V3."
+      ],
+      [
+        "S4.",
+        "V4."
+      ],
+      [
+        "S5.",
+        "V5."
+      ],
+      [
+        "S6.",
+        "V6."
+      ],
+      [
+        "S7.",
+        "V7."
+      ]
+    ]
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Cách dịch người dùng đã sửa (làm theo giọng này):\n- S3. → V3.\n- S4. → V4.\n- S5. → V5.\n- S6. → V6.\n- S7. → V7.\n\nDịch các câu sau:\n[\"X.\"]"
+  }
+}

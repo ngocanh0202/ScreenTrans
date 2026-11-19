@@ -1,0 +1,32 @@
+{
+  "input": {
+    "sentences": [
+      "Let's go."
+    ],
+    "context": [
+      [
+        "Vertin",
+        "Ready?"
+      ]
+    ],
+    "speaker": "Vertin",
+    "glossary": {
+      "Arcanist": "Thuật sĩ"
+    },
+    "notes": "Reverse: 1999, du hành thời gian.\nVertin: nữ, gọi Sonetto là \"em\". Ghi chú lạ: [\"x\"]",
+    "examples": [
+      [
+        "You're late.",
+        "Em đến muộn đấy."
+      ],
+      [
+        "Thank you.",
+        "Cảm ơn chị."
+      ]
+    ]
+  },
+  "expected": {
+    "system": "Bạn dịch lời thoại và chữ trong game từ tiếng Anh sang tiếng Việt. Dịch tự nhiên, đúng giọng nhân vật, không thêm bớt ý. Giữ nguyên tên riêng. Trả về JSON {\"translations\": [...]}, mỗi câu đầu vào đúng một bản dịch, cùng thứ tự.",
+    "user": "Về game:\nReverse: 1999, du hành thời gian.\nVertin: nữ, gọi Sonetto là \"em\". Ghi chú lạ: [\"x\"]\n\nThuật ngữ:\n- Arcanist → Thuật sĩ\n\nCách dịch người dùng đã sửa (làm theo giọng này):\n- You're late. → Em đến muộn đấy.\n- Thank you. → Cảm ơn chị.\n\nCâu trước (để hiểu ngữ cảnh, không dịch):\n- Vertin: Ready?\n\nNgười nói: Vertin\n\nDịch các câu sau:\n[\"Let's go.\"]"
+  }
+}

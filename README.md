@@ -21,10 +21,10 @@ Bản build mới nhất từ `main`: [Releases → nightly](https://github.com/
 | Live | Tự dịch khi chữ đổi, bản dịch đè lên chữ gốc, hiện từng câu ngay khi câu đó hiện xong | `Ctrl+Alt+L` | Nút nổi → "Bật Live" |
 | Phạm vi Live | Toàn màn hình, hoặc chỉ các vùng đã chọn (kèm vùng bỏ qua) | Tray → "Live dịch", "Vùng Live" | Nút nổi → "Live dịch", "Chọn / sửa vùng (bỏ qua)" |
 | Hồ sơ theo game | Tự nhận game, nhớ vùng, phạm vi Live, bản sửa riêng từng game | Tự động | Usage Access hoặc chọn tay ("Game ▸") |
-| Sửa bản dịch | Lần sau gặp đúng câu sẽ dùng bản của bạn; thêm thuật ngữ | `Ctrl+Alt+E`, nút "Sửa" | "Sửa bản dịch gần nhất", nút "Sửa" |
+| Sửa bản dịch | Lần sau gặp đúng câu sẽ dùng bản của bạn; chọn chữ ở câu gốc để thêm thuật ngữ (giữ nguyên / dịch cố định), có gợi ý tên riêng | `Ctrl+Alt+E`, nút "Sửa" | "Sửa bản dịch gần nhất", nút "Sửa" |
 | Bảng thuật ngữ | Giữ nguyên hoặc dịch cố định tên riêng, thuật ngữ | ✓ | ✓ |
 | Đổi model | `vinai-en2vi` (mặc định) hoặc `opus-mt-en-vi` | Tray → "Model" | `opus-mt-en-vi` |
-| Dịch bằng mô hình lớn qua mạng | Dịch tự nhiên hơn, có ngữ cảnh câu trước và người nói: Gemini, OpenAI, Claude hoặc server Kaggle riêng; lỗi / hết hạn mức thì tự dùng model trên máy | Cài đặt → "Dịch bằng" (theo game) | Sắp có |
+| Dịch bằng mô hình lớn qua mạng | Dịch tự nhiên hơn, nhớ 10 câu trước của từng game, người nói, ghi chú game (nhân vật, xưng hô) và các câu bạn đã sửa: Gemini, OpenAI, Claude hoặc server Kaggle riêng; lỗi / hết hạn mức thì tự dùng model trên máy | Cài đặt → "Dịch bằng" (theo game) | Sắp có |
 | Chọn bộ OCR | Windows OCR (mặc định) hoặc RapidOCR | Cài đặt → "Bộ OCR" | ML Kit |
 
 Dịch qua mạng: nhập key trong Cài đặt (lưu mã hóa bằng DPAPI, không ghi ra file cấu hình hay nhật ký). Chữ trong game được gửi tới nhà cung cấp đã chọn; có giới hạn ký tự mỗi ngày (mặc định 50 000). Server Kaggle miễn phí: chạy [training/kaggle_serve.ipynb](training/kaggle_serve.ipynb), dán URL + token vào Cài đặt.

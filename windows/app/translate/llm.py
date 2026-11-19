@@ -10,6 +10,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Callable
 
 from app.translate.base import Translator
+from app.translate.context_store import ContextStore
 from app.translate.llm_prompt import CONTEXT_MAX, build_messages, parse_reply
 from app.translate.remote import Client, RemoteError
 from app.usage import Usage
@@ -23,20 +24,39 @@ class LlmTranslator:
     prefers_batch = True  # Live: all sentences of one OCR in one call
 
     def __init__(self, engine: str, client: Client, local: Translator, usage: Usage, daily_limit: int,
-                 notify: Callable[[str], None], clock: Callable[[], float] = time.monotonic):
+                 notify: Callable[[str], None], clock: Callable[[], float] = time.monotonic,
+                 contexts: ContextStore | None = None):
         self.engine, self.client, self.local = engine, client, local
         self.model_id = f"{engine}:{client.model}"
         self.usage, self.daily_limit = usage, daily_limit
         self._notify, self._clock = notify, clock
         self.timeout_s = 6.0
-        self._context: list[str] = []
+        self._context: list[tuple[str | None, str]] = []  # (speaker, line)
         self._speaker: str | None = None
+        self._contexts = contexts
+        self._game: str | None = None
+        self._notes = ""
+        self._examples: list[tuple[str, str]] = []
         self._blocked = False          # wrong key: never call again (a new translator is made when it changes)
         self._retry_at = 0.0           # after a failure: local until then
         self._failing = False          # one notice per failure spell
         self._limit_day = ""           # one limit notice per day
         # one overall deadline per call (socket timeouts are per step; DNS has none): a late call finishes here
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"llm-{engine}")
+
+    def set_game(self, game: str | None, notes: str, examples: list[tuple[str, str]]) -> None:
+        """The game being translated: its notes, the user's corrections and its saved context. Applying the
+        settings again also clears a wrong-key block and the back-off (the problem may be fixed now)."""
+        self._game, self._notes, self._examples = game, notes or "", list(examples)
+        self._context = self._contexts.load(game) if self._contexts is not None and game else []
+        self._blocked, self._retry_at, self._failing = False, 0.0, False
+
+    def set_examples(self, examples: list[tuple[str, str]]) -> None:
+        self._examples = list(examples)
+
+    def available(self) -> bool:
+        """Worth trying the remote engine now (not blocked, not backing off, today's limit not reached)."""
+        return not self._blocked and self._clock() >= self._retry_at and self.usage.allows(1, self.daily_limit)
 
     def set_speaker(self, name: str | None) -> None:
         self._speaker = name
@@ -52,14 +72,18 @@ class LlmTranslator:
             return None
         chars = sum(len(t) for t in texts)
         if not self.usage.allows(chars, self.daily_limit):
-            today = time.strftime("%Y-%m-%d")
+            today = self.usage.today()
             if self._limit_day != today:
                 self._limit_day = today
                 self._notify(f"{self.client.name}: đã tới giới hạn {self.daily_limit} ký tự hôm nay — "
                              f"dùng model trên máy.")
             return None
-        system, user = build_messages(texts, self._context, self._speaker, glossary)
-        self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
+        system, user = build_messages(texts, self._context, self._speaker, glossary, self._notes, self._examples)
+        game, speaker = self._game, self._speaker  # the reply belongs to this game even if it changes meanwhile
+        try:
+            self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
+        except OSError:
+            pass  # usage.json locked (scanner / indexer): never fail the translation over the counter
         future = self._pool.submit(self.client.complete, system, user, self.timeout_s)
         try:
             reply = future.result(timeout=self.timeout_s)
@@ -76,7 +100,14 @@ class LlmTranslator:
         if out is None:
             return None  # this batch only: the next one tries the server again
         self._failing = False
-        self._context = (self._context + texts)[-CONTEXT_MAX:]
+        lines = [(speaker, t) for t in texts]
+        if game == self._game:
+            self._context = (self._context + lines)[-CONTEXT_MAX:]
+            saved = self._context
+        else:
+            saved = (self._contexts.load(game) if self._contexts is not None and game else []) + lines
+        if self._contexts is not None and game:
+            self._contexts.save(game, saved)
         return out
 
     def _fail(self, e: RemoteError) -> None:

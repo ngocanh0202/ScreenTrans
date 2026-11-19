@@ -5,6 +5,20 @@ fun interface SentenceTranslator {
     fun translate(texts: List<String>): List<String>
 }
 
+/**
+ * A remote LLM (Phase 5): glossary terms go in its prompt; null = unusable right now, translate with [local].
+ * Same contract as windows/app/translate/llm.LlmTranslator.
+ */
+interface RemoteEngine {
+    val modelId: String
+    val local: SentenceTranslator
+    val localModelId: String
+    fun translateCtx(texts: List<String>, glossary: Map<String, String?>): List<String>?
+    fun available(): Boolean
+    fun setSpeaker(name: String?)
+    fun setExamples(examples: List<Pair<String, String>>)
+}
+
 /** Unicode whitespace like Python str.split; written out because Android's ICU regex lacks the U inline flag. */
 val UNICODE_WS = Regex("[\\s\\p{Z}\\u0085\\u001c-\\u001f]+")
 
@@ -104,21 +118,43 @@ class Pipeline(
     private val modelVersion: String = "0",
     overrides: Map<String, String> = emptyMap(),
 ) {
-    private val overrides = HashMap<String, String>().apply { overrides.forEach { (k, v) -> put(normalizeText(k), v) } }
+    private val overrides = LinkedHashMap<String, String>().apply { overrides.forEach { (k, v) -> put(normalizeText(k), v) } }
+    private var engine: RemoteEngine? = null
 
     /** Cache key prefix: a new model version or glossary edit must not reuse old translations. */
-    val cacheNs: String get() = "$modelId@$modelVersion#${glossary.digest()}"
+    val cacheNs: String get() = ns(engine?.modelId ?: modelId)
+
+    private fun ns(model: String) = "$model@$modelVersion#${glossary.digest()}"
+
+    /** The game's remote LLM, or null for the on-device model. */
+    fun setEngine(engine: RemoteEngine?) {
+        this.engine = engine
+        engine?.setExamples(examples())
+    }
+
+    /** The user's latest corrections (source, fix), for a remote LLM to follow. */
+    fun examples(): List<Pair<String, String>> = overrides.entries.map { it.key to it.value }.takeLast(EXAMPLES)
+
+    private fun speaker(paragraphs: List<Paragraph>, onlyOne: Boolean = false) {
+        val e = engine ?: return
+        val names = paragraphs.filter { it.kind == Kind.NAME }.map { it.text }
+        e.setSpeaker(if (names.isNotEmpty() && (names.size == 1 || !onlyOne)) names[0] else null)
+    }
 
     /** Switch to another game's glossary and the user's translations for it. */
     fun setGame(glossary: Glossary, overrides: Map<String, String>) {
         this.glossary = glossary
         this.overrides.clear()
         overrides.forEach { (k, v) -> this.overrides[normalizeText(k)] = v }
+        engine?.setExamples(examples())
     }
 
     /** The user fixed a translation: use it from now on, before cache and model. */
     fun correct(source: String, corrected: String) {
-        overrides[normalizeText(source)] = corrected
+        val key = normalizeText(source)
+        overrides.remove(key)  // newest last
+        overrides[key] = corrected
+        engine?.setExamples(examples())
     }
 
     /** A glossary term the user added (target null/blank = keep the source unchanged). */
@@ -132,7 +168,11 @@ class Pipeline(
         for (s in sentences) for (term in t.observe(s)) glossary.addKeep(term)
     }
 
-    private fun translateSentences(sentences: List<String>): Map<String, String> {
+    /**
+     * [remoteOk] false: the on-device model only (the remote engine is down). [fallback] false: null instead of
+     * translating locally when the remote engine fails (the caller falls back sentence by sentence).
+     */
+    private fun translateSentences(sentences: List<String>, remoteOk: Boolean = true, fallback: Boolean = true): Map<String, String>? {
         val done = HashMap<String, String>()
         val todo = mutableListOf<String>()
         val ns = cacheNs
@@ -146,6 +186,27 @@ class Pipeline(
             if (hit != null) done[s] = hit else todo.add(s)
         }
         if (todo.isEmpty()) return done
+        val e = engine
+        if (e != null) {  // a remote LLM: glossary terms go in the prompt, no placeholders
+            val outputs = if (remoteOk) e.translateCtx(todo, glossary.termsIn(todo)) else null
+            if (outputs == null && !fallback) return null
+            if (outputs != null) {
+                todo.forEachIndexed { i, s -> done[s] = cleanOutput(s, outputs[i]).also { cache.put(ns, s, it) } }
+                return done
+            }
+            // unavailable right now: the on-device model, cached under its own name (never the remote one)
+            val localNs = ns(e.localModelId)
+            val rest = todo.filter { s -> cache.get(localNs, s)?.also { done[s] = it } == null }
+            if (rest.isNotEmpty()) done.putAll(translateLocal(rest, e.local, localNs))
+            return done
+        }
+        done.putAll(translateLocal(todo, translator, ns))
+        return done
+    }
+
+    /** An on-device model with glossary placeholders; cached under [ns]. */
+    private fun translateLocal(todo: List<String>, translator: SentenceTranslator, ns: String): Map<String, String> {
+        val done = HashMap<String, String>()
         val protected = todo.map { glossary.protect(it) }
         val outputs = translator.translate(protected.map { it.first })
         val retry = mutableListOf<String>()
@@ -169,7 +230,8 @@ class Pipeline(
     fun translateParagraphs(paragraphs: List<Paragraph>): List<Segment> {
         val sentences = paragraphs.filter { it.kind == Kind.TEXT }.flatMap { it.sentences }
         observe(sentences)
-        val translated = if (sentences.isEmpty()) emptyMap() else translateSentences(sentences)
+        speaker(paragraphs)
+        val translated = if (sentences.isEmpty()) emptyMap() else translateSentences(sentences)!!
         return paragraphs.map { segment(it, translated) }
     }
 
@@ -187,8 +249,22 @@ class Pipeline(
             yield(snapshot())
             return@sequence
         }
+        speaker(paragraphs)
+        var remoteOk = true
+        val e = engine
+        if (e != null) {  // one remote call, then show the sentences one by one
+            val all = if (e.available()) translateSentences(order, fallback = false) else null
+            if (all != null) {
+                for (s in order) {
+                    done[s] = all.getValue(s)
+                    yield(snapshot())
+                }
+                return@sequence
+            }
+            remoteOk = false  // down: the on-device model, still sentence by sentence
+        }
         for (s in order) {
-            done.putAll(translateSentences(listOf(s)))
+            done.putAll(translateSentences(listOf(s), remoteOk)!!)
             yield(snapshot())
         }
     }
@@ -196,9 +272,14 @@ class Pipeline(
     /** Each paragraph as soon as it is translated (full-screen mode shows blocks progressively). */
     fun iterSegments(paragraphs: List<Paragraph>): Sequence<Segment> = sequence {
         observe(paragraphs.filter { it.kind == Kind.TEXT }.flatMap { it.sentences })
+        speaker(paragraphs, onlyOne = true)  // a whole screen: a speaker only when there is a single name
         for (p in paragraphs) {
-            val translated = if (p.kind == Kind.TEXT && p.sentences.isNotEmpty()) translateSentences(p.sentences) else emptyMap()
+            val translated = if (p.kind == Kind.TEXT && p.sentences.isNotEmpty()) translateSentences(p.sentences)!! else emptyMap()
             yield(segment(p, translated))
         }
+    }
+
+    private companion object {
+        const val EXAMPLES = 5
     }
 }

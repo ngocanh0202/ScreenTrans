@@ -31,7 +31,8 @@
    "Hello there.": "Chào cậu."
   },
   "ocr": "rapid",
-  "engine": "claude"
+  "engine": "claude",
+  "llm_notes": "Reverse: 1999.\nVertin: nữ, gọi Sonetto là \"em\"."
  },
  "expected": {
   "id": "reverse1999.exe",
@@ -64,6 +65,7 @@
    "Hello there.": "Chào cậu."
   },
   "ocr": "rapid",
-  "engine": "claude"
+  "engine": "claude",
+  "llm_notes": "Reverse: 1999.\nVertin: nữ, gọi Sonetto là \"em\"."
  }
 }

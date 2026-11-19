@@ -622,10 +622,10 @@ class TrayApp(QObject):
                 "kaggle_url": llm.get("kaggle_url") if isinstance(llm.get("kaggle_url"), str) else "",
                 "daily_limit": limit if isinstance(limit, int) and limit > 0 else DAILY_LIMIT}
 
-    def _llm_payload(self, engine: str) -> dict:
+    def _llm_payload(self, p: Profile) -> dict:
         llm = self._llm_settings()
-        return {"model": llm["models"].get(engine, ""), "url": llm["kaggle_url"] if engine == "kaggle" else "",
-                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir())}
+        return {"model": llm["models"].get(p.engine, ""), "url": llm["kaggle_url"] if p.engine == "kaggle" else "",
+                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir()), "notes": p.llm_notes}
 
     def open_settings(self) -> None:
         from app.secrets import KeyStore
@@ -646,19 +646,22 @@ class TrayApp(QObject):
                                engine=p0.engine, llm_models=llm["models"], kaggle_url=llm["kaggle_url"],
                                daily_limit=llm["daily_limit"],
                                saved_keys=tuple(e for e in NAMES if keys.get(e)),
-                               used_today=Usage(self._data_dir()).used())
+                               used_today=Usage(self._data_dir()).used(), llm_notes=p0.llm_notes)
         dialog = self._settings_factory(shown)
         if not dialog.exec():
             return
         v = dialog.values()
         p = self._profile()
+        for engine in v.delete_keys:
+            keys.set(engine, "")
         for engine, key in v.keys.items():  # encrypted, never in settings.json
             keys.set(engine, key)
         new_llm = {"models": dict(v.llm_models), "kaggle_url": v.kaggle_url, "daily_limit": v.daily_limit}
-        engine_changed = v.engine != p.engine or bool(v.keys) or new_llm != llm
+        engine_changed = (v.engine != p.engine or bool(v.keys) or bool(v.delete_keys) or new_llm != llm
+                          or v.llm_notes != p.llm_notes)
         ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows") or engine_changed
         if v.style != p.style or ocr_changed:
-            p.style, p.ocr, p.engine = v.style, v.ocr, v.engine
+            p.style, p.ocr, p.engine, p.llm_notes = v.style, v.ocr, v.engine, v.llm_notes
             self.profiles.save(p)
         if ocr_changed:
             self._worker_game = None  # send the game (with its OCR engine) to the worker again
@@ -684,7 +687,7 @@ class TrayApp(QObject):
         self._set_game_job = next(self._ids)
         self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
                                payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides),
-                                        "ocr": p.ocr, "engine": p.engine, "llm": self._llm_payload(p.engine)}))
+                                        "ocr": p.ocr, "engine": p.engine, "llm": self._llm_payload(p)}))
         self._worker_game = p.id
 
     def _user_glossary(self, game_id: str) -> Path:
@@ -717,7 +720,8 @@ class TrayApp(QObject):
         if not [s for s in segments if s.kind == "text" and s.translation]:
             self.notify("Chưa có bản dịch nào để sửa.")
             return
-        dialog = self._dialog_factory(segments)
+        p_now = self._live_profile() if live_on else self._profile()
+        dialog = self._dialog_factory(segments, known=self._known_terms(p_now.id))
         if not dialog.exec():
             return
         fixes, terms = dialog.corrections(), dialog.parsed_terms()
@@ -741,6 +745,16 @@ class TrayApp(QObject):
             if self.region_overlay is not None and self.region_overlay.isVisible():
                 self.region_overlay.show_segments(self._last_segments, self.config.overlay.show_source)
                 self._present_region()
+
+    def _known_terms(self, game_id: str) -> set[str]:
+        """Terms already in the game's own glossary (not suggested again in the correction window)."""
+        import json
+
+        try:
+            data = json.loads(self._user_glossary(game_id).read_text(encoding="utf-8"))
+            return {e["source"] for e in data.get("entries", []) if isinstance(e, dict) and isinstance(e.get("source"), str)}
+        except (OSError, ValueError, AttributeError):
+            return set()
 
     def _save_terms(self, game_id: str, terms: list[tuple[str, str | None]]) -> None:
         import json

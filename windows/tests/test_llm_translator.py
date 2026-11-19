@@ -181,3 +181,144 @@ def test_characters_are_counted_even_when_the_call_fails(tmp_path):  # review I3
     tr, _, _ = make(tmp_path, FakeClient(error=RemoteError("timeout", "Gemini")))
     tr.translate_ctx(["Hello."], {})
     assert tr.usage.used() == 6
+
+
+# ---- 5b-1: per-game context, notes, examples ---------------------------------------------------------------
+from app.translate.context_store import ContextStore  # noqa: E402
+
+
+def make_ctx(tmp_path, client=None, clock=None, today=None):
+    notes = []
+    local = FakeTranslator(lambda t: f"LOCAL {t}", "vinai")
+    day = today or [date(2026, 11, 19)]
+    tr = LlmTranslator("gemini", client or FakeClient(), local, Usage(tmp_path, clock=lambda: day[0]), 50_000,
+                       notes.append, clock=clock or Clock(), contexts=ContextStore(tmp_path))
+    return tr, notes
+
+
+def test_context_notes_and_examples_are_per_game_and_saved(tmp_path):
+    c = FakeClient()
+    tr, _ = make_ctx(tmp_path, c)
+    tr.set_game("a.exe", "Game A notes.", [("Hi.", "Chào em.")])
+    tr.set_speaker("Vertin")
+    tr.translate_ctx(["Line A."], {})
+    tr.set_game("b.exe", "", [])
+    tr.translate_ctx(["Line B."], {})
+    user_b = c.calls[-1][1]
+    assert "Line A." not in user_b and "Game A notes." not in user_b and "Chào em." not in user_b
+    tr2, _ = make_ctx(tmp_path, c)  # a new run (app restarted)
+    tr2.set_game("a.exe", "Game A notes.", [("Hi.", "Chào em.")])
+    tr2.translate_ctx(["Next."], {})
+    user = c.calls[-1][1]
+    assert "Về game:\nGame A notes." in user and "- Hi. → Chào em." in user and "- Vertin: Line A." in user
+
+
+def test_unsafe_game_ids_and_corrupt_files(tmp_path):  # RF1, RF2
+    store = ContextStore(tmp_path)
+    game = "C:" + chr(92) + "games" + chr(92) + "x?.exe"  # backslashes, colon and ? are not allowed in file names
+    store.save(game, [(None, "One.")])
+    assert store.load(game) == [(None, "One.")]
+    path = next((tmp_path / "llm_context").iterdir())
+    path.write_text("{broken", encoding="utf-8")
+    assert store.load(game) == []
+
+
+def test_set_game_clears_a_wrong_key_block_and_back_off(tmp_path):
+    c = FakeClient(error=RemoteError("auth", "Gemini"))
+    tr, _ = make_ctx(tmp_path, c)
+    tr.translate_ctx(["Hi."], {})
+    assert not tr.available()
+    c.error = None
+    tr.set_game("a.exe", "", [])  # settings applied again (e.g. billing fixed on the provider side)
+    assert tr.available() and tr.translate_ctx(["Hi."], {}) == ["LLM Hi."]
+
+
+def test_a_late_result_is_saved_to_the_game_it_was_asked_for(tmp_path):  # RF5
+    tr, _ = make_ctx(tmp_path)
+
+    class SwitchMidCall(FakeClient):
+        def complete(self, system, user, timeout_s):
+            tr.set_game("b.exe", "", [])  # the user switched game while the call was running
+            return super().complete(system, user, timeout_s)
+
+    tr.client = SwitchMidCall()
+    tr.set_game("a.exe", "", [])
+    tr.translate_ctx(["From A."], {})
+    store = ContextStore(tmp_path)
+    assert store.load("a.exe") == [(None, "From A.")] and store.load("b.exe") == []
+
+
+def test_the_limit_notice_comes_again_after_midnight(tmp_path):
+    day = [date(2026, 11, 19)]
+    tr, notes = make_ctx(tmp_path, today=day)
+    tr.daily_limit = 3
+    tr.translate_ctx(["Hello."], {})
+    tr.translate_ctx(["Hello."], {})
+    assert len(notes) == 1
+    day[0] = date(2026, 11, 20)
+    tr.daily_limit = 3
+    tr.translate_ctx(["Hello."], {})  # still over the limit on the new day: told again, once
+    assert len(notes) == 2
+
+
+def test_kaggle_servers_get_their_own_cache_namespace():
+    from app.translate.remote import make_client
+
+    a = make_client("kaggle", "t", url="https://abc.ngrok-free.app/")
+    b = make_client("kaggle", "t", url="https://xyz.ngrok-free.app")
+    assert a.model == "abc.ngrok-free.app" and b.model == "xyz.ngrok-free.app"
+
+
+# ---- 5b-1 Task 4: pipeline fallback stays progressive and cached; fullscreen speaker; corrections ----------
+from app.text.postprocess import Paragraph, postprocess  # noqa: E402
+
+
+def test_live_fallback_still_shows_sentence_by_sentence(tmp_path):
+    clock = Clock()
+    tr, local, _ = make(tmp_path, FakeClient(error=RemoteError("server", "Gemini")), clock=clock)
+    tr.translate_ctx(["warm-up."], {})  # fails: backing off now
+    snaps = list(pipeline(tr).iter_sentences(postprocess(LINES)))
+    assert len(snaps) == 3 and [len(c) for c in local.calls] == [1, 1, 1]  # one sentence at a time, locally
+
+
+def test_fallback_results_are_cached_under_the_local_model(tmp_path):
+    clock = Clock()
+    tr, local, _ = make(tmp_path, FakeClient(error=RemoteError("server", "Gemini")), clock=clock)
+    p = pipeline(tr)
+    p.run(IMG)
+    n = len(local.calls)
+    p.run(IMG)  # still backing off: the local translations come from the cache
+    assert len(local.calls) == n
+
+
+def test_fullscreen_sends_a_speaker_only_when_the_screen_has_one_name(tmp_path):
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+    p = pipeline(tr)
+    one = [Paragraph("name", "Vertin", ["Vertin"], 0, 0, 50, 10), Paragraph("text", "Go.", ["Go."], 0, 20, 50, 30)]
+    list(p.iter_segments(one))
+    assert "Người nói: Vertin" in c.calls[-1][1]
+    two = one + [Paragraph("name", "Sonetto", ["Sonetto"], 300, 0, 350, 10),
+                 Paragraph("text", "Run.", ["Run."], 300, 20, 350, 30)]
+    list(p.iter_segments(two))
+    assert "Người nói:" not in c.calls[-1][1]
+
+
+def test_a_correction_becomes_an_example_for_the_next_call(tmp_path):
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+    p = pipeline(tr)
+    p.correct("You're late.", "Bạn muộn rồi.", "Em đến muộn đấy.")
+    p.translate_paragraphs([Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)])
+    assert "- You're late. → Em đến muộn đấy." in c.calls[-1][1]
+
+
+def test_a_locked_usage_file_does_not_fail_the_job(tmp_path, monkeypatch):  # review M4
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+
+    def locked(chars):
+        raise PermissionError("usage.json is locked")
+
+    monkeypatch.setattr(tr.usage, "add", locked)
+    assert tr.translate_ctx(["Hi."], {}) == ["LLM Hi."]

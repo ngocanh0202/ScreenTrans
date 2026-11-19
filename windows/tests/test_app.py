@@ -434,9 +434,12 @@ def test_edit_last_saves_overrides_terms_and_tells_the_worker(qtbot, tmp_path):
 
     app, factory, hotkeys, selector, _, _ = _live_app(qtbot, tmp_path, game())
 
+    opened = []
+
     class FakeDialog:
-        def __init__(self, segments):
+        def __init__(self, segments, known=frozenset()):
             self.segments = segments
+            opened.append(set(known))
 
         def exec(self):
             return True
@@ -462,6 +465,8 @@ def test_edit_last_saves_overrides_terms_and_tells_the_worker(qtbot, tmp_path):
     terms = json.loads((tmp_path / "glossary" / "games" / "game.exe.json").read_text(encoding="utf-8"))
     assert terms["entries"] == [{"source": "Arcanist", "type": "keep", "case_sensitive": True}]
     assert "Chào cậu." in app.region_overlay.text()
+    hotkeys.triggered.emit("edit_last")  # opened again: the saved term is known (not suggested again)
+    assert opened[0] == set() and "Arcanist" in opened[-1]
 
 
 def test_style_menu_is_saved_in_the_game_profile_and_used_by_live(qtbot, tmp_path):
@@ -565,7 +570,7 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
             v = shown[-1]
             return SettingsValues(v.style, v.text_scale, v.long_text, v.model, v.hotkeys, v.ocr, engine="claude",
                                   llm_models={"claude": "claude-haiku-5-5"}, daily_limit=1000,
-                                  keys={"claude": "sk-ant-SECRET"})
+                                  keys={"claude": "sk-ant-SECRET"}, llm_notes="Vertin: nữ.")
 
     app._settings_factory = FakeSettings
     app.open_settings()
@@ -575,7 +580,9 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
     assert "SECRET" not in saved and json.loads(saved)["llm"]["models"]["claude"] == "claude-haiku-5-5"
     job = [j for j in factory.workers[-1].all_jobs if j.mode == "set_game"][-1]
     assert job.payload["engine"] == "claude" and "SECRET" not in str(job.payload)
-    assert job.payload["llm"] == {"model": "claude-haiku-5-5", "url": "", "daily_limit": 1000, "data_dir": str(tmp_path)}
+    assert job.payload["llm"] == {"model": "claude-haiku-5-5", "url": "", "daily_limit": 1000, "data_dir": str(tmp_path),
+                                  "notes": "Vertin: nữ."}
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").llm_notes == "Vertin: nữ."
     app.open_settings()  # shown again: the key is known to be saved, the engine is the game's
     assert shown[-1].engine == "claude" and "claude" in shown[-1].saved_keys and shown[-1].daily_limit == 1000
 
@@ -602,3 +609,29 @@ def test_m3_a_failed_set_game_is_sent_again(qtbot, tmp_path):
     hotkeys.triggered.emit("toggle_live")
     hotkeys.triggered.emit("toggle_live")
     assert len([j for j in w.all_jobs if j.mode == "set_game"]) == 2
+
+
+def test_settings_window_deletes_a_saved_key(qtbot, tmp_path):
+    from app.gui.settings_dialog import SettingsValues
+    from app.secrets import KeyStore
+
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, *_ = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("toggle_live")
+    KeyStore(tmp_path).set("gemini", "AIza-1")
+
+    class FakeSettings:
+        def __init__(self, values):
+            self.v = values
+
+        def exec(self):
+            return True
+
+        def values(self):
+            v = self.v
+            return SettingsValues(v.style, v.text_scale, v.long_text, v.model, v.hotkeys, v.ocr, engine="gemini",
+                                  delete_keys=("gemini",))
+
+    app._settings_factory = FakeSettings
+    app.open_settings()
+    assert KeyStore(tmp_path).get("gemini") == ""
