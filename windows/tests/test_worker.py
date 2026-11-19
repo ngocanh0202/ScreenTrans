@@ -39,6 +39,8 @@ class Recorder:
         w.job_done.connect(lambda i, segs: self.events.append(("done", i, segs)))
         w.job_failed.connect(lambda i, why: self.events.append(("job_failed", i, why)))
         w.job_started.connect(lambda i: self.events.append(("started", i)))
+        w.notice.connect(lambda msg: self.events.append(("notice", msg)))
+        w.ocr_done.connect(lambda i, per: self.events.append(("ocr_done", i, per)))
 
     def of(self, kind):
         return [e for e in self.events if e[0] == kind]
@@ -219,11 +221,9 @@ def test_set_game_switches_the_ocr_engine_but_live_keeps_the_fast_one(qtbot, run
     w.submit(Job(2, "region", IMG, (0, 0)))
     qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
     assert [s.source for s in [e for e in rec.of("done") if e[1] == 2][0][2]] == ["Slow engine."]
-    got = []
-    w.ocr_done.connect(lambda i, per: got.append(per))
     w.submit(Job(3, "live_ocr", None, (0, 0), images=[IMG]))
-    qtbot.waitUntil(lambda: bool(got), timeout=5000)
-    assert "Slow engine." not in [p.text for p in got[0][0]]  # Live: the fast default engine
+    qtbot.waitUntil(lambda: bool(rec.of("ocr_done")), timeout=5000)
+    assert "Slow engine." not in [p.text for p in rec.of("ocr_done")[0][2][0]]  # Live: the fast default engine
 
 
 def test_an_ocr_engine_that_fails_to_load_falls_back_with_a_notice(qtbot, run_worker, monkeypatch):
@@ -234,10 +234,70 @@ def test_an_ocr_engine_that_fails_to_load_falls_back_with_a_notice(qtbot, run_wo
 
     monkeypatch.setattr(engines, "create", boom)
     w, rec = run_worker()
-    notes = []
-    w.notice.connect(notes.append)
     qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
     w.submit(Job(1, "set_game", None, (0, 0), payload={"game": "g", "glossaries": [], "overrides": {}, "ocr": "rapid"}))
     w.submit(Job(2, "region", IMG, (0, 0)))
     qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    notes = [e[1] for e in rec.of("notice")]
     assert len(notes) == 1 and "RapidOCR" in notes[0]
+
+
+class FakeLlm:
+    name = "Gemini"
+
+    def __init__(self, model):
+        self.model = model
+        self.timeouts = []
+
+    def complete(self, system, user, timeout_s):
+        import json
+
+        self.timeouts.append(timeout_s)
+        sentences = json.loads(user.rsplit(chr(10), 1)[1])
+        return json.dumps({"translations": [f"LLM {s}" for s in sentences]})
+
+
+def _llm_game(tmp_path, engine="gemini"):
+    return {"game": "g", "glossaries": [], "overrides": {}, "engine": engine,
+            "llm": {"model": "m1", "url": "", "daily_limit": 50000, "data_dir": str(tmp_path)}}
+
+
+def test_set_game_switches_the_translation_engine_with_timeouts_per_job(qtbot, run_worker, monkeypatch, tmp_path):
+    from app.secrets import KeyStore
+    from app.translate import remote
+
+    clients = []
+    monkeypatch.setattr(remote, "make_client", lambda engine, key, model="", url="", **kw: clients.append(
+        (engine, key, FakeLlm(model))) or clients[-1][2])
+    KeyStore(tmp_path).set("gemini", "AIza-1")
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload=_llm_game(tmp_path)))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    segs = [e for e in rec.of("done") if e[1] == 2][0][2]
+    assert [s.translation for s in segs if s.kind == "text"] == ["LLM Hello there.", "LLM Far below."]
+    assert clients[0][:2] == ("gemini", "AIza-1") and clients[0][2].timeouts == [6.0]
+    from app.text.postprocess import Paragraph
+
+    para = Paragraph("text", "New line.", ["New line."], 0, 0, 100, 20)
+    w.submit(Job(3, "live_translate", None, (0, 0), paragraphs=[[para]]))
+    qtbot.waitUntil(lambda: any(e[1] == 3 for e in rec.of("done")), timeout=5000)
+    assert clients[0][2].timeouts == [6.0, 2.5]
+    w.submit(Job(4, "set_game", None, (0, 0), payload=_llm_game(tmp_path, "local")))
+    w.submit(Job(5, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 5 for e in rec.of("done")), timeout=5000)
+    segs = [e for e in rec.of("done") if e[1] == 5][0][2]
+    assert [s.translation for s in segs if s.kind == "text"][0].startswith("VI ")
+
+
+def test_a_remote_engine_without_a_key_stays_local_with_one_notice(qtbot, run_worker, tmp_path):
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload=_llm_game(tmp_path, "claude")))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    segs = [e for e in rec.of("done") if e[1] == 2][0][2]
+    assert [s.translation for s in segs if s.kind == "text"][0].startswith("VI ")
+    notes = [e[1] for e in rec.of("notice")]
+    assert len(notes) == 1 and "Claude" in notes[0] and "key" in notes[0]
