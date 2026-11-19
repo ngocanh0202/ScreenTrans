@@ -257,6 +257,7 @@ class TrayApp(QObject):
         worker.job_failed.connect(self._on_job_failed)
         worker.ocr_done.connect(self._on_live_ocr_done)
         worker.partial.connect(self._on_live_partial)
+        worker.notice.connect(self._on_notice)
 
     def switch_model(self, model_id: str) -> None:
         if model_id == self.config.translator.model and self.error is None:
@@ -317,6 +318,11 @@ class TrayApp(QObject):
         if job_id == self._fullscreen_job and self.fullscreen_overlay is not None:
             self.fullscreen_overlay.add_segment(segment, self._fullscreen_origin)
             self._last_segments.append(segment)
+
+    @Slot(str)
+    def _on_notice(self, message: str) -> None:
+        if self._current():
+            self.notify(message)
 
     @Slot(int, object)
     def _on_live_ocr_done(self, job_id: int, per_region) -> None:
@@ -606,20 +612,25 @@ class TrayApp(QObject):
 
     def open_settings(self) -> None:
         hk = self.config.hotkeys
-        shown = SettingsValues(self._profile().style, self.config.overlay.text_scale, self.config.overlay.long_text,
+        p0 = self._profile()
+        shown = SettingsValues(p0.style, self.config.overlay.text_scale, self.config.overlay.long_text,
                                self.config.translator.model,
                                {"Dịch vùng": display_combo(hk.translate_region),
                                 "Toàn màn hình": display_combo(hk.translate_fullscreen),
                                 "Bật/tắt Live": display_combo(hk.toggle_live),
-                                "Sửa bản dịch": display_combo(hk.edit_last)})
+                                "Sửa bản dịch": display_combo(hk.edit_last)},
+                               p0.ocr if p0.ocr != "auto" else "windows")
         dialog = self._settings_factory(shown)
         if not dialog.exec():
             return
         v = dialog.values()
         p = self._profile()
-        if v.style != p.style:
-            p.style = v.style
+        ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows")
+        if v.style != p.style or ocr_changed:
+            p.style, p.ocr = v.style, v.ocr
             self.profiles.save(p)
+        if ocr_changed:
+            self._worker_game = None  # send the game (with its OCR engine) to the worker again
         self.config.overlay.text_scale, self.config.overlay.long_text = v.text_scale, v.long_text
         save_settings(self._data_dir(), {"text_scale": v.text_scale, "long_text": v.long_text, "model": v.model})
         for st, action in self.live_style_actions.items():
@@ -630,6 +641,8 @@ class TrayApp(QObject):
             self.switch_model(v.model)  # restarts the worker, and Live with it
         elif self.live is not None and self.live.running:
             self.start_live()
+        elif ocr_changed:
+            self._send_set_game(p)
 
     def _send_set_game(self, p: Profile) -> None:
         if self.worker is None or self._worker_game == p.id:
@@ -638,7 +651,8 @@ class TrayApp(QObject):
         glossaries = ([str(user)] if user.exists() else []) + [str(g) for g in game_glossaries()] + [str(COMMON_GLOSSARY)]
         self._set_game_job = next(self._ids)
         self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
-                               payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides)}))
+                               payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides),
+                                        "ocr": p.ocr}))
         self._worker_game = p.id
 
     def _user_glossary(self, game_id: str) -> Path:

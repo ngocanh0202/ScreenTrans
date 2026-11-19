@@ -38,6 +38,15 @@ object Layout {
         return null
     }
 
+    /** Live translations start this much (x text size) above the source box: they looked a little low. */
+    const val LIFT = 0.2f
+
+    /** Top of a Live translation box (its bottom stays, so the source line is still covered). */
+    fun liftedTop(top: Float, textPx: Float, tilted: Boolean): Float {
+        val lift = textPx * LIFT
+        return if (tilted) top - lift else top - minOf(lift, maxOf(0f, top))
+    }
+
     /** Translation box fit: font size, drawn height (px) and whether the text had to be cut ("…"). */
     data class Fit(val px: Float, val height: Int, val truncated: Boolean)
 

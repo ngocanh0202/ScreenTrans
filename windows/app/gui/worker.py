@@ -39,6 +39,7 @@ class TranslationWorker(QObject):
     job_failed = Signal(int, str)
     ocr_done = Signal(int, object)   # live_ocr: list[list[Paragraph]] per region
     partial = Signal(int, object)    # live_translate: list[list[Segment]] per region, after each sentence
+    notice = Signal(str)             # something the user should know (an OCR engine could not load)
     _wake = Signal()
 
     def __init__(self, factory: PipelineFactory):
@@ -66,6 +67,8 @@ class TranslationWorker(QObject):
             self._process()
             return
         self._pipeline = pipeline
+        self._fast_ocr = pipeline.ocr  # Live always reads with the fast default engine
+        self._engines: dict = {}
         self.is_ready = True
         self.ready.emit()
         self._process()
@@ -110,6 +113,22 @@ class TranslationWorker(QObject):
         while (job := self._take()) is not None:
             self._run(job)
 
+    def _use_ocr(self, name: str) -> None:
+        """The game's OCR engine for one-shot translations; falls back to the default if it cannot load."""
+        if name in ("auto", "windows", None):
+            self._pipeline.ocr = self._fast_ocr
+            return
+        if name not in self._engines:
+            from app.ocr import engines
+
+            try:
+                self._engines[name] = engines.create(name)
+            except Exception as e:  # missing package / model: keep working with the default engine
+                self._engines[name] = None
+                label = next((x.label for x in engines.WINDOWS if x.name == name), name)
+                self.notice.emit(f"{label.split(' —')[0]} không dùng được ({e}); dùng Windows OCR.")
+        self._pipeline.ocr = self._engines[name] or self._fast_ocr
+
     def _run(self, job: Job) -> None:
         self.job_started.emit(job.id)
         try:
@@ -127,10 +146,11 @@ class TranslationWorker(QObject):
 
                 glossary = Glossary.load(*(Path(g) for g in job.payload.get("glossaries", [])))
                 self._pipeline.set_game(job.payload.get("game"), glossary, job.payload.get("overrides", {}))
+                self._use_ocr(job.payload.get("ocr", "auto"))
                 self.job_done.emit(job.id, [])
                 return
             if job.mode == "live_ocr":
-                per_region = [postprocess(self._pipeline.ocr.recognize(img)) if img is not None else None
+                per_region = [postprocess(self._fast_ocr.recognize(img)) if img is not None else None
                               for img in job.images or []]  # None: that region could not be captured
                 self.ocr_done.emit(job.id, per_region)
                 return

@@ -20,6 +20,8 @@ LIVE_FLAGS = (Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
 MIN_PX = 11     # smallest readable size (logical px)
 GROW = 1.5      # a translation may take 1.5x the source box height before the font shrinks
 NAME_COLOR = QColor(255, 220, 140)
+LIFT = 0.2      # translations start this much (x font size) above the source box: drawn from the box top + padding
+                # they looked a little low; the bottom stays put so the source line is still covered
 
 
 @dataclass
@@ -96,7 +98,9 @@ class AreaOverlay(QWidget):
         else:
             room = self.height() - r.top() if self.cfg.long_text != "shrink" and not angle else None
             px, fitted, h = fit_px(text, r.width(), r.height(), base, room if room and room > r.height() else None)
-            self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg, angle, pivot)
+            lift = min(round(px * LIFT), r.top()) if not angle else round(px * LIFT)  # never above the screen
+            r.setTop(r.top() - lift)
+            self.blocks[key] = LiveBlock(r, kind, fitted, px, h + lift, fg, bg, angle, pivot)
         self._refresh()
 
     def remove_block(self, key: str) -> None:

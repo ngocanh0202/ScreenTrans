@@ -65,6 +65,7 @@ class LiveAreaLayer(context: Context) : View(context) {
                 .setEllipsize(android.text.TextUtils.TruncateAt.END)
                 .build()
             rect.bottom = maxOf(rect.bottom, rect.top + layout.height + 2 * pad)
+            rect.top = Layout.liftedTop(rect.top, paint.textSize, tilted = angle != 0f)
             blocks[key] = Block(kind, text, rect, layout, null, bg, angle)
             val ellipsized = (0 until layout.lineCount).any { layout.getEllipsisCount(it) > 0 }
             if (fit.truncated || ellipsized) cut = RectF(rect)

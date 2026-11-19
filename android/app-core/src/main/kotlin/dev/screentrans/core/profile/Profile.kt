@@ -19,6 +19,8 @@ data class Profile(
     val scope: String = "region",
     /** Live colours: "match" (sampled from the game) or "classic" (white on dark); font size always matches. */
     val style: String = "match",
+    /** OCR engine for this game: "auto" = the platform default (Android: mlkit). */
+    val ocr: String = "auto",
     val regions: List<List<Double>> = emptyList(),
     val ignore: List<List<Double>> = emptyList(),
     val intervalMs: Int = 300,
@@ -30,6 +32,7 @@ data class Profile(
     fun serialize(): String = JsonObject().apply {
         addProperty("id", id)
         addProperty("name", name)
+        addProperty("ocr", ocr)
         add("live", JsonObject().apply {
             addProperty("scope", scope)
             addProperty("style", style)
@@ -92,6 +95,7 @@ data class Profile(
             return Profile(
                 id = id,
                 name = str(o["name"]) ?: "",
+                ocr = str(o["ocr"])?.takeIf { it.isNotEmpty() } ?: "auto",
                 scope = str(live["scope"])?.takeIf { it in SCOPES } ?: "region",
                 style = str(live["style"])?.takeIf { it in STYLES } ?: "match",
                 regions = rels(o["regions"]),

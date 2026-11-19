@@ -29,7 +29,8 @@
   "glossary": "reverse1999.json",
   "overrides": {
    "Hello there.": "Chào cậu."
-  }
+  },
+  "ocr": "rapid"
  },
  "expected": {
   "id": "reverse1999.exe",
@@ -60,6 +61,7 @@
   "glossary": "reverse1999.json",
   "overrides": {
    "Hello there.": "Chào cậu."
-  }
+  },
+  "ocr": "rapid"
  }
 }

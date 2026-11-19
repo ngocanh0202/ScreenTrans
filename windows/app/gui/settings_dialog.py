@@ -25,6 +25,7 @@ class SettingsValues:
     long_text: str         # "grow" | "shrink"
     model: str
     hotkeys: dict[str, str] = field(default_factory=dict)  # shown only
+    ocr: str = "windows"   # OCR engine for the current game (one-shot translations)
 
 
 def load_settings(data_dir: Path) -> dict:
@@ -69,6 +70,19 @@ class SettingsDialog(QDialog):
         self.scale.setCurrentIndex(max(0, self.scale.findData(values.text_scale)))
         long_box, self.grow, self.shrink = pair("Kéo dài khung", "Thu nhỏ chữ")
         (self.shrink if values.long_text == "shrink" else self.grow).setChecked(True)
+        from app.ocr import engines
+
+        self.ocr = QComboBox()
+        notes = []
+        for e in engines.WINDOWS:  # only the engines this platform can run
+            self.ocr.addItem(e.label, e.name)
+            ok = engines.available(e.name)
+            self.ocr.model().item(self.ocr.count() - 1).setEnabled(ok)
+            notes.append(f"• {e.label}: {e.note}" + ("" if ok else " Chưa có trong bản này (cần cài thêm ~190 MB, xem windows/requirements-rapidocr.txt)."))
+        self.ocr.setCurrentIndex(max(0, self.ocr.findData(values.ocr if values.ocr != "auto" else "windows")))
+        self.ocr_note = QLabel("\n".join(notes))
+        self.ocr_note.setWordWrap(True)
+        self.ocr_note.setStyleSheet("color: #666;")
         self.model = QComboBox()
         for v, label in MODELS:
             self.model.addItem(label, v)
@@ -79,6 +93,8 @@ class SettingsDialog(QDialog):
         form.addRow("Cỡ chữ bản dịch:", self.scale)
         form.addRow("Khi bản dịch dài:", long_box)
         form.addRow("Model dịch:", self.model)
+        form.addRow(f"Bộ OCR{f' ({game})' if game else ''}:", self.ocr)
+        form.addRow("", self.ocr_note)
         for name, combo in values.hotkeys.items():
             form.addRow(f"{name}:", QLabel(combo))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -95,4 +111,5 @@ class SettingsDialog(QDialog):
             long_text="shrink" if self.shrink.isChecked() else "grow",
             model=str(self.model.currentData()),
             hotkeys=self._hotkeys,
+            ocr=str(self.ocr.currentData()),
         )

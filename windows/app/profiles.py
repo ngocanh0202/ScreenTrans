@@ -56,6 +56,7 @@ class Profile:
     name: str = ""
     scope: str = "region"
     style: str = "match"
+    ocr: str = "auto"  # OCR engine for this game: "auto" = the platform default (Windows: windows | rapid)
     regions: list[Rel] = field(default_factory=list)
     ignore: list[Rel] = field(default_factory=list)
     interval_ms: int = 300
@@ -81,6 +82,7 @@ class Profile:
         return cls(
             id=d["id"],
             name=d["name"] if isinstance(d.get("name"), str) else "",
+            ocr=d["ocr"] if isinstance(d.get("ocr"), str) and d["ocr"] else "auto",
             scope=live.get("scope") if live.get("scope") in SCOPES else "region",
             style=live.get("style") if live.get("style") in STYLES else "match",
             regions=_rels(d.get("regions")),
@@ -95,7 +97,7 @@ class Profile:
 
     def to_json(self) -> dict:
         return {
-            "id": self.id, "name": self.name,
+            "id": self.id, "name": self.name, "ocr": self.ocr,
             "live": {"scope": self.scope, "style": self.style, "interval_ms": self.interval_ms, "settle_ms": self.settle_ms,
                      "change_threshold": self.change_threshold},
             "regions": [list(r) for r in self.regions], "ignore_regions": [list(r) for r in self.ignore],

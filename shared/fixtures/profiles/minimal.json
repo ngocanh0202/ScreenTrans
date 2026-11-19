@@ -16,6 +16,7 @@
   "regions": [],
   "ignore_regions": [],
   "glossary": null,
-  "overrides": {}
+  "overrides": {},
+  "ocr": "auto"
  }
 }
