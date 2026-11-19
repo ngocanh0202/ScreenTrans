@@ -260,10 +260,12 @@ class TranslationEngineTest {
         engine.submit(EngineJob<String>(3, fullScreen = false, image = null, liveParagraphs = listOf(listOf(a))))
         testScheduler.advanceUntilIdle()
         assertEquals(listOf(6000, 2500), made.single().timeouts)
+        assertEquals("gemini:m1", engine.activeModelId)  // corrections are logged with the engine that translated
         engine.submit(EngineJob<String>(4, fullScreen = false, image = null, control = EngineControl.SetGame(emptyList(), emptyMap())))
         engine.submit(EngineJob(5, fullScreen = false, image = "img"))
         testScheduler.advanceUntilIdle()
         assertEquals("VI Hello there.", events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 5 }.segments[1].translation)
+        assertEquals("fake", engine.activeModelId)
     }
 
     @Test

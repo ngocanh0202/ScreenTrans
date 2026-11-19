@@ -167,4 +167,22 @@ class RemoteClientsTest {
             assertEquals("bad_reply", e.kind)
         }
     }
+
+    // ---- 5b-2 review fixes --------------------------------------------------------------------------------
+    @Test
+    fun `kaggle model id keeps the port like Python netloc`() {
+        val c = makeClient("kaggle", "tok", url = "http://10.0.0.5:8000/", transport = Fake(body = ok.getValue("kaggle")))
+        assertEquals("10.0.0.5:8000", c.model)
+    }
+
+    @Test
+    fun `a claude key that cannot go in a header is a wrong key`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(message(reply)).setHeader("Content-Type", "application/json"))
+            val e = assertFailsWith<RemoteError> {
+                makeClient("claude", "sk-bad", baseUrl = server.url("/").toString().trimEnd('/')).complete("S", "U", 3000)
+            }
+            assertEquals("auth", e.kind)
+        }
+    }
 }

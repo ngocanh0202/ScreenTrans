@@ -126,6 +126,9 @@ class Pipeline(
 
     private fun ns(model: String) = "$model@$modelVersion#${glossary.digest()}"
 
+    /** The model that translates now: the remote engine's "engine:model", else the on-device model. */
+    val activeModelId: String get() = engine?.modelId ?: modelId
+
     /** The game's remote LLM, or null for the on-device model. */
     fun setEngine(engine: RemoteEngine?) {
         this.engine = engine

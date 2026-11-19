@@ -43,20 +43,21 @@ class KeyVault(context: Context) : KeyProvider {
 
     fun has(engine: String) = key(engine).isNotEmpty()
 
-    /** Empty (after cleaning) removes the key. */
-    fun set(engine: String, key: String) {
+    /** Empty (after cleaning) removes the key. False when it could not be saved (Keystore unavailable). */
+    fun set(engine: String, key: String): Boolean {
         val k = cleanKey(key)
         if (k.isEmpty()) {
             prefs.edit().remove(engine).apply()
-            return
+            return true
         }
-        try {
+        return try {
             val cipher = Cipher.getInstance(TRANSFORM)
             cipher.init(Cipher.ENCRYPT_MODE, secret())
             val out = cipher.iv + cipher.doFinal(k.toByteArray(Charsets.UTF_8))
             prefs.edit().putString(engine, Base64.encodeToString(out, Base64.NO_WRAP)).apply()
+            true
         } catch (e: Exception) {
-            // Keystore unavailable: the key is not saved (the settings say so: no "đã lưu")
+            false
         }
     }
 

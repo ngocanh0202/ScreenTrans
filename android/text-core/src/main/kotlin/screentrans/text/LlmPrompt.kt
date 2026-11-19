@@ -1,7 +1,6 @@
 package screentrans.text
 
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonParser
 import com.google.gson.stream.JsonReader
 import java.io.StringReader
 
@@ -52,8 +51,9 @@ object LlmPrompt {
     fun parseReply(text: String, n: Int): List<String>? {
         val start = text.indexOfFirst { it == '[' || it == '{' }
         if (start < 0) return null
-        val data = try {
-            JsonParser.parseReader(JsonReader(StringReader(text.substring(start))))  // the first value; the rest ignored
+        val data = try {  // the first value, strict JSON like Python's json module; the rest is ignored
+            val reader = JsonReader(StringReader(text.substring(start))).apply { strictness = com.google.gson.Strictness.STRICT }
+            com.google.gson.Gson().getAdapter(com.google.gson.JsonElement::class.java).read(reader)
         } catch (e: Exception) {
             return null
         }

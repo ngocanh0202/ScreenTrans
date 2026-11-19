@@ -105,7 +105,9 @@ class LlmTranslator(
     private var limitDay = ""
 
     /** One overall deadline per call (socket timeouts are per step; DNS has none): a late call finishes here. */
-    private val pool: ExecutorService = Executors.newCachedThreadPool { r -> Thread(r, "llm-$engine").apply { isDaemon = true } }
+    private val pool: ExecutorService = java.util.concurrent.ThreadPoolExecutor(
+        0, 2, 60, TimeUnit.SECONDS, java.util.concurrent.SynchronousQueue(),
+    ) { r -> Thread(r, "llm-$engine").apply { isDaemon = true } }  // at most 2 like Python: a hung call cannot pile up threads
 
     fun setGame(game: String?, notes: String, examples: List<Pair<String, String>>) {
         this.game = game
@@ -147,7 +149,12 @@ class LlmTranslator(
         } catch (e: IOException) {
             // usage.json not writable right now: never fail the translation over the counter
         }
-        val future = pool.submit<String> { client.complete(system, user, timeoutMs) }
+        val future = try {
+            pool.submit<String> { client.complete(system, user, timeoutMs) }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {  // two calls still hanging: as slow as a timeout
+            fail(RemoteError("timeout", client.name))
+            return null
+        }
         val reply = try {
             future.get(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {

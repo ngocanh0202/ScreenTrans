@@ -179,8 +179,9 @@ private class ClaudeClient(key: String, override val model: String, baseUrl: Str
             throw RemoteError(kindForStatus(e.statusCode()), name, "HTTP ${e.statusCode()}")
         } catch (e: com.anthropic.errors.AnthropicIoException) {
             throw RemoteError(if (generateSequence(e as Throwable) { it.cause }.any { it is InterruptedIOException }) "timeout" else "network", name)
-        } catch (e: Exception) {
-            throw RemoteError("server", name)
+        } catch (e: Exception) {  // a key OkHttp cannot put in a header is a broken key (its text would show it)
+            val badKey = generateSequence(e as Throwable) { it.cause }.any { it is IllegalArgumentException }
+            throw RemoteError(if (badKey) "auth" else "server", name)
         }
         val stop = msg.stopReason().map { it.toString() }.orElse("")
         if (stop == "refusal" || stop == "max_tokens") throw RemoteError("bad_reply", name, stop)
@@ -201,7 +202,8 @@ fun makeClient(engine: String, key: String, model: String = "", url: String = ""
         "openai" -> OpenAiClient(k, m, transport)
         "kaggle" -> {  // the server's host names it: each server gets its own cache namespace
             val u = url.trim().trimEnd('/')
-            val host = runCatching { URI(u).host }.getOrNull()?.takeIf { it.isNotEmpty() } ?: "server"
+            val host = runCatching { URI(u).let { if (it.port > 0) "${it.host}:${it.port}" else it.host } }.getOrNull()
+                ?.takeIf { it.isNotEmpty() } ?: "server"  // host[:port], like Python netloc
             KaggleClient(k, host, u, transport)
         }
         "claude" -> ClaudeClient(k, m, baseUrl)
