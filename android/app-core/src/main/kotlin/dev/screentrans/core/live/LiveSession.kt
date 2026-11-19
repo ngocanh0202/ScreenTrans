@@ -53,7 +53,10 @@ class LiveSession(
     private val blocks = HashMap<Pair<Int, String>, BlockState>()
     private val ocrFinal = HashMap<Int, Boolean>()
     private val requests = HashMap<Int, List<Item>>()
-    private val inflight = HashSet<Item>()
+    /** Sentences some live translate job still carries (a sentence may be in two jobs at once). */
+    private val inflight: Set<Item> get() = requests.values.flatten().toSet()
+    private var submitting = false  // inside host.requestTranslate: the new job is not registered yet
+    private var resend = false
     private val fixed = HashMap<String, String>()  // the user's corrections: a late machine translation never wins
     private val known = LinkedHashMap<String, String>()  // sentence -> translation shown in this run (oldest first)
 
@@ -83,7 +86,7 @@ class LiveSession(
     fun stop() {
         running = false
         ocrJob = -1
-        ocrFinal.clear(); requests.clear(); inflight.clear(); blocks.clear()
+        ocrFinal.clear(); requests.clear(); blocks.clear()
         pending = null
     }
 
@@ -131,16 +134,36 @@ class LiveSession(
         request(request)
     }
 
-    private fun request(request: List<Item>) {
-        if (request.isEmpty()) return
+    private fun request(request0: List<Item>) {
+        if (request0.isEmpty()) return
+        val request = request0.sortedBy { it.region }  // region order = the engine's flattened order
         val groups = List(regionCount) { mutableListOf<Paragraph>() }
         for (it in request) {
             val b = blocks.getValue(it.region to it.key).box
             groups[it.region].add(Paragraph(Kind.TEXT, it.source, listOf(it.source), b[0], b[1], b[2], b[3]))
         }
-        val id = host.requestTranslate(groups)
+        submitting = true
+        val id = try {
+            host.requestTranslate(groups)
+        } finally {
+            submitting = false
+        }
         requests[id] = request
-        inflight += request
+        if (resend) {
+            resend = false
+            resendMissing()
+        }
+    }
+
+    /**
+     * After a superseded translation: the job that replaced it does not carry its sentences, so send one job with
+     * both, which replaces it in turn; when that one is replaced nothing is missing any more (no ping-pong).
+     */
+    private fun resendMissing() {
+        val m = missing()
+        if (m.isEmpty()) return
+        val newest = requests.keys.maxOrNull()?.let { requests.getValue(it) }.orEmpty()
+        request(m + newest.filter { it !in m })
     }
 
     private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>, nowMs: Int): List<Item> {
@@ -191,7 +214,8 @@ class LiveSession(
         request.zip(flat).forEach { (item, seg) ->
             val st = blocks[item.region to item.key] ?: return@forEach
             val tr = seg.translation
-            if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source) return@forEach
+            if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source ||
+                seg.source != item.source) return@forEach
             st.shown[item.index] = item.source to (fixed[item.source] ?: tr)
             remember(item.source, st.shown.getValue(item.index).second)
             touched += item.region to item.key
@@ -221,7 +245,7 @@ class LiveSession(
 
     /** Done: the job no longer counts as running. */
     fun onJobEnded(jobId: Int) {
-        requests.remove(jobId)?.let { inflight -= it.toSet() }
+        requests.remove(jobId)
     }
 
     /** Finished sentences that are neither shown nor being translated. */
@@ -238,7 +262,9 @@ class LiveSession(
         if (jobId == ocrJob) ocrJob = -1
         val wasTranslation = jobId in requests
         onJobEnded(jobId)
-        if (wasTranslation && superseded && running) request(missing())
+        if (wasTranslation && superseded && running) {
+            if (submitting) resend = true else resendMissing()  // the new job registers first, then we resend
+        }
     }
 
     /** Tests only: pretend an OCR job [id] was requested. */

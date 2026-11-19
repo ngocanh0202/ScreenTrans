@@ -527,3 +527,63 @@ def test_remembered_translations_follow_the_users_fix_and_reset_on_restart():
     c.tick(0)
     c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
     assert sources(translate_jobs(jobs)[-1]) == ["Hello there."]
+
+
+# ---- Live review fixes ----------------------------------------------------------------------------------------
+class SupersedingWorker:
+    """Like TranslationWorker.submit: one waiting live_translate slot, the older one fails "superseded"
+    synchronously (Qt calls the slot directly on the UI thread). Nothing is taken: the worker is busy."""
+
+    def __init__(self):
+        self.c = None
+        self.jobs = []
+        self.waiting = None
+        self.depth = 0
+        self.max_depth = 0
+
+    def submit(self, job):
+        self.jobs.append(job)
+        if job.mode != "live_translate":
+            return
+        old, self.waiting = self.waiting, job
+        if old is not None:
+            self.depth += 1
+            self.max_depth = max(self.max_depth, self.depth)
+            self.c.on_job_failed(old.id, "superseded")
+            self.depth -= 1
+
+
+def make_superseding():
+    w = SupersedingWorker()
+    ids = iter(range(1, 10000))
+    overlays = []
+    c = LiveController(PARAMS, capture=Script([BLACK]), submit=w.submit, next_id=lambda: next(ids), notify=lambda m: None,
+                       overlay_factory=lambda r: overlays.append(FakeOverlay()) or overlays[-1], use_timer=False, clock=Clock())
+    w.c = c
+    c.start([REGION, (600, 500, 400, 80)])
+    return c, w, overlays
+
+
+def test_superseded_translations_do_not_ping_pong_and_nothing_is_lost():  # review #1 (stack overflow)
+    c, w, _ = make_superseding()
+    c.tick(0)
+    first = ocr_jobs(w.jobs)[-1]
+    c.on_ocr_done(first.id, [[para("Hello there.")], []])          # job A waits (the worker is busy)
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[para("Hello there."), para("Where to?", top=40)], [para("Good morning.")]])  # B supersedes A
+    assert w.max_depth <= 3
+    waiting = sources(w.waiting)
+    assert sorted(waiting) == ["Good morning.", "Hello there.", "Where to?"]  # the waiting job carries everything
+
+
+def test_a_resent_job_over_several_regions_draws_each_translation_in_its_own_region():  # review #2
+    c, jobs, _, overlays = make([BLACK], regions=(REGION, (600, 500, 400, 80)))
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[], [para("Good morning.")]])           # J1: region 1
+    j1 = translate_jobs(jobs)[-1]
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[para("Where is the key?")], [para("Good morning.")]])  # J2: region 0 only
+    c.on_job_failed(j1.id, "superseded")                                          # J3: both regions
+    translate(c, translate_jobs(jobs)[-1])
+    assert list(overlays[0].blocks.values()) == ["VI Where is the key?"]
+    assert list(overlays[1].blocks.values()) == ["VI Good morning."]

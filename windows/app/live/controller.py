@@ -90,7 +90,6 @@ class LiveController(QObject):
         self._ocr_final: dict[int, bool] = {}
         self._submitted_final: dict[int, bool] = {}  # every OCR job ever sent (tests / diagnostics)
         self._requests: dict[int, list[tuple[int, str, int, str]]] = {}  # translate job -> (region, key, idx, src)
-        self._inflight: set[tuple[int, str, int, str]] = set()
         self._overlays: list = []
         self._trackers: list[BlockTracker] = []
         self._blocks: dict[tuple[int, str], _BlockState] = {}
@@ -175,7 +174,6 @@ class LiveController(QObject):
         self._ocr_final.clear()
         self._ocr_images.clear()
         self._requests.clear()
-        self._inflight.clear()
         self._blocks.clear()
         self._pending = None
         self.last_segments = []
@@ -274,14 +272,19 @@ class LiveController(QObject):
                 request += self._update_block(i, b.key, b.paragraph, final or b.key in kept, carry)
         self._request(request)
 
+    @property
+    def _inflight(self) -> set[tuple[int, str, int, str]]:
+        """Sentences some live translate job still carries (a sentence may be in two jobs at once)."""
+        return {item for items in self._requests.values() for item in items}
+
     def _request(self, request: list) -> None:
         if not request:
             return
         from app.gui.worker import Job
 
+        request = sorted(request, key=lambda item: item[0])  # region order = the worker's flattened order
         tr_id = self._next_id()
         self._requests[tr_id] = request
-        self._inflight.update(request)
         groups: list[list[Paragraph]] = [[] for _ in self.regions]
         for i, key, _, src in request:
             st = self._blocks[(i, key)]
@@ -362,7 +365,7 @@ class LiveController(QObject):
         for (i, key, k, src), seg in zip(request, flat):
             st = self._blocks.get((i, key))
             if st is None or not seg.translation or seg.translation == "…" or k >= len(st.sentences) \
-                    or st.sentences[k] != src:
+                    or st.sentences[k] != src or seg.source != src:
                 continue
             st.shown[k] = (src, self._fixed.get(src, seg.translation))
             self._remember(src, st.shown[k][1])
@@ -413,8 +416,12 @@ class LiveController(QObject):
         self._finish(job_id)
         if was_translation and why == "superseded" and self.running:
             # The screen may stay still now (the line is complete): ask again at once, not on the next OCR.
-            self._request(self._missing())
+            # The job that replaced this one does not carry its sentences: send one job with both, which replaces
+            # it in turn; when that one is replaced nothing is missing any more, so this never ping-pongs.
+            missing = self._missing()
+            if missing:
+                newest = self._requests[max(self._requests)] if self._requests else []
+                self._request(missing + [item for item in newest if item not in missing])
 
     def _finish(self, job_id: int) -> None:
-        for item in self._requests.pop(job_id, []):
-            self._inflight.discard(item)
+        self._requests.pop(job_id, None)
