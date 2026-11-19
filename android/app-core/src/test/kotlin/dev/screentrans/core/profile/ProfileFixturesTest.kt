@@ -35,8 +35,8 @@ class ProfileFixturesTest {
         val a = FloatArray(4) { 0f }
         val b = floatArrayOf(255f, 255f, 0f, 0f)
         assertEquals(0f, Thumb.diff(a, b, booleanArrayOf(false, false, true, true)))
-        assertEquals(255f, Thumb.diff(a, b, booleanArrayOf(true, true, false, false)))
+        assertEquals(2f, Thumb.diff(a, b, booleanArrayOf(true, true, false, false)))  // two changed cells
         assertEquals(0f, Thumb.diff(a, b, BooleanArray(4)))
-        assertEquals(127.5f, Thumb.diff(a, b))
+        assertEquals(2f, Thumb.diff(a, b))
     }
 }

@@ -111,7 +111,7 @@ class ScreenCapturer(private val projection: MediaProjection, private val contex
      * Gray thumbnail ([Thumb.fromArgb], [width] px wide) of rect (l, t, r, b) read straight from the
      * held frame — no full-screen Bitmap per Live tick. Null when there is no frame or the rect is empty.
      */
-    fun thumbnail(rect: IntArray, width: Int = 64): FloatArray? = synchronized(lock) { thumbLocked(rect, width) }
+    fun thumbnail(rect: IntArray, width: Int = Thumb.WIDTH): FloatArray? = synchronized(lock) { thumbLocked(rect, width) }
 
     private fun thumbLocked(rect: IntArray, width: Int): FloatArray? {
         val img = latest ?: return null

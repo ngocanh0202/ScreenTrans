@@ -55,7 +55,7 @@ class LiveController(
     enum class CaptureMode { UNKNOWN, HIDDEN, CAPTURED }
 
     private companion object {
-        const val THUMB_W = 64
+        const val THUMB_W = Thumb.WIDTH
     }
 
     var captureMode = CaptureMode.UNKNOWN

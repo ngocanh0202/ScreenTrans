@@ -66,10 +66,10 @@ def test_ignore_mask_hides_part_of_the_region_from_the_diff():
     left = ignore_mask((0, 0, 640, 160), [(0, 0, 320, 160)], ta.shape[1], ta.shape[0])
     assert diff(ta, tb, left) == pytest.approx(0.0)
     right = ignore_mask((0, 0, 640, 160), [(320, 0, 320, 160)], ta.shape[1], ta.shape[0])
-    assert diff(ta, tb, right) == pytest.approx(255.0)
+    assert diff(ta, tb, right) == ta.size / 2  # every cell of the left half
     everything = ignore_mask((0, 0, 640, 160), [(0, 0, 640, 160)], ta.shape[1], ta.shape[0])
     assert not everything.any() and diff(ta, tb, everything) == 0.0
-    assert isinstance(diff(ta, tb), float) and diff(ta, tb) == pytest.approx(127.5, abs=1)
+    assert isinstance(diff(ta, tb), float) and diff(ta, tb) == ta.size / 2
     assert np.array_equal(ignore_mask((0, 0, 640, 160), [], 64, 16), np.ones((16, 64), bool))
 
 

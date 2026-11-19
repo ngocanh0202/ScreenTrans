@@ -3,10 +3,17 @@ package dev.screentrans.core.live
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Small gray thumbnails for change detection (same definition as windows/app/live/thumb.py). */
+/**
+ * Small gray thumbnails for change detection (same definition as windows/app/live/thumb.py).
+ * A change = how many cells changed clearly: a mean over the thumbnail hid a new dialogue line on a full
+ * screen (< 1), so Live only ever read the first line.
+ */
 object Thumb {
+    const val WIDTH = 160
+    const val CELL_DELTA = 16f  // a cell changed when its gray level moved by more than this (0-255)
+
     /** Gray (0.299R + 0.587G + 0.114B), box-averaged down to [targetW] px wide (aspect kept, never upscaled). */
-    fun fromArgb(pixels: IntArray, w: Int, h: Int, targetW: Int = 64): FloatArray {
+    fun fromArgb(pixels: IntArray, w: Int, h: Int, targetW: Int = WIDTH): FloatArray {
         require(w > 0 && h > 0 && pixels.size >= w * h)
         val tw = minOf(targetW, w)
         val th = maxOf(1, (h.toFloat() * tw / w).roundToInt())
@@ -27,17 +34,15 @@ object Thumb {
         return sum
     }
 
-    /** Mean |Δ| per thumbnail pixel (0–255), only where [mask] is true; different sizes → [Float.MAX_VALUE]. */
+    /** Number of cells whose gray level changed by more than [CELL_DELTA], only where [mask] is true; different sizes → [Float.MAX_VALUE]. */
     fun diff(a: FloatArray, b: FloatArray, mask: BooleanArray? = null): Float {
         if (a.size != b.size || a.isEmpty()) return Float.MAX_VALUE
         val m = mask?.takeIf { it.size == a.size }
-        var total = 0.0
         var count = 0
         for (i in a.indices) {
             if (m != null && !m[i]) continue
-            total += abs(a[i] - b[i])
-            count++
+            if (abs(a[i] - b[i]) > CELL_DELTA) count++
         }
-        return if (count == 0) 0f else (total / count).toFloat()  // everything ignored: "no change"
+        return count.toFloat()  // everything ignored: 0, "no change"
     }
 }

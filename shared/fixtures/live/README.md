@@ -19,7 +19,7 @@ Máy trạng thái Live quyết định **khi nào OCR** và **có dịch kết 
 
 ## Quy tắc
 
-`diff` = trung bình |Δ| (0–255) giữa ảnh xám thu nhỏ rộng 64 px của khung này và khung **ngay trước**. "Đổi" nghĩa là `diff > change_threshold`.
+`diff` = **số ô** có độ xám lệch quá 16 (0–255) giữa ảnh xám thu nhỏ rộng 160 px của khung này và khung **ngay trước** (trung bình cả ảnh làm mất dòng thoại mới trên toàn màn hình). "Đổi" nghĩa là `diff > change_threshold`.
 
 - **Bỏ qua thay đổi do chính overlay:** sau `overlay_changed`, khung kế tiếp không được xét (chỉ làm mốc mới).
 - **ĐỨNG YÊN:** khung "đổi" → sang **ĐANG ĐỔI**, ghi `changed_at = last_change = t`.

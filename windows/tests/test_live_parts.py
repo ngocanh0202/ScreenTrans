@@ -42,9 +42,9 @@ def test_thumb_diff():
     black = Image.new("RGB", (640, 120), (0, 0, 0))
     white = Image.new("RGB", (640, 120), (255, 255, 255))
     a, b = gray_thumb(black), gray_thumb(white)
-    assert a.shape == (12, 64)
+    assert a.shape == (30, 160)
     assert diff(a, gray_thumb(black)) == 0
-    assert round(diff(a, b)) == 255
+    assert diff(a, b) == 30 * 160  # every cell changed
     assert diff(a, gray_thumb(Image.new("RGB", (100, 100)))) == float("inf")
     dot = black.copy()
     dot.putpixel((5, 5), (255, 255, 255))
@@ -125,3 +125,16 @@ def test_text_scale_multiplies_the_source_size(qtbot):
     qtbot.addWidget(ao)
     ao.set_block("b", "Chào.", (0, 0, 400, 40), (0, 0), font_px=20)
     assert ao.blocks["b"].px == 30
+
+
+def test_a_short_line_appearing_on_a_full_screen_counts_as_a_change():
+    """Regression: the mean over a 64-px thumbnail hid new dialogue (diff ~0.4), so only the first line was read."""
+    from PIL import ImageDraw, ImageFont
+
+    screen = Image.new("RGB", (2048, 942), (40, 44, 52))
+    talk = screen.copy()
+    ImageDraw.Draw(talk).text((600, 820), "Hi.", fill=(235, 235, 235), font=ImageFont.load_default(36))
+    assert diff(gray_thumb(screen), gray_thumb(talk)) > 5
+    # JPEG-like noise / a 2 % brightness flicker everywhere is not a change
+    flicker = screen.point(lambda v: min(255, int(v * 1.02) + 1))
+    assert diff(gray_thumb(screen), gray_thumb(flicker)) <= 5
