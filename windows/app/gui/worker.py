@@ -132,8 +132,18 @@ class TranslationWorker(QObject):
                 self.notice.emit(f"{label.split(' —')[0]} không dùng được ({e}); dùng Windows OCR.")
         self._pipeline.ocr = self._engines[name] or self._fast_ocr
 
-    def _use_engine(self, engine: str, llm: dict) -> None:
+    def _use_engine(self, engine: str, llm: dict, game: str | None = None) -> None:
         """The game's translation engine: the local model, or a remote LLM that falls back to it."""
+        from app.translate import remote
+
+        try:
+            self._switch_engine(engine, llm, game)
+        except Exception:  # e.g. a package missing from the build: never block the game, never show the error
+            traceback.print_exc()
+            self._pipeline.translator = self._local
+            self.notice.emit(f"Không bật được {remote.NAMES.get(engine, engine)} — dùng model trên máy.")
+
+    def _switch_engine(self, engine: str, llm: dict, game: str | None) -> None:
         from app.translate import remote
 
         if engine not in remote.NAMES:
@@ -143,6 +153,7 @@ class TranslationWorker(QObject):
         from pathlib import Path
 
         from app.secrets import KeyStore
+        from app.translate.context_store import ContextStore
         from app.translate.llm import LlmTranslator
         from app.usage import Usage
 
@@ -161,8 +172,9 @@ class TranslationWorker(QObject):
         tr = self._translators.get(cache_key)
         if tr is None:
             tr = LlmTranslator(engine, remote.make_client(engine, key, model=model, url=url), self._local,
-                               Usage(data_dir), limit, self.notice.emit)
+                               Usage(data_dir), limit, self.notice.emit, contexts=ContextStore(data_dir))
             self._translators[cache_key] = tr
+        tr.set_game(game, str(llm.get("notes") or ""), self._pipeline.examples())
         self._pipeline.translator = tr
 
     def _run(self, job: Job) -> None:
@@ -185,7 +197,8 @@ class TranslationWorker(QObject):
                 glossary = Glossary.load(*(Path(g) for g in job.payload.get("glossaries", [])))
                 self._pipeline.set_game(job.payload.get("game"), glossary, job.payload.get("overrides", {}))
                 self._use_ocr(job.payload.get("ocr", "auto"))
-                self._use_engine(job.payload.get("engine", "local"), job.payload.get("llm") or {})
+                self._use_engine(job.payload.get("engine", "local"), job.payload.get("llm") or {},
+                                 job.payload.get("game"))
                 self.job_done.emit(job.id, [])
                 return
             if job.mode == "live_ocr":

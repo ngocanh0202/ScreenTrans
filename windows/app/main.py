@@ -622,10 +622,10 @@ class TrayApp(QObject):
                 "kaggle_url": llm.get("kaggle_url") if isinstance(llm.get("kaggle_url"), str) else "",
                 "daily_limit": limit if isinstance(limit, int) and limit > 0 else DAILY_LIMIT}
 
-    def _llm_payload(self, engine: str) -> dict:
+    def _llm_payload(self, p: Profile) -> dict:
         llm = self._llm_settings()
-        return {"model": llm["models"].get(engine, ""), "url": llm["kaggle_url"] if engine == "kaggle" else "",
-                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir())}
+        return {"model": llm["models"].get(p.engine, ""), "url": llm["kaggle_url"] if p.engine == "kaggle" else "",
+                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir()), "notes": p.llm_notes}
 
     def open_settings(self) -> None:
         from app.secrets import KeyStore
@@ -684,7 +684,7 @@ class TrayApp(QObject):
         self._set_game_job = next(self._ids)
         self.worker.submit(Job(self._set_game_job, "set_game", None, (0, 0),
                                payload={"game": p.id, "glossaries": glossaries, "overrides": dict(p.overrides),
-                                        "ocr": p.ocr, "engine": p.engine, "llm": self._llm_payload(p.engine)}))
+                                        "ocr": p.ocr, "engine": p.engine, "llm": self._llm_payload(p)}))
         self._worker_game = p.id
 
     def _user_glossary(self, game_id: str) -> Path:
