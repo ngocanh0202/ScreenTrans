@@ -55,6 +55,17 @@ class Glossary(entries: List<Entry>) {
     private fun lookup(matched: String): Entry? =
         listOfNotNull(exact[matched], folded[matched.lowercase()]).minByOrNull { it.first }?.second
 
+    /** Entries that occur in [texts] (same matching as [protect]): source -> target, null = keep as is. */
+    fun termsIn(texts: List<String>): Map<String, String?> {
+        val p = pattern ?: return emptyMap()
+        val found = LinkedHashMap<String, String?>()
+        for (t in texts) for (m in p.findAll(t)) {
+            val e = lookup(m.value) ?: continue
+            if (e.source !in found) found[e.source] = e.value
+        }
+        return found
+    }
+
     fun protect(text: String): Pair<String, List<String>> {
         val p = pattern ?: return text to emptyList()
         val values = mutableListOf<String>()
