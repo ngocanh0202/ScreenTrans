@@ -232,4 +232,52 @@ class TranslationEngineTest {
         testScheduler.advanceUntilIdle()
         assertEquals(listOf("A tilted line of the quest."), events.filterIsInstance<EngineEvent.OcrDone>().single().paragraphs[0].map { it.text })
     }
+
+    // ---- Phase 5b: remote LLM engine per game --------------------------------------------------------------
+    private fun llmBundle(dir: java.io.File, failing: Boolean = false, made: MutableList<dev.screentrans.core.llm.LlmEnginesTest.Echo>): EngineBundle<String> {
+        val tr = SentenceTranslator { texts -> texts.map { "VI $it" } }
+        val engines = dev.screentrans.core.llm.LlmEngines(dir, { "AIza-1" }, tr, "fake", clientFactory = { _, _, model, _ ->
+            if (failing) error("no SDK") else dev.screentrans.core.llm.LlmEnginesTest.Echo(model).also { made.add(it) }
+        })
+        return EngineBundle(ocr = { _: String -> lines }, pipeline = Pipeline(tr, "fake", Glossary(emptyList()), TranslationCache(100)),
+            llm = engines)
+    }
+
+    @Test
+    fun `set game switches to the remote engine with timeouts per job`(@org.junit.jupiter.api.io.TempDir dir: java.io.File) = runTest {
+        val made = mutableListOf<dev.screentrans.core.llm.LlmEnginesTest.Echo>()
+        val engine = TranslationEngine({ llmBundle(dir, made = made) }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        engine.submit(EngineJob<String>(1, fullScreen = false, image = null, control = EngineControl.SetGame(emptyList(), emptyMap(),
+            game = "g", engine = "gemini", llm = dev.screentrans.core.llm.LlmSettings(model = "m1"))))
+        engine.submit(EngineJob(2, fullScreen = false, image = "img"))
+        testScheduler.advanceUntilIdle()
+        val done = events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 2 }
+        assertEquals("LLM Hello there.", done.segments[1].translation)
+        val a = Paragraph(Kind.TEXT, "One.", listOf("One."), 0f, 0f, 10f, 10f)
+        engine.submit(EngineJob<String>(3, fullScreen = false, image = null, liveParagraphs = listOf(listOf(a))))
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf(6000, 2500), made.single().timeouts)
+        engine.submit(EngineJob<String>(4, fullScreen = false, image = null, control = EngineControl.SetGame(emptyList(), emptyMap())))
+        engine.submit(EngineJob(5, fullScreen = false, image = "img"))
+        testScheduler.advanceUntilIdle()
+        assertEquals("VI Hello there.", events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 5 }.segments[1].translation)
+    }
+
+    @Test
+    fun `an engine that cannot start falls back with a notice`(@org.junit.jupiter.api.io.TempDir dir: java.io.File) = runTest {
+        val engine = TranslationEngine({ llmBundle(dir, failing = true, made = mutableListOf()) }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        engine.submit(EngineJob<String>(1, fullScreen = false, image = null, control = EngineControl.SetGame(emptyList(), emptyMap(),
+            game = "g", engine = "claude")))
+        engine.submit(EngineJob(2, fullScreen = false, image = "img"))
+        testScheduler.advanceUntilIdle()
+        assertEquals("VI Hello there.", events.filterIsInstance<EngineEvent.Done>().single { it.jobId == 2 }.segments[1].translation)
+        val notice = events.filterIsInstance<EngineEvent.Notice>().single()
+        assertTrue("Claude" in notice.message && "no SDK" !in notice.message)
+    }
 }

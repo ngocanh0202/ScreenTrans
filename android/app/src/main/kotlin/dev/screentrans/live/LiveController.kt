@@ -330,6 +330,7 @@ class LiveController(
                 s.onJobFailed(e.jobId, superseded = e.why == SUPERSEDED)
             }
             is EngineEvent.SegmentReady -> Unit
+            is EngineEvent.Notice -> Unit  // shown by Controller
         }
     }
 }
