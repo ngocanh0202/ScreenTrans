@@ -1,7 +1,7 @@
 """Full-screen mode: translations drawn over each text block of the captured monitor."""
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QWidget
 
@@ -48,6 +48,8 @@ class Block:
     text: str
     font_size: int
     draw_height: int
+    angle: float = 0.0           # tilted text: drawn rotated by `angle` around `pivot`
+    pivot: QPoint | None = None
 
 
 class FullscreenOverlay(QWidget):
@@ -71,11 +73,14 @@ class FullscreenOverlay(QWidget):
     def add_segment(self, seg: Segment, origin: tuple[int, int]) -> None:
         r = physical_to_logical(block_rect(seg.box, origin), self.screen_geometry, self.dpr)
         r.translate(-self.screen_geometry.left(), -self.screen_geometry.top())
+        pivot = physical_to_logical((origin[0], origin[1], 0, 0), self.screen_geometry, self.dpr).topLeft()
+        pivot -= self.screen_geometry.topLeft()
+        angle = getattr(seg, "angle", 0.0)
         if seg.kind == "name":
-            self.blocks.append(Block(r, seg, seg.source, MIN_FONT, r.height()))
+            self.blocks.append(Block(r, seg, seg.source, MIN_FONT, r.height(), angle, pivot))
         else:
             size, text, h = fit_text(seg.translation or "", r.width(), r.height(), self.cfg.font_size)
-            self.blocks.append(Block(r, seg, text, size, h))
+            self.blocks.append(Block(r, seg, text, size, h, angle, pivot))
         self.update()
 
     def finish(self) -> None:
@@ -88,16 +93,24 @@ class FullscreenOverlay(QWidget):
         alpha = round(255 * self.cfg.opacity)
         for b in self.blocks:
             area = QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height)
+            tilted = bool(b.angle) and b.pivot is not None
+            if tilted:  # tilted text: draw in its frame, rotated around the image origin
+                p.save()
+                p.translate(b.pivot)
+                p.rotate(b.angle)
+                area.translate(-b.pivot)
             p.setFont(QFont(FONT, b.font_size))
             if b.segment.kind == "name":
                 p.setPen(QColor(255, 220, 140))
                 p.drawText(area, Qt.AlignLeft | Qt.AlignVCenter, b.text)
-                continue
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(20, 20, 24, alpha))
-            p.drawRoundedRect(area, 4, 4)
-            p.setPen(Qt.white)
-            p.drawText(area.adjusted(PAD, PAD, -PAD, -PAD), Qt.TextWordWrap, b.text)
+            else:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(20, 20, 24, alpha))
+                p.drawRoundedRect(area, 4, 4)
+                p.setPen(Qt.white)
+                p.drawText(area.adjusted(PAD, PAD, -PAD, -PAD), Qt.TextWordWrap, b.text)
+            if tilted:
+                p.restore()
         if self.translating:
             p.setFont(QFont(FONT, 10))
             chip = QRect(self.width() - 140, 12, 128, 26)

@@ -37,6 +37,7 @@ class _BlockState:
     colors: BlockStyle | None = None    # sampled colours ("match" style), None = white on dark
     sampled: bool = False
     stable_since: int = 0               # when its text last changed
+    angle: float = 0.0                  # tilted text
 
 
 class LiveController(QObject):
@@ -293,7 +294,14 @@ class LiveController(QObject):
             st.font_px = size
         if self.style == "match" and not st.sampled and image is not None:
             st.sampled = True
-            crop = image.crop((int(p.left), int(p.top), int(p.right), int(p.bottom))).convert("RGB")
+            from app.ocr.deskew import bounds
+
+            l, t, r, b = bounds((p.left, p.top, p.right, p.bottom), getattr(p, "angle", 0.0))
+            l, t = max(0, int(l)), max(0, int(t))
+            r, b = min(image.width, int(r)), min(image.height, int(b))
+            if r - l < 6 or b - t < 6:
+                return
+            crop = image.crop((l, t, r, b)).convert("RGB")
             import numpy as np
 
             st.colors = sample_style(np.asarray(crop))
@@ -301,6 +309,7 @@ class LiveController(QObject):
     def _update_block(self, i: int, key: str, p: Paragraph, final: bool, carry: dict | None = None) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())
         st.kind, st.box = p.kind, (p.left, p.top, p.right, p.bottom)
+        st.angle = getattr(p, "angle", 0.0)
         if p.kind == "name":
             st.sentences, st.done = [p.text], 1
             self._draw(i, key)
@@ -330,7 +339,8 @@ class LiveController(QObject):
         st.drawn = text
         if text:
             x, y = self.regions[i][0], self.regions[i][1]
-            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind, font_px=st.font_px, colors=st.colors)
+            self._overlays[i].set_block(key, text, st.box, (x, y), st.kind, font_px=st.font_px, colors=st.colors,
+                                        angle=st.angle)
         else:
             self._overlays[i].remove_block(key)
 

@@ -19,6 +19,7 @@ class Segment:
     source: str
     translation: str | None
     box: tuple[float, float, float, float]  # left, top, right, bottom
+    angle: float = 0.0  # tilted text: the box is in the frame rotated by -angle (ocr/deskew.py)
 
 
 @dataclass
@@ -156,8 +157,8 @@ class Pipeline:
     def _segment(p: Paragraph, translated: dict[str, str]) -> Segment:
         box = (p.left, p.top, p.right, p.bottom)
         if p.kind == "name":
-            return Segment("name", p.text, None, box)
-        return Segment("text", p.text, " ".join(translated[s] for s in p.sentences), box)
+            return Segment("name", p.text, None, box, p.angle)
+        return Segment("text", p.text, " ".join(translated[s] for s in p.sentences), box, p.angle)
 
     def translate_paragraphs(self, paragraphs: list[Paragraph]) -> list[Segment]:
         """One translator batch for every sentence (one-shot region mode)."""
@@ -177,9 +178,9 @@ class Pipeline:
             for p in paragraphs:
                 box = (p.left, p.top, p.right, p.bottom)
                 if p.kind == "name":
-                    out.append(Segment("name", p.text, None, box))
+                    out.append(Segment("name", p.text, None, box, p.angle))
                 else:
-                    out.append(Segment("text", p.text, " ".join(done.get(s, "…") for s in p.sentences), box))
+                    out.append(Segment("text", p.text, " ".join(done.get(s, "…") for s in p.sentences), box, p.angle))
             return out
 
         if not order:

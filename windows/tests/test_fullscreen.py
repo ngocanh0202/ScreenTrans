@@ -59,3 +59,17 @@ def test_click_empty_area_closes(qtbot):
     w.add_segment(seg("Hello.", "Chào.", (100, 100, 400, 140)), (0, 0))
     qtbot.mouseClick(w, Qt.LeftButton, pos=QPoint(900, 900))
     assert not w.isVisible()
+
+
+def test_tilted_segment_is_drawn_rotated(qtbot):
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.fullscreen import FullscreenOverlay
+    from app.pipeline import Segment
+
+    o = FullscreenOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(o)
+    o.add_segment(Segment("text", "At the moment", "Lúc này", (100, 300, 700, 330), angle=-8.0), (0, 0))
+    assert o.blocks[-1].angle == -8.0
+    o.grab()

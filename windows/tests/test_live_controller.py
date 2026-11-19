@@ -31,10 +31,12 @@ class FakeOverlay:
         self.closed = False
         self.draws = 0
 
-    def set_block(self, key, text, box, origin, kind="text", font_px=None, colors=None):
+    def set_block(self, key, text, box, origin, kind="text", font_px=None, colors=None, angle=0.0):
         self.blocks[key] = text
         self.styles = getattr(self, "styles", {})
         self.styles[key] = (font_px, colors)
+        self.angles = getattr(self, "angles", {})
+        self.angles[key] = angle
         self.draws += 1
 
     def remove_block(self, key):
@@ -445,3 +447,13 @@ def test_a_failed_translation_is_not_retried_in_a_loop():
     n = len(translate_jobs(jobs))
     c.on_job_failed(translate_jobs(jobs)[-1].id, "model crashed")
     assert len(translate_jobs(jobs)) == n  # a real error waits for the next OCR
+
+
+def test_a_tilted_block_keeps_its_angle_and_samples_inside_the_image():
+    c, jobs, _, overlays = make([_boxed((250, 250, 250), (20, 20, 20))])
+    c.tick(0)
+    p = Paragraph("text", "Hello there friend.", ["Hello there friend."], 50, 0, 350, 30, line_height=30, angle=-10.0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[p]])
+    translate(c, translate_jobs(jobs)[-1])
+    key = next(iter(overlays[0].blocks))
+    assert overlays[0].angles[key] == -10.0
