@@ -3,6 +3,7 @@
 Every client turns (system, user) into the model's reply text; errors become RemoteError with a kind and a
 message that never contains the key or the request.
 """
+import http.client
 import json
 import socket
 import urllib.error
@@ -53,7 +54,18 @@ class _HttpClient:
         try:
             raw = self._open(req, timeout=timeout_s).read()
         except urllib.error.HTTPError as e:
-            raise RemoteError(_kind_for_status(e.code), self.name, f"HTTP {e.code}") from None
+            kind = _kind_for_status(e.code)
+            if kind == "server":
+                try:
+                    body = e.read()
+                except Exception:
+                    body = b""
+                kind = self._auth_hint(e.code, body or b"") or kind
+            raise RemoteError(kind, self.name, f"HTTP {e.code}") from None
+        except (ValueError, UnicodeError):  # the key cannot go in a header: a broken key (message would show it)
+            raise RemoteError("auth", self.name) from None
+        except http.client.HTTPException:  # truncated / garbled response (flaky tunnel)
+            raise RemoteError("network", self.name) from None
         except (socket.timeout, TimeoutError):
             raise RemoteError("timeout", self.name) from None
         except urllib.error.URLError as e:
@@ -65,6 +77,10 @@ class _HttpClient:
             return json.loads(raw)
         except ValueError:
             raise RemoteError("bad_reply", self.name) from None
+
+    def _auth_hint(self, status: int, body: bytes) -> Kind | None:
+        """Providers that report a wrong key with another status (the body is never shown)."""
+        return None
 
     def _pick(self, data, *path) -> str:
         try:
@@ -80,13 +96,17 @@ class _HttpClient:
 class GeminiClient(_HttpClient):
     name = "Gemini"
 
+    def _auth_hint(self, status: int, body: bytes) -> Kind | None:
+        return "auth" if status == 400 and (b"API_KEY_INVALID" in body or b"API key not valid" in body) else None
+
     def complete(self, system: str, user: str, timeout_s: float) -> str:
         data = self._post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
             {"x-goog-api-key": self.key},
             {"systemInstruction": {"parts": [{"text": system}]},
              "contents": [{"role": "user", "parts": [{"text": user}]}],
-             "generationConfig": {"responseMimeType": "application/json"}},
+             "generationConfig": {"responseMimeType": "application/json",
+                                  "thinkingConfig": {"thinkingBudget": 0}}},  # translation: no reasoning, fast
             timeout_s)
         return self._pick(data, "candidates", 0, "content", "parts", 0, "text")
 
@@ -97,7 +117,7 @@ class OpenAiClient(_HttpClient):
     def complete(self, system: str, user: str, timeout_s: float) -> str:
         data = self._post(
             "https://api.openai.com/v1/chat/completions", {"Authorization": f"Bearer {self.key}"},
-            {"model": self.model, "response_format": {"type": "json_object"},
+            {"model": self.model, "response_format": {"type": "json_object"}, "reasoning_effort": "minimal",
              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
             timeout_s)
         return self._pick(data, "choices", 0, "message", "content")
@@ -162,7 +182,8 @@ class ClaudeClient:
 
 def make_client(engine: str, key: str, model: str = "", url: str = "", opener: Callable | None = None,
                 http_client=None) -> Client:
-    key = (key or "").strip()  # a pasted key often carries spaces / a newline
+    # a pasted key often carries spaces, a newline or zero-width characters; keys never contain them
+    key = "".join(ch for ch in (key or "") if not ch.isspace() and ch not in "​‌‍⁠﻿")
     model = (model or "").strip() or DEFAULT_MODELS.get(engine, "")
     if engine == "gemini":
         return GeminiClient(key, model, opener)

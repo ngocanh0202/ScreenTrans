@@ -152,3 +152,32 @@ def test_pipeline_falls_back_to_the_local_model_and_does_not_cache_it(tmp_path):
     c.error = None
     segs = p.run(IMG).segments
     assert [s.translation for s in segs if s.kind == "text"][0].startswith("LLM ")  # not served from cache
+
+
+# ---- final review fixes ------------------------------------------------------------------------------------
+def test_any_client_exception_falls_back_without_showing_its_text(tmp_path):  # review C1
+    c = FakeClient(error=RuntimeError("Invalid header value b'Bearer sk-SECRET'"))
+    tr, _, notes = make(tmp_path, c)
+    assert tr.translate_ctx(["Hi."], {}) is None
+    assert len(notes) == 1 and "sk-SECRET" not in notes[0] and "Gemini" in notes[0]
+
+
+def test_the_timeout_caps_the_whole_call(tmp_path):  # review I2
+    import time as _time
+
+    class Slow(FakeClient):
+        def complete(self, system, user, timeout_s):
+            _time.sleep(1.5)  # a slow DNS / trickling server: per-socket timeouts never fire
+            return super().complete(system, user, timeout_s)
+
+    tr, _, notes = make(tmp_path, Slow())
+    tr.timeout_s = 0.3
+    t0 = _time.monotonic()
+    assert tr.translate_ctx(["Hi."], {}) is None
+    assert _time.monotonic() - t0 < 1.0 and "quá thời gian" in notes[0]
+
+
+def test_characters_are_counted_even_when_the_call_fails(tmp_path):  # review I3: a timed-out call may be billed
+    tr, _, _ = make(tmp_path, FakeClient(error=RemoteError("timeout", "Gemini")))
+    tr.translate_ctx(["Hello."], {})
+    assert tr.usage.used() == 6

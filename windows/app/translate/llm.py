@@ -5,6 +5,8 @@ limit, unusable reply): the Pipeline then translates those sentences with the lo
 glossary placeholders) and does not cache them under the remote engine's name.
 """
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Callable
 
 from app.translate.base import Translator
@@ -33,6 +35,8 @@ class LlmTranslator:
         self._retry_at = 0.0           # after a failure: local until then
         self._failing = False          # one notice per failure spell
         self._limit_day = ""           # one limit notice per day
+        # one overall deadline per call (socket timeouts are per step; DNS has none): a late call finishes here
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"llm-{engine}")
 
     def set_speaker(self, name: str | None) -> None:
         self._speaker = name
@@ -55,12 +59,19 @@ class LlmTranslator:
                              f"dùng model trên máy.")
             return None
         system, user = build_messages(texts, self._context, self._speaker, glossary)
+        self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
+        future = self._pool.submit(self.client.complete, system, user, self.timeout_s)
         try:
-            reply = self.client.complete(system, user, self.timeout_s)
+            reply = future.result(timeout=self.timeout_s)
+        except FutureTimeout:
+            self._fail(RemoteError("timeout", self.client.name))
+            return None
         except RemoteError as e:
             self._fail(e)
             return None
-        self.usage.add(chars)
+        except Exception:  # anything else (its text may hold the key or the request): never shown
+            self._fail(RemoteError("server", self.client.name))
+            return None
         out = parse_reply(reply, len(texts))
         if out is None:
             return None  # this batch only: the next one tries the server again

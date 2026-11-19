@@ -171,3 +171,40 @@ def test_claude_timeout_and_refusal():
     with pytest.raises(RemoteError) as e:
         claude(refuse).complete("S", "U", 1)
     assert e.value.kind == "bad_reply"
+
+
+# ---- final review fixes ------------------------------------------------------------------------------------
+@pytest.mark.parametrize("exc", [ValueError(f"Invalid header value b'Bearer {KEY}\nsk-OTHER'"),
+                                 UnicodeEncodeError("latin-1", KEY, 0, 1, "bad"),
+                                 __import__("http.client").client.IncompleteRead(b"partial")])
+def test_header_and_protocol_errors_become_remote_errors_without_the_key(exc):  # review C1
+    with pytest.raises(RemoteError) as e:
+        client("kaggle", Opener(exc=exc)).complete("S", "U", 1)
+    assert KEY not in str(e.value) and e.value.__cause__ is None
+
+
+def test_inner_whitespace_and_zero_width_characters_are_removed_from_keys():  # review C1
+    op = Opener(body=OK["openai"])
+    make_client("openai", " sk-​ab\ncd  ", opener=op).complete("S", "U", 1)
+    assert op.requests[0][0].get_header("Authorization") == "Bearer sk-abcd"
+
+
+def test_gemini_invalid_key_400_is_an_auth_error():  # review I4
+    body = json.dumps({"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.",
+                                 "status": "INVALID_ARGUMENT",
+                                 "details": [{"reason": "API_KEY_INVALID"}]}}).encode()
+    with pytest.raises(RemoteError) as e:
+        client("gemini", Opener(status=400, body=body)).complete("S", "U", 1)
+    assert e.value.kind == "auth"
+    with pytest.raises(RemoteError) as e:  # another 400 stays a server-side problem
+        client("gemini", Opener(status=400, body=b'{"error": {"status": "INVALID_ARGUMENT"}}')).complete("S", "U", 1)
+    assert e.value.kind == "server"
+
+
+def test_requests_ask_for_no_reasoning():  # review I2: Live needs fast answers
+    op = Opener(body=OK["gemini"])
+    make_client("gemini", KEY, opener=op).complete("S", "U", 1)
+    assert json.loads(op.requests[0][0].data)["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    op = Opener(body=OK["openai"])
+    make_client("openai", KEY, opener=op).complete("S", "U", 1)
+    assert json.loads(op.requests[0][0].data)["reasoning_effort"] == "minimal"
