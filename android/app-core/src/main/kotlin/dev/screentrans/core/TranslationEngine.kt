@@ -59,6 +59,7 @@ data class EngineJob<I>(
     val regions: List<IntArray> = emptyList(),
     val liveOcr: Boolean = false,
     val liveParagraphs: List<List<Paragraph>>? = null,
+    val liveSpeaker: String? = null,  // the dialogue box's name line, for a remote LLM
     val control: EngineControl? = null,
 )
 
@@ -199,7 +200,7 @@ class TranslationEngine<I>(
             }
             val live = job.liveParagraphs
             if (live != null) {
-                runLiveTranslate(b, job.id, live)
+                runLiveTranslate(b, job.id, live, job.liveSpeaker)
                 return
             }
             val lines = b.ocr(requireNotNull(job.image) { "job without image" })
@@ -226,14 +227,14 @@ class TranslationEngine<I>(
         }
     }
 
-    private fun runLiveTranslate(b: EngineBundle<I>, jobId: Int, groups: List<List<Paragraph>>) {
+    private fun runLiveTranslate(b: EngineBundle<I>, jobId: Int, groups: List<List<Paragraph>>, speaker: String? = null) {
         val sizes = groups.map { it.size }
         fun regroup(segs: List<Segment>): List<List<Segment>> {
             var i = 0
             return sizes.map { n -> segs.subList(i, i + n).also { i += n } }
         }
         var last: List<List<Segment>> = groups.map { emptyList() }
-        for (segs in b.pipeline.iterSentences(groups.flatten())) {
+        for (segs in b.pipeline.iterSentences(groups.flatten(), speaker)) {
             last = regroup(segs)
             _events.tryEmit(EngineEvent.Partial(jobId, last))
         }

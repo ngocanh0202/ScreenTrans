@@ -9,7 +9,8 @@ interface LiveHost {
     /** Capture the watched regions (async is fine) and submit an OCR job; return its id. */
     fun requestOcr(final: Boolean): Int
     /** Submit a sentence-by-sentence translation of [paragraphs] (per region); return its id. */
-    fun requestTranslate(paragraphs: List<List<Paragraph>>): Int
+    /** [speaker]: the name line of the dialogue box (a remote LLM gets it), null when there is none. */
+    fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int
     /** Draw (or redraw in place) one text block's translation over it; [box] = l, t, r, b in frame pixels. */
     fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float)
     fun removeBlock(region: Int, key: String)
@@ -144,7 +145,7 @@ class LiveSession(
         }
         submitting = true
         val id = try {
-            host.requestTranslate(groups)
+            host.requestTranslate(groups, speakerFor(request.first()))
         } finally {
             submitting = false
         }
@@ -153,6 +154,16 @@ class LiveSession(
             resend = false
             resendMissing()
         }
+    }
+
+    /** The nearest name block above the item's text block in its region (or the only name there). */
+    private fun speakerFor(item: Item): String? {
+        val top = blocks[item.region to item.key]?.box?.get(1) ?: return null
+        val names = blocks.entries.filter { (k, st) -> k.first == item.region && st.kind == Kind.NAME && st.sentences.isNotEmpty() }
+            .map { it.value.box to it.value.sentences[0] }
+        val above = names.filter { it.first[3] <= top + 5 }
+        val pick = above.maxByOrNull { it.first[3] } ?: names.singleOrNull()
+        return pick?.second
     }
 
     /**

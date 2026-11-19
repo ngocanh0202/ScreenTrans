@@ -602,3 +602,12 @@ def test_the_last_sentence_appears_on_an_animated_background_with_jittery_reads(
                 translate(c, job)
     shown = list(overlays[0].blocks.values())
     assert shown in (["VI We need to go now. VI The bridge is closing."], ["VI We need to go now. VI The bridge is cIosing."])
+
+
+def test_live_translate_jobs_carry_the_speaker_of_the_dialogue_box():  # review #5
+    c, jobs, _, _ = make([BLACK])
+    c.tick(0)
+    name = Paragraph("name", "Vertin", ["Vertin"], 0, 0, 80, 18)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[name, para("Where are you going?", top=30)]])
+    job = translate_jobs(jobs)[-1]
+    assert job.payload == {"speaker": "Vertin"}

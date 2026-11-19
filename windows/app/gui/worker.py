@@ -219,7 +219,7 @@ class TranslationWorker(QObject):
                     return out
 
                 last = [[] for _ in groups]
-                for segs in self._pipeline.iter_sentences(flat):
+                for segs in self._pipeline.iter_sentences(flat, speaker=(job.payload or {}).get("speaker")):
                     last = regroup(segs)
                     self.partial.emit(job.id, last)
                 self.job_done.emit(job.id, last)

@@ -289,7 +289,19 @@ class LiveController(QObject):
         for i, key, _, src in request:
             st = self._blocks[(i, key)]
             groups[i].append(Paragraph("text", src, [src], *st.box))
-        self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups))
+        self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups,
+                         payload={"speaker": self._speaker_for(request[0])}))
+
+    def _speaker_for(self, item: tuple) -> str | None:
+        """The name line of the dialogue box: the nearest name block above the first text block of the request
+        (or the only name in its region). A remote LLM gets it as the speaker."""
+        i, key = item[0], item[1]
+        top = self._blocks[(i, key)].box[1]
+        names = [(st.box, st.sentences[0]) for (j, _), st in self._blocks.items()
+                 if j == i and st.kind == "name" and st.sentences]
+        above = [n for n in names if n[0][3] <= top + 5]
+        pick = max(above, key=lambda n: n[0][3]) if above else (names[0] if len(names) == 1 else None)
+        return pick[1] if pick else None
 
     def _missing(self) -> list:
         """Finished sentences that are neither shown nor being translated."""

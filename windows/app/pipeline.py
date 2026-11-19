@@ -224,10 +224,13 @@ class Pipeline:
         translated = self._translate_sentences(sentences) if sentences else {}
         return [self._segment(p, translated) for p in paragraphs]
 
-    def iter_sentences(self, paragraphs: list[Paragraph]) -> Iterator[list[Segment]]:
+    def iter_sentences(self, paragraphs: list[Paragraph], speaker: str | None = None) -> Iterator[list[Segment]]:
         """Live: after each translated sentence yield all segments; untranslated sentences show "…"."""
         self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
-        self._speaker(paragraphs)
+        if speaker is not None and getattr(self.translator, "set_speaker", None) is not None:
+            self.translator.set_speaker(speaker)  # Live sends text blocks only: the name line comes with the job
+        else:
+            self._speaker(paragraphs)
         order = list(dict.fromkeys(s for p in paragraphs if p.kind == "text" for s in p.sentences))
         done: dict[str, str] = {}
 

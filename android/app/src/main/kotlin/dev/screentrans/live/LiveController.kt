@@ -279,10 +279,10 @@ class LiveController(
         return id
     }
 
-    override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int {
+    override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int {
         val id = newId()
         log("translate $id: " + paragraphs.flatten().joinToString(" | ") { "\"${it.text}\"" })
-        engine.submit(EngineJob<Bitmap>(id, fullScreen = false, image = null, liveParagraphs = paragraphs))
+        engine.submit(EngineJob<Bitmap>(id, fullScreen = false, image = null, liveParagraphs = paragraphs, liveSpeaker = speaker))
         return id
     }
 

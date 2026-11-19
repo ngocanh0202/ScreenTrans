@@ -322,3 +322,11 @@ def test_a_locked_usage_file_does_not_fail_the_job(tmp_path, monkeypatch):  # re
 
     monkeypatch.setattr(tr.usage, "add", locked)
     assert tr.translate_ctx(["Hi."], {}) == ["LLM Hi."]
+
+
+def test_live_sentences_send_the_given_speaker(tmp_path):  # review #5
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+    p = pipeline(tr)
+    list(p.iter_sentences([Paragraph("text", "Go.", ["Go."], 0, 20, 50, 30)], speaker="Vertin"))
+    assert "Người nói: Vertin" in c.calls[-1][1]

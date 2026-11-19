@@ -14,10 +14,12 @@ class LiveSessionTest {
         var ids = 0
         val ocr = mutableListOf<Pair<Int, Boolean>>()
         val translate = mutableListOf<Pair<Int, List<List<Paragraph>>>>()
+        val speakers = mutableListOf<String?>()
         val blocks = LinkedHashMap<String, String>()
         val lineHeights = LinkedHashMap<String, Float>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
-        override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
+        override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int =
+            (++ids).also { translate.add(it to paragraphs); speakers.add(speaker) }
         val angles = LinkedHashMap<String, Float>()
         var draws = 0
         override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
@@ -347,7 +349,7 @@ class LiveSessionTest {
         var maxDepth = 0
         val blocks = LinkedHashMap<String, String>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
-        override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int {
+        override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int {
             val id = ++ids
             val old = waiting
             waiting = id to paragraphs
@@ -389,5 +391,15 @@ class LiveSessionTest {
         translate(s, h.translate.last())
         assertEquals("VI Where is the key?", h.blocks.entries.single { it.key.startsWith("0:") }.value)
         assertEquals("VI Good morning.", h.blocks.entries.single { it.key.startsWith("1:") }.value)
+    }
+
+    @Test
+    fun `live translate jobs carry the speaker of the dialogue box`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        val name = Paragraph(Kind.NAME, "Vertin", listOf("Vertin"), 0f, 0f, 80f, 18f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(name, para("Where are you going?", 30f))))
+        assertEquals("Vertin", h.speakers.last())
     }
 }

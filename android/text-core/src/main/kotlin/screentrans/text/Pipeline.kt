@@ -239,7 +239,7 @@ class Pipeline(
     }
 
     /** Live: after each translated sentence yield all segments; untranslated sentences show "…". */
-    fun iterSentences(paragraphs: List<Paragraph>): Sequence<List<Segment>> = sequence {
+    fun iterSentences(paragraphs: List<Paragraph>, speaker: String? = null): Sequence<List<Segment>> = sequence {
         val textSentences = paragraphs.filter { it.kind == Kind.TEXT }.flatMap { it.sentences }
         observe(textSentences)
         val done = HashMap<String, String>()
@@ -252,7 +252,7 @@ class Pipeline(
             yield(snapshot())
             return@sequence
         }
-        speaker(paragraphs)
+        if (speaker != null) engine?.setSpeaker(speaker) else speaker(paragraphs)  // Live: the name comes with the job
         var remoteOk = true
         val e = engine
         if (e != null) {  // one remote call, then show the sentences one by one

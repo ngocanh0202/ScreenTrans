@@ -102,4 +102,11 @@ class PipelineRemoteTest {
         assertEquals(mapOf("Druvis III" to null), keep.termsIn(listOf("Hi, Druvis III.")))
         assertFalse(keep.termsIn(listOf("Nobody.")).isNotEmpty())
     }
+
+    @Test
+    fun `live sentences use the given speaker`() {
+        val e = FakeEngine()
+        pipeline(e).iterSentences(listOf(text("Go.")), speaker = "Vertin").toList()
+        assertEquals("Vertin", e.seenSpeaker)
+    }
 }
