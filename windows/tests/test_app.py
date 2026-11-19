@@ -565,7 +565,7 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
             v = shown[-1]
             return SettingsValues(v.style, v.text_scale, v.long_text, v.model, v.hotkeys, v.ocr, engine="claude",
                                   llm_models={"claude": "claude-haiku-5-5"}, daily_limit=1000,
-                                  keys={"claude": "sk-ant-SECRET"})
+                                  keys={"claude": "sk-ant-SECRET"}, llm_notes="Vertin: nữ.")
 
     app._settings_factory = FakeSettings
     app.open_settings()
@@ -576,7 +576,8 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
     job = [j for j in factory.workers[-1].all_jobs if j.mode == "set_game"][-1]
     assert job.payload["engine"] == "claude" and "SECRET" not in str(job.payload)
     assert job.payload["llm"] == {"model": "claude-haiku-5-5", "url": "", "daily_limit": 1000, "data_dir": str(tmp_path),
-                                  "notes": ""}
+                                  "notes": "Vertin: nữ."}
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").llm_notes == "Vertin: nữ."
     app.open_settings()  # shown again: the key is known to be saved, the engine is the game's
     assert shown[-1].engine == "claude" and "claude" in shown[-1].saved_keys and shown[-1].daily_limit == 1000
 
@@ -603,3 +604,29 @@ def test_m3_a_failed_set_game_is_sent_again(qtbot, tmp_path):
     hotkeys.triggered.emit("toggle_live")
     hotkeys.triggered.emit("toggle_live")
     assert len([j for j in w.all_jobs if j.mode == "set_game"]) == 2
+
+
+def test_settings_window_deletes_a_saved_key(qtbot, tmp_path):
+    from app.gui.settings_dialog import SettingsValues
+    from app.secrets import KeyStore
+
+    _saved(tmp_path, regions=[(0.0, 0.0, 0.5, 0.5)])
+    app, factory, hotkeys, *_ = _live_app(qtbot, tmp_path, game())
+    hotkeys.triggered.emit("toggle_live")
+    KeyStore(tmp_path).set("gemini", "AIza-1")
+
+    class FakeSettings:
+        def __init__(self, values):
+            self.v = values
+
+        def exec(self):
+            return True
+
+        def values(self):
+            v = self.v
+            return SettingsValues(v.style, v.text_scale, v.long_text, v.model, v.hotkeys, v.ocr, engine="gemini",
+                                  delete_keys=("gemini",))
+
+    app._settings_factory = FakeSettings
+    app.open_settings()
+    assert KeyStore(tmp_path).get("gemini") == ""

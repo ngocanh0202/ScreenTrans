@@ -66,3 +66,21 @@ def test_translation_engines_key_model_and_privacy_warning(qtbot):
                                                                          "claude-haiku-5-5", 1000)
     d.engine.setCurrentIndex(d.engine.findData("kaggle"))
     assert d.kaggle_url.isEnabled()
+
+
+def test_game_notes_delete_key_and_default_models_not_saved(qtbot):
+    d = SettingsDialog(SettingsValues(**{**V.__dict__, "engine": "gemini", "saved_keys": ("gemini",),
+                                         "llm_notes": "Vertin: nữ."}), game="game.exe")
+    qtbot.addWidget(d)
+    assert d.notes.toPlainText() == "Vertin: nữ."
+    assert d.values().llm_models == {}  # the default model name shown is not a choice
+    d.llm_model.setText("gemini-2.5-pro")
+    assert d.values().llm_models == {"gemini": "gemini-2.5-pro"}
+    assert d.delete_key.isEnabled()
+    d.delete_key.click()
+    v = d.values()
+    assert v.delete_keys == ("gemini",) and "gemini" not in v.keys and not d.delete_key.isEnabled()
+    d.notes.setPlainText("  Bối cảnh mới.  ")
+    assert d.values().llm_notes == "Bối cảnh mới."
+    d.engine.setCurrentIndex(d.engine.findData("claude"))  # no saved key for Claude
+    assert not d.delete_key.isEnabled()

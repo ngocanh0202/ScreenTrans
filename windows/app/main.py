@@ -646,19 +646,22 @@ class TrayApp(QObject):
                                engine=p0.engine, llm_models=llm["models"], kaggle_url=llm["kaggle_url"],
                                daily_limit=llm["daily_limit"],
                                saved_keys=tuple(e for e in NAMES if keys.get(e)),
-                               used_today=Usage(self._data_dir()).used())
+                               used_today=Usage(self._data_dir()).used(), llm_notes=p0.llm_notes)
         dialog = self._settings_factory(shown)
         if not dialog.exec():
             return
         v = dialog.values()
         p = self._profile()
+        for engine in v.delete_keys:
+            keys.set(engine, "")
         for engine, key in v.keys.items():  # encrypted, never in settings.json
             keys.set(engine, key)
         new_llm = {"models": dict(v.llm_models), "kaggle_url": v.kaggle_url, "daily_limit": v.daily_limit}
-        engine_changed = v.engine != p.engine or bool(v.keys) or new_llm != llm
+        engine_changed = (v.engine != p.engine or bool(v.keys) or bool(v.delete_keys) or new_llm != llm
+                          or v.llm_notes != p.llm_notes)
         ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows") or engine_changed
         if v.style != p.style or ocr_changed:
-            p.style, p.ocr, p.engine = v.style, v.ocr, v.engine
+            p.style, p.ocr, p.engine, p.llm_notes = v.style, v.ocr, v.engine, v.llm_notes
             self.profiles.save(p)
         if ocr_changed:
             self._worker_game = None  # send the game (with its OCR engine) to the worker again
