@@ -205,3 +205,39 @@ def test_live_translate_does_not_supersede_a_waiting_live_ocr(qtbot, run_worker)
     w.submit(Job(3, "live_translate", None, (0, 0), paragraphs=[[]]))
     qtbot.waitUntil(lambda: any(e[1] == 3 for e in rec.of("done")), timeout=10000)
     assert rec.of("job_failed") == []
+
+
+def test_set_game_switches_the_ocr_engine_but_live_keeps_the_fast_one(qtbot, run_worker, monkeypatch):
+    from app.ocr import engines
+    from app.ocr.base import Line
+
+    slow = FakeOcr([Line("Slow engine.", 0, 0, 100, 20)])
+    monkeypatch.setattr(engines, "create", lambda name: slow)
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload={"game": "g", "glossaries": [], "overrides": {}, "ocr": "rapid"}))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    assert [s.source for s in [e for e in rec.of("done") if e[1] == 2][0][2]] == ["Slow engine."]
+    got = []
+    w.ocr_done.connect(lambda i, per: got.append(per))
+    w.submit(Job(3, "live_ocr", None, (0, 0), images=[IMG]))
+    qtbot.waitUntil(lambda: bool(got), timeout=5000)
+    assert "Slow engine." not in [p.text for p in got[0][0]]  # Live: the fast default engine
+
+
+def test_an_ocr_engine_that_fails_to_load_falls_back_with_a_notice(qtbot, run_worker, monkeypatch):
+    from app.ocr import engines
+
+    def boom(name):
+        raise RuntimeError("no onnxruntime")
+
+    monkeypatch.setattr(engines, "create", boom)
+    w, rec = run_worker()
+    notes = []
+    w.notice.connect(notes.append)
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload={"game": "g", "glossaries": [], "overrides": {}, "ocr": "rapid"}))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    assert len(notes) == 1 and "RapidOCR" in notes[0]

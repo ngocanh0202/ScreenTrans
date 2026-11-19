@@ -16,6 +16,8 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     val repo = rootProject.projectDir.parentFile
-    systemProperty("shared.dir", System.getProperty("shared.dir") ?: File(repo, "shared").path)
+    val shared = System.getProperty("shared.dir") ?: File(repo, "shared").path
+    systemProperty("shared.dir", shared)
+    inputs.dir(shared)  // shared fixtures: editing them must re-run the tests
     testLogging { events("failed"); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }

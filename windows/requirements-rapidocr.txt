@@ -1,0 +1,3 @@
+# Optional OCR engine (settings window "Bộ OCR" -> RapidOCR). ~190 MB with OpenCV + onnxruntime;
+# not bundled in the exe. Install with: .venv\Scripts\pip install -r windowsequirements-rapidocr.txt
+rapidocr_onnxruntime

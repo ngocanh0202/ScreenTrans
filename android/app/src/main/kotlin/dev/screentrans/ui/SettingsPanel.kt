@@ -58,6 +58,14 @@ class SettingsPanel(
         })
         addView(caption("Khi bản dịch dài"))
         addView(pair(grow, shrink))
+        addView(caption("Bộ OCR"))
+        // Only the engines this platform can run: Android has ML Kit (on the phone). Phase 5/7 add more here.
+        addView(LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            val mlkit = segment("ML Kit (trên máy)") {}
+            select(mlkit, true)
+            addView(mlkit, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        })
         addView(caption("Công cụ"))
         tools.chunked(2).forEach { chunk ->
             addView(LinearLayout(context).apply {

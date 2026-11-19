@@ -56,6 +56,7 @@ uv pip install --python .venv -r windows/requirements-dev.txt
 
 - Chạy app Windows từ mã nguồn: `cd windows; ..\.venv\Scripts\python -m app` (thêm `--config <file>` nếu cần).
 - Android: build trên CI (`build-android`); test JVM chạy được trên máy có JDK 17: `cd android; ./gradlew :text-core:test :app-core:test`.
+- Bộ OCR RapidOCR (tùy chọn, chậm, ~190 MB, không có trong exe): `uv pip install --python .venv -r windows/requirements-rapidocr.txt`, rồi chọn trong Cài đặt → Bộ OCR.
 - Export model (máy dev): cài thêm torch CPU rồi `uv pip install --python .venv -r models/requirements.txt`.
 
 ### Dòng lệnh (Windows)

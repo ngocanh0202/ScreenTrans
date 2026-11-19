@@ -16,6 +16,7 @@ class FakeWorker(QObject):
     job_failed = Signal(int, str)
     ocr_done = Signal(int, object)
     partial = Signal(int, object)
+    notice = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -525,7 +526,7 @@ def test_settings_window_applies_and_remembers(qtbot, tmp_path):
             return True
 
         def values(self):
-            return SettingsValues("classic", 1.25, "shrink", "opus-mt-en-vi", self.shown.hotkeys)
+            return SettingsValues("classic", 1.25, "shrink", "opus-mt-en-vi", self.shown.hotkeys, "rapid")
 
     app._settings_factory = FakeSettings
     app.open_settings()
@@ -534,6 +535,11 @@ def test_settings_window_applies_and_remembers(qtbot, tmp_path):
     assert json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))["model"] == "opus-mt-en-vi"
     assert len(factory.workers) == 2 and app.config.translator.model == "opus-mt-en-vi"  # model switched
     assert app.live.running and app.live.style == "classic"
+    assert ProfileStore(tmp_path / "profiles").get("game.exe").ocr == "rapid"
+    sets = [j for j in factory.workers[-1].all_jobs if j.mode == "set_game"]
+    assert sets and sets[-1].payload["ocr"] == "rapid"
+    factory.workers[-1].notice.emit("RapidOCR không tải được")
+    assert app.last_message == "RapidOCR không tải được"
 
 
 def test_m2_a_corrupt_user_glossary_is_kept_aside_not_overwritten(qtbot, tmp_path):
