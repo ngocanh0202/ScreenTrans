@@ -32,6 +32,12 @@ import dev.screentrans.core.profile.ProfileLogic
 import dev.screentrans.live.LiveController
 import dev.screentrans.profile.GameDetector
 import dev.screentrans.profile.ProfileRepo
+import dev.screentrans.core.ui.PanelAction
+import dev.screentrans.core.ui.PanelEffect
+import dev.screentrans.core.ui.PanelState
+import dev.screentrans.core.ui.TranslateMode
+import dev.screentrans.ui.ControlPanel
+import dev.screentrans.ui.PanelTile
 import dev.screentrans.ui.CorrectView
 import dev.screentrans.ui.Fix
 import dev.screentrans.ui.Bubble
@@ -69,7 +75,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private val engine = TranslationEngine({ AppEngine.bundle(context) }, scope, engineThread.asCoroutineDispatcher())
 
     private val bubble = Bubble(context, onTap = ::showMenu, onMoved = { x, y -> prefs.bubbleX = x; prefs.bubbleY = y })
-    private var menu: MenuPanel? = null
+    private var menu: View? = null
     private val cards = mutableListOf<ResultCard>()
     private var layer: FullScreenLayer? = null
     private var selector: View? = null
@@ -94,9 +100,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
         repo.migrateOnce(prefs)
         scope.launch { engine.events.collect(::onEvent) }  // collect before the first submit (no replay)
         engine.start()
-        val size = context.dp(48)
-        val pos = Layout.clampBubble(prefs.bubbleX, prefs.bubbleY, size, capturer.width, capturer.height)
-        val p = overlays.params(size, size).apply { x = pos[0]; y = pos[1] }
+        val p = overlays.params(context.dp(Bubble.TAB_W_DP), context.dp(Bubble.TAB_H_DP)).apply {
+            x = prefs.bubbleX; y = prefs.bubbleY
+        }
+        bubble.snap(p, capturer.width, capturer.height)  // tucked into the nearest screen edge
         bubble.params = p
         overlays.add(bubble, p)
     }
@@ -110,10 +117,12 @@ class Controller(private val context: Context, projection: MediaProjection) {
     /** A position saved in portrait can be off a landscape screen: pull the bubble back inside. */
     private fun keepBubbleOnScreen() {
         val p = bubble.params ?: return
-        val pos = Layout.clampBubble(p.x, p.y, context.dp(48), capturer.width, capturer.height)
-        if (pos[0] != p.x || pos[1] != p.y) {
-            p.x = pos[0]; p.y = pos[1]
+        val x = p.x
+        val y = p.y
+        bubble.snap(p, capturer.width, capturer.height)
+        if (x != p.x || y != p.y) {
             if (bubble.isAttachedToWindow) overlays.update(bubble, p)
+            bubble.invalidate()
         }
     }
 
@@ -128,28 +137,62 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     // ---- menu -----------------------------------------------------------------------------------
+    private fun panelState() = PanelState(TranslateMode.parse(prefs.translateMode), profile().scope == "screen", live.running)
+
+    /** The bubble's panel: mode and scope toggles, "Chọn vùng…", one main button, "Thêm ▾" for the rest. */
     private fun showMenu() {
         closeMenu()
-        val panel = MenuPanel(context, listOf(
-            "Dịch vùng" to ::translateRegion,
-            "Toàn màn hình" to ::translateFullScreen,
-            "Chọn / sửa vùng" to { chooseRegion(null) },
-            (if (live.running) "Tắt Live" else "Bật Live") to ::toggleLive,
-            (if (profile().scope == "screen") "Live dịch: Toàn màn hình" else "Live dịch: Vùng") to ::switchLiveScope,
-            (if (profile().style == "classic") "Kiểu bản dịch: Dễ đọc" else "Kiểu bản dịch: Giống game") to ::switchLiveStyle,
-            "Chọn / sửa vùng bỏ qua" to ::chooseIgnore,
-            "Sửa bản dịch gần nhất" to ::editLast,
-            "Game: ${repo.label(gameId())} ▸" to ::showGameMenu,
-            "Kiểm tra chụp màn hình" to ::probeCapture,
-        ), onClose = ::closeMenu)
+        lateinit var panel: ControlPanel
+        panel = ControlPanel(
+            context, panelState(),
+            onMode = { mode ->
+                if (panelState().onModeChanged(mode) == PanelEffect.STOP_LIVE) stopLive()
+                prefs.translateMode = mode.key
+                panel.render(panelState())
+            },
+            onScope = { screen ->
+                val effect = panelState().onScopeChanged(screen)
+                val p = profile()
+                repo.save(p.copy(scope = if (screen) "screen" else "region"))
+                if (effect == PanelEffect.RESTART_LIVE) { closeMenu(); startLive() } else panel.render(panelState())
+            },
+            onChooseRegion = { closeMenu(); chooseRegion(null) },
+            onPrimary = { action ->
+                closeMenu()
+                when (action) {
+                    PanelAction.TRANSLATE_REGION -> translateRegion()
+                    PanelAction.TRANSLATE_SCREEN -> translateFullScreen()
+                    PanelAction.START_LIVE -> startLive()
+                    PanelAction.STOP_LIVE -> stopLive()
+                }
+            },
+            extras = listOf(
+                PanelTile("Aa", if (profile().style == "classic") "Kiểu: Dễ đọc" else "Kiểu: Giống game", ::switchLiveStyle),
+                PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
+                PanelTile("✍", "Sửa bản dịch", ::editLast),
+                PanelTile("🎮", repo.label(gameId()), ::showGameMenu),
+                PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
+                PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
+            ),
+            onClose = ::closeMenu,
+        )
         val bp = bubble.params ?: return
-        val p = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
-            x = if (bp.x < capturer.width / 2) bp.x + context.dp(52) else (bp.x - context.dp(180)).coerceAtLeast(0)
-            y = bp.y
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val tabW = context.dp(Bubble.TAB_W_DP)
+        val lp = overlays.params(WRAP_CONTENT, WRAP_CONTENT).apply {
+            x = if (bp.x < capturer.width / 2) bp.x + tabW + context.dp(6)
+            else (bp.x - panel.measuredWidth - context.dp(6)).coerceAtLeast(0)
+            y = (bp.y + context.dp(Bubble.TAB_H_DP) / 2 - panel.measuredHeight / 2)
+                .coerceIn(0, maxOf(0, capturer.height - panel.measuredHeight))
         }
-        overlays.add(panel, p)
+        overlays.add(panel, lp)
         menu = panel
         syncLivePause()
+    }
+
+    private fun stopLive() {
+        live.stop()
+        bubble.live = false
     }
 
     private fun closeMenu() {
@@ -176,7 +219,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private fun chooseRegion(after: (() -> Unit)?) {
         closeResults()
         val wasLive = live.running
-        live.stop()
+        stopLive()
         val p = profile()
         val view = RegionEditView(context, capturer.width, capturer.height, ProfileLogic.regionsOf(p)) { regions ->
             overlays.remove(selector)
@@ -197,7 +240,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private fun chooseIgnore() {
         closeResults()
         val wasLive = live.running
-        live.stop()
+        stopLive()
         val p = profile()
         val view = RegionEditView(context, capturer.width, capturer.height, ProfileLogic.ignoreOf(p)) { rects ->
             overlays.remove(selector)
@@ -302,7 +345,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
 
     // ---- live -----------------------------------------------------------------------------------
     private fun toggleLive() {
-        if (live.running) live.stop() else startLive()
+        if (live.running) stopLive() else startLive()
     }
 
     private fun switchLiveScope() {
@@ -328,6 +371,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val ignorePx = ProfileLogic.ignoreOf(p).map { it.toPx(capturer.width, capturer.height) }
         if (p.scope == "screen") {
             live.start(listOf(intArrayOf(0, 0, capturer.width, capturer.height)), "screen", ignorePx, params, p.style)
+            bubble.live = true
             return
         }
         val px = ProfileLogic.regionsOf(p).filter { it.isUsable(capturer.width, capturer.height) }.map { rel ->
@@ -339,6 +383,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             return
         }
         live.start(px, "region", ignorePx, params, p.style)
+        bubble.live = true
     }
 
     // ---- corrections ----------------------------------------------------------------------------
@@ -431,6 +476,28 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 "Cả ảnh đen: ${Frames.isMostlyBlack(all)} · màu giữa ô: rgb(${avg[0]}, ${avg[1]}, ${avg[2]})\n" +
                 "Khung hình mới sau khi vẽ ô: $frameNew (cũ ${frameAge} ms)\n" +
                 (saved?.let { "Đã lưu ảnh chụp: Ảnh › Pictures/ScreenTrans/$it" } ?: "Không lưu được ảnh chụp"))
+        }
+    }
+
+    /** Save Live's event log to Download/ScreenTrans so the user can send it when something looks wrong. */
+    private fun saveLiveLog() {
+        val text = live.logText()
+        if (text.isEmpty()) return showCard(null, "Chưa có nhật ký: bật Live trước.")
+        scope.launch {
+            val name = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runCatching {
+                    val name = "live-log-${System.currentTimeMillis()}.txt"
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/ScreenTrans")
+                    }
+                    val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return@runCatching null
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } ?: return@runCatching null
+                    name
+                }.getOrNull()
+            }
+            showCard(null, if (name != null) "Đã lưu: Download/ScreenTrans/$name" else "Không lưu được nhật ký.", name == null)
         }
     }
 

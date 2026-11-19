@@ -1,0 +1,173 @@
+{
+ "cases": [
+  {
+   "text": "In order to contend against Manus Vindictae, we have kept absorbing arcanists.",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    900,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "dialogue"
+  },
+  {
+   "text": "Where are you going?",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    380,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "short sentence"
+  },
+  {
+   "text": "AUTO",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    90,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "single-word UI label"
+  },
+  {
+   "text": "SKIP",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    90,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "single-word UI label"
+  },
+  {
+   "text": "St3loo 3,",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    200,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "letters mixed with digits: OCR noise"
+  },
+  {
+   "text": "X X X X X",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    60,
+    300
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "no real words"
+  },
+  {
+   "text": "Only a trust fund",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    60,
+    300
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "box narrower than 3 line heights: vertical noise"
+  },
+  {
+   "text": "Vertin",
+   "kind": "name",
+   "box": [
+    0,
+    0,
+    120,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "character names are kept (shown untranslated)"
+  },
+  {
+   "text": "Hmm...",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    120,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "one word with terminal punctuation is a line of dialogue"
+  },
+  {
+   "text": "Level 23",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    150,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "number labels"
+  },
+  {
+   "text": "I owe you one.",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    300,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "sentence with a number word"
+  },
+  {
+   "text": "—— ...",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    200,
+    40
+   ],
+   "line_height": 40,
+   "keep": false,
+   "why": "punctuation only"
+  },
+  {
+   "text": "No.",
+   "kind": "text",
+   "box": [
+    0,
+    0,
+    150,
+    40
+   ],
+   "line_height": 40,
+   "keep": true,
+   "why": "a one-word line ending with punctuation needs only 2 letters"
+  }
+ ]
+}

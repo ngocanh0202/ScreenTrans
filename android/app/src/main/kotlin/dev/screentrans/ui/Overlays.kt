@@ -33,6 +33,9 @@ class Overlays(private val context: Context) {
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
+        // Android 12+ blocks touches that pass through another app's window more opaque than 0.8:
+        // click-through overlays must stay at or below it so the game under them keeps working.
+        if (!touchable) alpha = 0.8f
         // Overlays draw in screen coordinates (OCR boxes, regions): never shift them for a display
         // cutout or the system bars.
         layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30)
@@ -53,25 +56,61 @@ class Overlays(private val context: Context) {
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-/** Draggable round button; a tap (little movement) calls [onTap]; snaps to the nearest side on release. */
+/**
+ * The bubble, tucked into the screen edge: a small tab with an arrow pointing inwards. A tap (little
+ * movement) calls [onTap]; it can be dragged and snaps back to the nearest side. Green while Live runs.
+ */
 @SuppressLint("ViewConstructor")
 class Bubble(context: Context, private val onTap: () -> Unit, private val onMoved: (Int, Int) -> Unit) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(37, 99, 235) }
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textAlign = Paint.Align.CENTER; textSize = context.dp(22).toFloat(); isFakeBoldText = true
+    companion object {
+        const val TAB_W_DP = 22
+        const val TAB_H_DP = 58
     }
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val arrow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = context.dp(3).toFloat()
+        strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+    }
+    private val path = android.graphics.Path()
     var params: WindowManager.LayoutParams? = null
+
+    /** Live is running: the tab turns green. */
+    var live = false
+        set(v) {
+            if (field != v) { field = v; invalidate() }
+        }
     private var downX = 0f
     private var downY = 0f
     private var startX = 0
     private var startY = 0
     private var dragging = false
 
+    private fun onLeftSide(): Boolean = (params?.x ?: 0) + width / 2 < resources.displayMetrics.widthPixels / 2
+
     override fun onDraw(canvas: Canvas) {
-        val r = width / 2f
-        paint.alpha = 220
-        canvas.drawCircle(r, r, r, paint)
-        canvas.drawText("T", r, r - (text.descent() + text.ascent()) / 2, text)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val r = w * 0.9f
+        val left = onLeftSide()
+        paint.color = if (live) Color.rgb(22, 163, 74) else Color.rgb(37, 99, 235)
+        paint.alpha = 200
+        // rounded on the screen side away from the edge only
+        val rect = RectF(if (left) -r else 0f, 0f, if (left) w else w + r, h)
+        canvas.drawRoundRect(rect, r, r, paint)
+        val cx = w / 2
+        val cy = h / 2
+        val a = w * 0.22f
+        path.reset()
+        if (left) { path.moveTo(cx - a / 2, cy - a); path.lineTo(cx + a / 2, cy); path.lineTo(cx - a / 2, cy + a) }
+        else { path.moveTo(cx + a / 2, cy - a); path.lineTo(cx - a / 2, cy); path.lineTo(cx + a / 2, cy + a) }
+        canvas.drawPath(path, arrow)
+    }
+
+    /** Snap to the nearest side (call after a drag, a rotation or on start). */
+    fun snap(p: WindowManager.LayoutParams, screenW: Int, screenH: Int) {
+        p.x = if (p.x + p.width / 2 < screenW / 2) 0 else screenW - p.width
+        p.y = p.y.coerceIn(0, maxOf(0, screenH - p.height))
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -92,9 +131,10 @@ class Bubble(context: Context, private val onTap: () -> Unit, private val onMove
             }
             MotionEvent.ACTION_UP -> {
                 if (!dragging) onTap() else {
-                    val screenW = resources.displayMetrics.widthPixels
-                    p.x = if (p.x + width / 2 < screenW / 2) 0 else screenW - width  // stick to the nearest side
+                    val dm = resources.displayMetrics
+                    snap(p, dm.widthPixels, dm.heightPixels)
                     context.getSystemService(WindowManager::class.java).updateViewLayout(this, p)
+                    invalidate()  // the arrow may now point the other way
                     onMoved(p.x, p.y)
                 }
             }

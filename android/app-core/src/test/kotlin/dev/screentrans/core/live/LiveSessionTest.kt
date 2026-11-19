@@ -191,12 +191,16 @@ class LiveSessionTest {
     fun `c2 a block read twice the same is finished even while the screen animates`() {
         val h = Host()
         val s = session(h, scope = "screen")
+        val line = para("Press the button to continue")
         s.debugExpectOcr(90, final = false)
-        s.onOcrDone(90, listOf(listOf(para("Continue"))))
+        s.onOcrDone(90, listOf(listOf(line)), nowMs = 0)
         assertTrue(h.translate.isEmpty())
         s.debugExpectOcr(91, final = false)
-        s.onOcrDone(91, listOf(listOf(para("Continue"))))
-        assertEquals(listOf("Continue"), sources(h.translate.last()))
+        s.onOcrDone(91, listOf(listOf(line)), nowMs = 1000)  // same text, but maybe still fading in
+        assertTrue(h.translate.isEmpty())
+        s.debugExpectOcr(92, final = false)
+        s.onOcrDone(92, listOf(listOf(line)), nowMs = 1600)  // unchanged for 1.6 s: it has stopped
+        assertEquals(listOf("Press the button to continue"), sources(h.translate.last()))
     }
 
     @Test
@@ -224,5 +228,36 @@ class LiveSessionTest {
         s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hi.").copy(lineHeight = 30f))))
         translate(s, h.translate.last())
         assertEquals(30f, h.lineHeights.values.single())
+    }
+
+    @Test
+    fun `ocr noise and ui labels are not translated`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        val noise = Paragraph(Kind.TEXT, "St3loo 3,", listOf("St3loo 3,"), 0f, 0f, 200f, 40f, 40f)
+        val label = Paragraph(Kind.TEXT, "AUTO", listOf("AUTO"), 300f, 0f, 390f, 40f, 40f)
+        val line = Paragraph(Kind.TEXT, "Where are you going?", listOf("Where are you going?"), 0f, 100f, 380f, 140f, 40f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(noise, label, line)))
+        assertEquals(listOf("Where are you going?"), sources(h.translate.last()))
+    }
+
+    @Test
+    fun `a superseded translation is requested again at once even if the screen stays still`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello."))))
+        val lost = h.translate.last().first
+        s.onJobFailed(lost, superseded = true)
+        assertEquals(2, h.translate.size)
+        assertEquals(listOf("Hello."), sources(h.translate.last()))
+        translate(s, h.translate.last())
+        assertEquals(listOf("VI Hello."), h.blocks.values.toList())
+        val n = h.translate.size
+        s.debugExpectOcr(50, final = true)
+        s.onOcrDone(50, listOf(listOf(para("Bye."))))
+        s.onJobFailed(h.translate.last().first, superseded = false)  // a real error: wait for the next OCR
+        assertEquals(n + 1, h.translate.size)
     }
 }

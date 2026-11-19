@@ -10,6 +10,7 @@ import dev.screentrans.capture.ScreenCapturer
 import dev.screentrans.core.CaptureProbe
 import dev.screentrans.core.EngineEvent
 import dev.screentrans.core.EngineJob
+import dev.screentrans.core.SUPERSEDED
 import dev.screentrans.core.TranslationEngine
 import dev.screentrans.core.live.BlockStyle
 import dev.screentrans.core.live.LiveHost
@@ -87,6 +88,18 @@ class LiveController(
 
     val running: Boolean get() = session?.running == true
 
+    // ---- debug log (bubble menu "Lưu nhật ký Live") ----------------------------------------------------
+    private val logLines = ArrayDeque<String>()
+
+    private fun log(line: String) {
+        val t = (SystemClock.uptimeMillis() - startedAt) / 1000.0
+        logLines.addLast("%8.2f  %s".format(t, line))
+        while (logLines.size > 400) logLines.removeFirst()
+    }
+
+    /** The last 400 Live events (OCR text, translation requests and results, failures). */
+    fun logText(): String = logLines.joinToString("\n")
+
     /** Every translated sentence Live shows now (for "edit the last translation"). */
     fun shownSegments(): List<Segment> = session?.shownSegments().orEmpty()
 
@@ -119,7 +132,9 @@ class LiveController(
         events = scope.launch { engine.events.collect(::onEvent) }
         loop = scope.launch {
             if (captureMode == CaptureMode.UNKNOWN) probe()
-            s.overlaysInCapture = captureMode == CaptureMode.CAPTURED
+            // Unknown (the probe saw no frame): hide while capturing, never OCR our own translations.
+            s.overlaysInCapture = captureMode != CaptureMode.HIDDEN
+            log("start scope=$scopeName style=$styleName capture=$captureMode regions=${regions.size} ignore=${ignore.size}")
             if (s.overlaysInCapture && !hintShown) {
                 hintShown = true
                 notify("Bản dịch Live sẽ nháy nhẹ khi chụp. Để hết nháy: Dừng ScreenTrans, bật lại và chọn " +
@@ -221,6 +236,7 @@ class LiveController(
     // ---- LiveHost -----------------------------------------------------------------------------------
     override fun requestOcr(final: Boolean): Int {
         val id = newId()
+        log("request ocr $id final=$final")
         val s = session ?: return id
         ocrCapture = scope.launch {
             val frame = if (s.overlaysInCapture) {
@@ -255,6 +271,7 @@ class LiveController(
 
     override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int {
         val id = newId()
+        log("translate $id: " + paragraphs.flatten().joinToString(" | ") { "\"${it.text}\"" })
         engine.submit(EngineJob<Bitmap>(id, fullScreen = false, image = null, liveParagraphs = paragraphs))
         return id
     }
@@ -286,14 +303,21 @@ class LiveController(
         val s = session ?: return
         when (e) {
             is EngineEvent.OcrDone -> {
+                if (s.owns(e.jobId)) log("ocr ${e.jobId}: " + e.paragraphs.joinToString(" | ") { r ->
+                    r.joinToString(" / ") { "${it.kind} \"${it.text}\" @${it.left.toInt()},${it.top.toInt()}-${it.right.toInt()},${it.bottom.toInt()} h${it.lineHeight.toInt()}" }
+                })
                 frames.remove(e.jobId)?.let { lastOcrFrame = it }
                 s.onOcrDone(e.jobId, e.paragraphs)
             }
-            is EngineEvent.Partial -> s.onPartial(e.jobId, e.segments)
+            is EngineEvent.Partial -> {
+                if (s.owns(e.jobId)) log("partial ${e.jobId}: " + e.segments.flatten().joinToString(" | ") { "\"${it.source}\" → \"${it.translation}\"" })
+                s.onPartial(e.jobId, e.segments)
+            }
             is EngineEvent.Done -> s.onJobEnded(e.jobId)
             is EngineEvent.JobFailed -> {
                 frames.remove(e.jobId)
-                s.onJobFailed(e.jobId)
+                if (s.owns(e.jobId)) log("job ${e.jobId} failed: ${e.why}")
+                s.onJobFailed(e.jobId, superseded = e.why == SUPERSEDED)
             }
             is EngineEvent.SegmentReady -> Unit
         }

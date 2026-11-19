@@ -44,7 +44,15 @@ class FakeOverlay:
         self.closed = True
 
 
-def make(frames, scope="region", regions=(REGION,), params=PARAMS):
+class Clock:
+    def __init__(self):
+        self.now = 0
+
+    def __call__(self):
+        return self.now
+
+
+def make(frames, scope="region", regions=(REGION,), params=PARAMS, clock=None):
     jobs, notes, overlays = [], [], []
     ids = iter(range(1, 1000))
 
@@ -54,7 +62,8 @@ def make(frames, scope="region", regions=(REGION,), params=PARAMS):
         return o
 
     c = LiveController(params, capture=Script(frames), submit=jobs.append, next_id=lambda: next(ids),
-                       notify=notes.append, overlay_factory=overlay_factory, scope=scope, use_timer=False)
+                       notify=notes.append, overlay_factory=overlay_factory, scope=scope, use_timer=False,
+                       clock=clock or Clock())
     c.start(list(regions))
     return c, jobs, notes, overlays
 
@@ -332,16 +341,23 @@ def test_c1_a_lost_final_ocr_is_requested_again():
     assert len(ocr_jobs(jobs)) == 2
 
 
-def test_c2_a_block_read_twice_the_same_is_finished_even_while_the_screen_animates():
-    c, jobs, _, overlays = make([BLACK, WHITE] * 40, scope="screen")
+def test_c2_a_block_unchanged_for_1_5_s_is_finished_even_while_the_screen_animates():
+    clock = Clock()
+    c, jobs, _, overlays = make([BLACK, WHITE] * 40, scope="screen", clock=clock)
     c.ocr_job = 90
     c._ocr_final[90] = False
-    c.on_ocr_done(90, [[para("Continue")]])
+    c.on_ocr_done(90, [[para("Press the button to continue")]])
     assert translate_jobs(jobs) == []
+    clock.now = 1000
     c.ocr_job = 91
     c._ocr_final[91] = False
-    c.on_ocr_done(91, [[para("Continue")]])  # same text again: it has stopped typing
-    assert sources(translate_jobs(jobs)[-1]) == ["Continue"]
+    c.on_ocr_done(91, [[para("Press the button to continue")]])  # same text, but maybe still fading in
+    assert translate_jobs(jobs) == []
+    clock.now = 1600
+    c.ocr_job = 92
+    c._ocr_final[92] = False
+    c.on_ocr_done(92, [[para("Press the button to continue")]])  # unchanged for 1.6 s: it has stopped
+    assert sources(translate_jobs(jobs)[-1]) == ["Press the button to continue"]
 
 
 def test_i1_overlays_are_recreated_when_the_window_moves():
@@ -397,3 +413,35 @@ def test_i6_translations_carry_over_to_a_block_that_got_a_new_key():
     c.on_ocr_done(99, [[para("Hello there.", top=200)]])  # same text, far away: new block
     assert len(translate_jobs(jobs)) == n
     assert list(overlays[0].blocks.values()) == ["VI Hello there."]
+
+
+
+def test_ocr_noise_and_ui_labels_are_not_translated():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    noise = Paragraph("text", "St3loo 3,", ["St3loo 3,"], 0, 0, 200, 40, line_height=40)
+    label = Paragraph("text", "AUTO", ["AUTO"], 300, 0, 390, 40, line_height=40)
+    line = Paragraph("text", "Where are you going?", ["Where are you going?"], 0, 100, 380, 140, line_height=40)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[noise, label, line]])
+    assert sources(translate_jobs(jobs)[-1]) == ["Where are you going?"]
+
+
+def test_a_superseded_translation_is_requested_again_at_once_even_if_the_screen_stays_still():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello.")]])
+    lost = translate_jobs(jobs)[-1]
+    c.on_job_failed(lost.id, "superseded")
+    again = translate_jobs(jobs)[-1]  # no new OCR needed
+    assert again.id != lost.id and sources(again) == ["Hello."]
+    translate(c, again)
+    assert list(overlays[0].blocks.values()) == ["VI Hello."]
+
+
+def test_a_failed_translation_is_not_retried_in_a_loop():
+    c, jobs, _, _ = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello.")]])
+    n = len(translate_jobs(jobs))
+    c.on_job_failed(translate_jobs(jobs)[-1].id, "model crashed")
+    assert len(translate_jobs(jobs)) == n  # a real error waits for the next OCR

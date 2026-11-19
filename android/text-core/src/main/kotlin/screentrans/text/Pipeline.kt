@@ -54,6 +54,23 @@ fun splitLong(text: String, countTokens: (String) -> Int, limit: Int = 150): Lis
     return out
 }
 
+/**
+ * A model stuck in a loop ("may may may may"): a word repeated 3+ times in a row is kept once
+ * (Vietnamese doubles such as "từ từ" stay). Same as windows/app/pipeline.collapse_repeats.
+ */
+fun collapseRepeats(text: String): String {
+    val words = text.split(" ")
+    val out = mutableListOf<String>()
+    var i = 0
+    while (i < words.size) {
+        var j = i
+        while (j + 1 < words.size && words[i].isNotEmpty() && words[j + 1].equals(words[i], ignoreCase = true)) j++
+        if (j - i < 2) out.addAll(words.subList(i, j + 1)) else out.add(words[i])
+        i = j + 1
+    }
+    return out.joinToString(" ")
+}
+
 data class Segment(
     val kind: Kind,
     val source: String,
@@ -121,7 +138,7 @@ class Pipeline(
         val retry = mutableListOf<String>()
         for ((i, s) in todo.withIndex()) {
             val values = protected[i].second
-            val restored = if (values.isEmpty()) outputs[i] else glossary.restore(outputs[i], values)
+            val restored = (if (values.isEmpty()) outputs[i] else glossary.restore(outputs[i], values))?.let(::collapseRepeats)
             if (restored == null) retry.add(s) else done[s] = restored
         }
         if (retry.isNotEmpty()) {  // the model damaged a placeholder: translate without glossary protection

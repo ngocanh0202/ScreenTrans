@@ -20,6 +20,9 @@ interface LiveHost {
  * over the source text, each sentence as soon as it is finished. Rules: [LiveMachine]
  * (shared/fixtures/live), [BlockTracker] (live_blocks), [SentenceGate] (live_sentences). Main thread only.
  */
+/** A block whose text did not change for this long has stopped typing / fading in. */
+const val KEPT_FINAL_MS = 1500
+
 class LiveSession(
     params: LiveParams,
     val scope: String,
@@ -36,6 +39,7 @@ class LiveSession(
         val shown = HashMap<Int, Pair<String, String>>()  // index -> (source, translation)
         var drawn = ""
         var lineHeight = 0f
+        var stableSince = 0  // when its text last changed
     }
 
     private data class Item(val region: Int, val key: String, val index: Int, val source: String)
@@ -48,6 +52,7 @@ class LiveSession(
     private val requests = HashMap<Int, List<Item>>()
     private val inflight = HashSet<Item>()
     private var pending: Boolean? = true  // translate what is already on screen; true = final OCR
+    private var lastNow = 0
     var running = true
         private set
     var ocrJob = -1
@@ -75,6 +80,7 @@ class LiveSession(
     fun overlayChanged() = machine.onOverlayChanged()
 
     fun onFrame(nowMs: Int, diff: Float) {
+        lastNow = nowMs
         if (!running) return
         when (machine.onFrame(nowMs, diff)) {
             LiveAction.OCR -> {
@@ -92,24 +98,29 @@ class LiveSession(
         ocrJob = id
     }
 
-    fun onOcrDone(jobId: Int, perRegion: List<List<Paragraph>?>) {
+    fun onOcrDone(jobId: Int, perRegion: List<List<Paragraph>?>, nowMs: Int = lastNow) {
         val final = ocrFinal.remove(jobId) ?: return
         if (!running) return
         if (jobId == ocrJob) ocrJob = -1
         val request = mutableListOf<Item>()
         perRegion.take(regionCount).forEachIndexed { i, paragraphs ->
             if (paragraphs == null) return@forEachIndexed
-            val d = trackers[i].update(paragraphs)
+            val d = trackers[i].update(paragraphs.filter(LiveFilter::worthTranslating))  // no OCR noise / labels
             val carry = HashMap<String, String>()  // translations of blocks that only got a new key
             for (b in d.removed) {
                 blocks.remove(i to b.key)?.shown?.values?.forEach { (src, tr) -> carry[src] = tr }
                 host.removeBlock(i, b.key)
                 changedOverlay()
             }
-            val kept = d.kept.map { it.key }.toSet()
-            // a block read twice with the same text has stopped typing, even while the screen animates
-            for (b in d.added + d.grown + d.kept) request += updateBlock(i, b.key, b.paragraph, final || b.key in kept, carry)
+            // same text for KEPT_FINAL_MS: stopped typing, even while the screen animates (and not just faded in)
+            val kept = d.kept.filter { b -> blocks[i to b.key]?.let { nowMs - it.stableSince >= KEPT_FINAL_MS } == true }
+                .map { it.key }.toSet()
+            for (b in d.added + d.grown + d.kept) request += updateBlock(i, b.key, b.paragraph, final || b.key in kept, carry, nowMs)
         }
+        request(request)
+    }
+
+    private fun request(request: List<Item>) {
         if (request.isEmpty()) return
         val groups = List(regionCount) { mutableListOf<Paragraph>() }
         for (it in request) {
@@ -121,7 +132,7 @@ class LiveSession(
         inflight += request
     }
 
-    private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>): List<Item> {
+    private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>, nowMs: Int): List<Item> {
         val st = blocks.getOrPut(i to key) { BlockState() }
         st.kind = p.kind
         if (p.lineHeight > 0) st.lineHeight = p.lineHeight
@@ -132,6 +143,7 @@ class LiveSession(
             draw(i, key)
             return emptyList()
         }
+        if (p.sentences != st.sentences || st.sentences.isEmpty()) st.stableSince = nowMs
         st.done = SentenceGate.done(p.sentences, st.sentences.ifEmpty { null }, final)
         st.sentences = p.sentences
         st.shown.keys.removeAll { k -> k >= st.sentences.size || st.sentences[k] != st.shown.getValue(k).first }
@@ -196,11 +208,21 @@ class LiveSession(
         requests.remove(jobId)?.let { inflight -= it.toSet() }
     }
 
-    /** Failed / superseded: sentences not shown are requested again on the next OCR. */
-    fun onJobFailed(jobId: Int) {
+    /** Finished sentences that are neither shown nor being translated. */
+    private fun missing(): List<Item> = blocks.entries.filter { it.value.kind == Kind.TEXT }.flatMap { (k, st) ->
+        (0 until st.done).map { Item(k.first, k.second, it, st.sentences[it]) }.filter { it.index !in st.shown && it !in inflight }
+    }
+
+    /**
+     * Failed / superseded. A superseded translation is asked again at once (the screen may stay still now that
+     * the line is complete); after a real error the sentences wait for the next OCR.
+     */
+    fun onJobFailed(jobId: Int, superseded: Boolean = false) {
         if (ocrFinal.remove(jobId) == true && running) pending = true  // the final read was lost: read again
         if (jobId == ocrJob) ocrJob = -1
+        val wasTranslation = jobId in requests
         onJobEnded(jobId)
+        if (wasTranslation && superseded && running) request(missing())
     }
 
     /** Tests only: pretend an OCR job [id] was requested. */

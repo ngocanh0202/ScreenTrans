@@ -27,6 +27,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("profiles_migrated", false)
         set(v) = sp.edit().putBoolean("profiles_migrated", v).apply()
 
+    /** Bubble panel mode: "once" (one press, one translation) or "live" (translate automatically). */
+    var translateMode: String
+        get() = sp.getString("translate_mode", "once") ?: "once"
+        set(v) = sp.edit().putString("translate_mode", v).apply()
+
     var bubbleX: Int
         get() = sp.getInt("bubble_x", 0)
         set(v) = sp.edit().putInt("bubble_x", v).apply()
