@@ -1,6 +1,8 @@
 package dev.screentrans.core
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -282,4 +284,38 @@ class TranslationEngineTest {
         val notice = events.filterIsInstance<EngineEvent.Notice>().single()
         assertTrue("Claude" in notice.message && "no SDK" !in notice.message)
     }
+
+    @Test
+    fun `live ocr is not held up by a slow translation`() = kotlinx.coroutines.runBlocking {
+        val ocrDone = java.util.concurrent.CountDownLatch(1)
+        val translating = java.util.concurrent.CountDownLatch(1)
+        val tr = SentenceTranslator { texts ->
+            translating.countDown()
+            ocrDone.await(5, java.util.concurrent.TimeUnit.SECONDS)  // a slow remote call: done only after the OCR
+            texts.map { "VI $it" }
+        }
+        val engineThread = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val ocrThread = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
+        try {
+            val engine = TranslationEngine({ EngineBundle(ocr = { _: String -> lines }, pipeline = Pipeline(tr, "fake", Glossary(emptyList()), TranslationCache(100))) },
+                scope, engineThread.asCoroutineDispatcherCompat(), ocrDispatcher = ocrThread.asCoroutineDispatcherCompat())
+            val events = java.util.Collections.synchronizedList(mutableListOf<EngineEvent>())
+            scope.launch { engine.events.collect { if (it is EngineEvent.OcrDone) ocrDone.countDown(); events.add(it) } }
+            engine.start()
+            kotlinx.coroutines.withTimeout(5000) { while (engine.state.value != EngineState.Ready) kotlinx.coroutines.delay(10) }
+            val a = Paragraph(Kind.TEXT, "One.", listOf("One."), 0f, 0f, 10f, 10f)
+            engine.submit(EngineJob<String>(1, fullScreen = false, image = null, liveParagraphs = listOf(listOf(a))))
+            assertTrue(translating.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            engine.submit(EngineJob(2, fullScreen = false, image = "img", liveOcr = true))
+            assertTrue(ocrDone.await(3, java.util.concurrent.TimeUnit.SECONDS), "OCR waited for the translation")
+            kotlinx.coroutines.withTimeout(5000) { while (events.none { it is EngineEvent.Done && it.jobId == 1 }) kotlinx.coroutines.delay(10) }
+        } finally {
+            scope.cancel()
+            engineThread.shutdownNow(); ocrThread.shutdownNow()
+        }
+    }
+
+    private fun java.util.concurrent.ExecutorService.asCoroutineDispatcherCompat() =
+        asCoroutineDispatcher()
 }
