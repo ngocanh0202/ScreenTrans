@@ -96,6 +96,18 @@ class Glossary:
         candidates = [c for c in (self._exact.get(matched), self._folded.get(matched.lower())) if c]
         return min(candidates, key=lambda c: c[0])[1] if candidates else None
 
+    def terms_in(self, texts: list[str]) -> dict[str, str | None]:
+        """Entries that occur in `texts` (same matching as protect): source -> target, None = keep as is."""
+        found: dict[str, str | None] = {}
+        if self._pattern is None:
+            return found
+        for text in texts:
+            for m in self._pattern.finditer(text):
+                entry = self._lookup(m.group(0))
+                if entry is not None:
+                    found.setdefault(entry.source, entry.value)
+        return found
+
     def protect(self, text: str) -> tuple[str, list[str]]:
         if self._pattern is None:
             return text, []

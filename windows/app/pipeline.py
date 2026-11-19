@@ -127,8 +127,28 @@ class Pipeline:
                 todo.append(s)
         if not todo:
             return done
+        remote = getattr(self.translator, "translate_ctx", None)
+        if remote is not None:  # a remote LLM: glossary terms go in the prompt, no placeholders
+            outputs = remote(todo, self.glossary.terms_in(todo))
+            if outputs is not None:
+                for s, out in zip(todo, outputs):
+                    done[s] = clean_output(s, out)
+                    self.cache.put(ns, s, done[s])
+                    if self.pair_logger is not None:
+                        self.pair_logger.log(s, done[s], model, self.game)
+                return done
+            # unavailable right now: the local model, and its results are not cached under the remote name
+            done.update(self._translate_local(todo, self.translator.local, None))
+            return done
+        done.update(self._translate_local(todo, self.translator, ns))
+        return done
+
+    def _translate_local(self, todo: list[str], translator: Translator, ns: str | None) -> dict[str, str]:
+        """Translate with a local model, glossary terms protected by placeholders; cache under `ns` (None: not)."""
+        model = translator.model_id
+        done: dict[str, str] = {}
         protected = [self.glossary.protect(s) for s in todo]
-        outputs = self.translator.translate([p for p, _ in protected])
+        outputs = translator.translate([p for p, _ in protected])
         retry: list[str] = []
         for s, (_, values), out in zip(todo, protected, outputs):
             restored = self.glossary.restore(out, values) if values else out
@@ -138,14 +158,20 @@ class Pipeline:
             else:
                 done[s] = restored
         if retry:  # the model damaged a placeholder: translate those without glossary protection
-            for s, out in zip(retry, self.translator.translate(retry)):
+            for s, out in zip(retry, translator.translate(retry)):
                 done[s] = out
         for s in todo:
-            if s not in retry:  # the no-glossary fallback is a degraded result: do not remember it
+            if s not in retry and ns is not None:  # the no-glossary fallback is a degraded result: do not remember it
                 self.cache.put(ns, s, done[s])
             if self.pair_logger is not None:
                 self.pair_logger.log(s, done[s], model, self.game)
         return done
+
+    def _speaker(self, paragraphs: list[Paragraph]) -> None:
+        """Tell a remote LLM who is talking (the name line of the dialogue box), if anyone."""
+        set_speaker = getattr(self.translator, "set_speaker", None)
+        if set_speaker is not None:
+            set_speaker(next((p.text for p in paragraphs if p.kind == "name"), None))
 
     def _observe(self, sentences: list[str]) -> None:
         if self.tracker is not None:
@@ -164,12 +190,14 @@ class Pipeline:
         """One translator batch for every sentence (one-shot region mode)."""
         sentences = [s for p in paragraphs if p.kind == "text" for s in p.sentences]
         self._observe(sentences)
+        self._speaker(paragraphs)
         translated = self._translate_sentences(sentences) if sentences else {}
         return [self._segment(p, translated) for p in paragraphs]
 
     def iter_sentences(self, paragraphs: list[Paragraph]) -> Iterator[list[Segment]]:
         """Live: after each translated sentence yield all segments; untranslated sentences show "…"."""
         self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
+        self._speaker(paragraphs)
         order = list(dict.fromkeys(s for p in paragraphs if p.kind == "text" for s in p.sentences))
         done: dict[str, str] = {}
 
@@ -186,6 +214,12 @@ class Pipeline:
         if not order:
             yield snapshot()
             return
+        if getattr(self.translator, "prefers_batch", False):  # one remote call, then show them one by one
+            translated = self._translate_sentences(order)
+            for sentence in order:
+                done[sentence] = translated[sentence]
+                yield snapshot()
+            return
         for sentence in order:
             done.update(self._translate_sentences([sentence]))
             yield snapshot()
@@ -193,6 +227,7 @@ class Pipeline:
     def iter_segments(self, paragraphs: list[Paragraph]) -> Iterator[Segment]:
         """Yield each paragraph as soon as it is translated (full-screen mode shows blocks progressively)."""
         self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
+        self._speaker(paragraphs)
         for p in paragraphs:
             translated = self._translate_sentences(p.sentences) if p.kind == "text" and p.sentences else {}
             yield self._segment(p, translated)
