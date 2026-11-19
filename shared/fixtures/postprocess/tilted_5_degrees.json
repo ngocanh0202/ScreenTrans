@@ -1,0 +1,25 @@
+{
+ "name": "a 5 degree line is tilted text",
+ "lines": [
+  {
+   "text": "A slightly tilted sign reads welcome.",
+   "box": [
+    599.2492041219914,
+    512.9922246569208,
+    500,
+    30
+   ],
+   "angle": 5.0
+  }
+ ],
+ "expected": [
+  {
+   "kind": "text",
+   "text": "A slightly tilted sign reads welcome.",
+   "sentences": [
+    "A slightly tilted sign reads welcome."
+   ],
+   "angle": 5.0
+  }
+ ]
+}

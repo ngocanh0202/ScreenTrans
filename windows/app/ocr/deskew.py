@@ -5,6 +5,7 @@ Angles in degrees, clockwise positive (as ML Kit). |angle| < STRAIGHT_DEG counts
 import math
 
 STRAIGHT_DEG = 2.0
+MIN_SPAN_HEIGHTS = 3.0  # word centres must span at least this many word heights to measure a slope
 
 
 def rotate_point(x: float, y: float, angle: float) -> tuple[float, float]:
@@ -38,9 +39,15 @@ def from_words(rects: list[tuple[float, float, float, float]]) -> tuple[float, f
     right = max(x + w for x, _, w, _ in rects)
     bottom = max(y + h for _, y, _, h in rects)
     angle = 0.0
-    if len(rects) >= 2:
-        (x0, y0, w0, h0), (x1, y1, w1, h1) = rects[0], rects[-1]
-        angle = math.degrees(math.atan2((y1 + h1 / 2) - (y0 + h0 / 2), (x1 + w1 / 2) - (x0 + w0 / 2)))
+    xs = [x + w / 2 for x, _, w, _ in rects]
+    ys = [y + h / 2 for _, y, _, h in rects]
+    # Trust a slope only over a long enough run of words: a short line of uneven words ("The was") would
+    # otherwise look tilted. Least-squares over every word centre.
+    if len(rects) >= 2 and max(xs) - min(xs) >= MIN_SPAN_HEIGHTS * max(h for *_, h in rects):
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        sxx = sum((x - mx) ** 2 for x in xs)
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        angle = math.degrees(math.atan2(sxy, sxx))
     if abs(angle) < STRAIGHT_DEG:
         return 0.0, left, top, right - left, bottom - top
     centres = [rotate_point(x + w / 2, y + h / 2, angle) for x, y, w, h in rects]

@@ -122,9 +122,26 @@ class FullscreenOverlay(QWidget):
 
     def _block_at(self, pos) -> Block | None:
         for b in reversed(self.blocks):
-            if QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height).contains(pos):
+            p = pos
+            if b.angle and b.pivot is not None:  # into the block's tilted frame
+                from app.ocr.deskew import rotate_point
+
+                x, y = rotate_point(pos.x() - b.pivot.x(), pos.y() - b.pivot.y(), b.angle)
+                p = QPoint(round(b.pivot.x() + x), round(b.pivot.y() + y))
+            if QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height).contains(p):
                 return b
         return None
+
+    def _screen_rect(self, b: Block) -> QRect:
+        """Where the block is drawn (the bounds of the rotated box for tilted text), widget-local."""
+        if not (b.angle and b.pivot is not None):
+            return QRect(b.rect)
+        from app.ocr.deskew import bounds
+
+        px, py = b.pivot.x(), b.pivot.y()
+        l, t, r, bt = bounds((b.rect.left() - px, b.rect.top() - py, b.rect.right() - px, b.rect.top() - py + b.draw_height),
+                             b.angle)
+        return QRect(round(px + l), round(py + t), round(r - l), round(bt - t))
 
     def mousePressEvent(self, e):
         block = self._block_at(e.position().toPoint())
@@ -135,7 +152,7 @@ class FullscreenOverlay(QWidget):
             self.detail.close()
         self.detail = ResultOverlay(self.cfg)
         self.detail.show_segments([block.segment], show_source=True)
-        local = QRect(block.rect)
+        local = self._screen_rect(block)
         local.translate(self.screen_geometry.left(), self.screen_geometry.top())
         self.detail.present(local, self.screen_geometry)
 

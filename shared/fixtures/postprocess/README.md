@@ -37,7 +37,8 @@ Mỗi file `*.json`:
 Mỗi dòng có thể có `angle` (độ, chiều kim đồng hồ dương; mặc định 0) và hộp `box` tính **trong hệ trục đã xoay −angle quanh gốc ảnh**
 (bộ chuyển OCR làm việc xoay thẳng). Luật:
 - Dòng có |angle| > 60° bị bỏ (chữ dọc / nhiễu).
-- Các dòng được chia nhóm theo góc (sắp theo góc, một nhóm gồm các dòng lệch ≤ 2° so với dòng đầu nhóm); |góc trung vị| < 2° → nhóm thẳng (angle 0).
+- Các dòng được chia nhóm theo góc: sắp theo góc, bắt đầu nhóm mới khi hai góc liền nhau cách nhau **từ 2° trở lên**; |góc trung vị| < 2° → nhóm thẳng (angle 0).
+- Trước khi áp luật, mọi dòng của nhóm được **chiếu lại vào góc của nhóm** (tâm trên màn hình xoay theo góc trung vị, giữ nguyên rộng / cao) để các dòng cùng một hệ trục dù góc đo hơi lệch nhau.
 - Mỗi nhóm chạy đúng các luật ở trên; mỗi đoạn mang `angle` của nhóm. Các nhóm nối tiếp nhau theo vị trí trên màn hình (đỉnh của đoạn đầu
   tiên sau khi xoay lại), nên một nhóm duy nhất cho kết quả như trước.
 - Trong `expected`, trường `angle` chỉ được so khi có mặt.

@@ -73,3 +73,21 @@ def test_tilted_segment_is_drawn_rotated(qtbot):
     o.add_segment(Segment("text", "At the moment", "Lúc này", (100, 300, 700, 330), angle=-8.0), (0, 0))
     assert o.blocks[-1].angle == -8.0
     o.grab()
+
+
+def test_i5_clicking_a_tilted_block_hits_it(qtbot):
+    from PySide6.QtCore import QPoint, QRect
+
+    from app.config import Overlay
+    from app.gui.fullscreen import FullscreenOverlay
+    from app.ocr.deskew import rotate_point, unrotate_point
+    from app.pipeline import Segment
+
+    o = FullscreenOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(o)
+    dcx, dcy = rotate_point(1200, 800, 15)  # a block drawn centred at screen (1200, 800), tilted 15 degrees
+    o.add_segment(Segment("text", "At the moment", "Lúc này", (dcx - 150, dcy - 15, dcx + 150, dcy + 15), angle=15.0), (0, 0))
+    hit = o._block_at(QPoint(1200, 800))
+    assert hit is o.blocks[-1]
+    x, y = unrotate_point(dcx, dcy, 0)  # the unrotated rect centre: not on the drawn block any more
+    assert o._block_at(QPoint(round(x), round(y))) is None

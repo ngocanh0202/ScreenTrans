@@ -138,10 +138,12 @@ SAME_TILT = 2.0     # lines within this many degrees share a tilted frame
 
 def postprocess(lines: list[Line]) -> list[Paragraph]:
     """Paragraphs of the OCR lines. Tilted lines are grouped per angle (shared fixtures README)."""
+    from app.ocr.deskew import rotate_point, unrotate_point
+
     kept = sorted((l for l in lines if abs(l.angle) <= MAX_TILT), key=lambda l: l.angle)
     clusters: list[list[Line]] = []
-    for line in kept:
-        if clusters and line.angle - clusters[-1][0].angle <= SAME_TILT:
+    for line in kept:  # a new cluster where two neighbouring angles are SAME_TILT or more apart
+        if clusters and line.angle - clusters[-1][-1].angle < SAME_TILT:
             clusters[-1].append(line)
         else:
             clusters.append([line])
@@ -149,7 +151,16 @@ def postprocess(lines: list[Line]) -> list[Paragraph]:
     for cluster in clusters:
         angle = statistics.median(l.angle for l in cluster)
         angle = 0.0 if abs(angle) < SAME_TILT else angle
-        paras = _postprocess_frame(cluster)
+
+        def reproject(l: Line) -> Line:
+            """Express the line in the cluster's frame: measured angles differ a little per line."""
+            if l.angle == angle:
+                return l
+            sx, sy = unrotate_point(l.left + l.width / 2, l.top + l.height / 2, l.angle)
+            cx, cy = rotate_point(sx, sy, angle)
+            return Line(l.text, cx - l.width / 2, cy - l.height / 2, l.width, l.height, angle)
+
+        paras = _postprocess_frame([reproject(l) for l in cluster])
         for p in paras:
             p.angle = angle
         if paras:
