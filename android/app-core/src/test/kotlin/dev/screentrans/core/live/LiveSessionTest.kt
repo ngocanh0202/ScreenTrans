@@ -14,10 +14,12 @@ class LiveSessionTest {
         var ids = 0
         val ocr = mutableListOf<Pair<Int, Boolean>>()
         val translate = mutableListOf<Pair<Int, List<List<Paragraph>>>>()
+        val speakers = mutableListOf<String?>()
         val blocks = LinkedHashMap<String, String>()
         val lineHeights = LinkedHashMap<String, Float>()
         override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
-        override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int = (++ids).also { translate.add(it to paragraphs) }
+        override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int =
+            (++ids).also { translate.add(it to paragraphs); speakers.add(speaker) }
         val angles = LinkedHashMap<String, Float>()
         var draws = 0
         override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
@@ -334,5 +336,87 @@ class LiveSessionTest {
         read(s, h, 100)
         read(s, h, 2000, para("Hello there."))
         assertEquals(listOf("Chào bạn."), h.blocks.values.toList())
+    }
+
+    // ---- Live review fixes ------------------------------------------------------------------------------------
+    /** Like TranslationEngine.submit: one waiting live-translate slot, the older one fails "superseded" at once. */
+    private class SupersedingHost : LiveHost {
+        lateinit var s: LiveSession
+        var ids = 0
+        val ocr = mutableListOf<Pair<Int, Boolean>>()
+        var waiting: Pair<Int, List<List<Paragraph>>>? = null
+        var depth = 0
+        var maxDepth = 0
+        val blocks = LinkedHashMap<String, String>()
+        override fun requestOcr(final: Boolean): Int = (++ids).also { ocr.add(it to final) }
+        override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int {
+            val id = ++ids
+            val old = waiting
+            waiting = id to paragraphs
+            if (old != null) {
+                depth++; maxDepth = maxOf(maxDepth, depth)
+                s.onJobFailed(old.first, superseded = true)
+                depth--
+            }
+            return id
+        }
+        override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
+            blocks["$region:$key"] = text
+        }
+        override fun removeBlock(region: Int, key: String) { blocks.remove("$region:$key") }
+    }
+
+    @Test
+    fun `superseded translations do not ping-pong and nothing is lost`() {
+        val h = SupersedingHost()
+        val s = LiveSession(params, "region", 2, host = h).also { h.s = it }
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there.")), emptyList()))
+        s.debugExpectOcr(900, true)
+        s.onOcrDone(900, listOf(listOf(para("Hello there."), para("Where to?", 40f)), listOf(para("Good morning."))))
+        assertTrue(h.maxDepth <= 3, "depth ${h.maxDepth}")
+        assertEquals(listOf("Good morning.", "Hello there.", "Where to?"), h.waiting!!.second.flatten().map { it.text }.sorted())
+    }
+
+    @Test
+    fun `a resent job over several regions draws each translation in its own region`() {
+        val h = Host()
+        val s = LiveSession(params, "region", 2, host = h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(emptyList(), listOf(para("Good morning."))))
+        val j1 = h.translate.last()
+        s.debugExpectOcr(900, true)
+        s.onOcrDone(900, listOf(listOf(para("Where is the key?")), listOf(para("Good morning."))))
+        s.onJobFailed(j1.first, superseded = true)
+        translate(s, h.translate.last())
+        assertEquals("VI Where is the key?", h.blocks.entries.single { it.key.startsWith("0:") }.value)
+        assertEquals("VI Good morning.", h.blocks.entries.single { it.key.startsWith("1:") }.value)
+    }
+
+    @Test
+    fun `live translate jobs carry the speaker of the dialogue box`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        val name = Paragraph(Kind.NAME, "Vertin", listOf("Vertin"), 0f, 0f, 80f, 18f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(name, para("Where are you going?", 30f))))
+        assertEquals("Vertin", h.speakers.last())
+    }
+
+    @Test
+    fun `clearing blocks takes every translation off the screen, the same line comes back at once`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there."))))
+        translate(s, h.translate.last())
+        assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
+        s.clearBlocks()  // a fade to black: nothing of the old scene stays on screen
+        assertTrue(h.blocks.isEmpty())
+        val n = h.translate.size
+        s.debugExpectOcr(900, true)
+        s.onOcrDone(900, listOf(listOf(para("Hello there."))))
+        assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
+        assertEquals(n, h.translate.size)  // remembered: no new translation job
     }
 }

@@ -213,6 +213,8 @@ class LiveController(
             val whole = capturer.thumbnail(intArrayOf(0, 0, capturer.width, capturer.height)) ?: return
             if (whole.average() < 2.0) {
                 if (++blackTicks == 1) log("black frames start (frame age ${SystemClock.uptimeMillis() - capturer.lastFrameAt} ms)")
+                // a fade to black after the game was seen: nothing of the old scene may float over it
+                if (sawGame && blackTicks == 3) s.clearBlocks()
                 // Only before the game was ever seen: afterwards a black screen is a fade / loading screen,
                 // and the warning used to linger over the next scene.
                 if (blackTicks >= 10 && !blackReported && !sawGame) {  // ~3 s of black frames
@@ -279,10 +281,10 @@ class LiveController(
         return id
     }
 
-    override fun requestTranslate(paragraphs: List<List<Paragraph>>): Int {
+    override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int {
         val id = newId()
         log("translate $id: " + paragraphs.flatten().joinToString(" | ") { "\"${it.text}\"" })
-        engine.submit(EngineJob<Bitmap>(id, fullScreen = false, image = null, liveParagraphs = paragraphs))
+        engine.submit(EngineJob<Bitmap>(id, fullScreen = false, image = null, liveParagraphs = paragraphs, liveSpeaker = speaker))
         return id
     }
 

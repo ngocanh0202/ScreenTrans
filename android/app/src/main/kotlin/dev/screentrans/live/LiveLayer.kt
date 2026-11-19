@@ -54,7 +54,7 @@ class LiveAreaLayer(context: Context) : View(context) {
             blocks[key] = Block(kind, text, rect, null, p, bg, angle)
         } else {
             val w = maxOf(1, (rect.width() - 2 * pad).toInt())
-            val screenH = resources.displayMetrics.heightPixels
+            val screenH = realScreenHeight()  // like the captured frames (with the navigation bar)
             val fit = Layout.fitBlock(text.length, rect.width().toInt(), rect.height().toInt(), base,
                 grow = growLong && angle == 0f)
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = maxOf(minPx, fit.px) }
@@ -67,6 +67,12 @@ class LiveAreaLayer(context: Context) : View(context) {
             blocks[key] = Block(kind, text, rect, layout, null, bg, angle)
         }
         invalidate()
+    }
+
+    private fun realScreenHeight(): Int {
+        val wm = context.getSystemService(android.view.WindowManager::class.java)
+        return if (android.os.Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.bounds.height()
+        else android.util.DisplayMetrics().also { @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(it) }.heightPixels
     }
 
     fun remove(key: String) {

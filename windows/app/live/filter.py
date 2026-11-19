@@ -16,8 +16,8 @@ def worth_translating(p: Paragraph) -> bool:
     if len(letters) < (2 if ended else 3) or len(letters) < 0.5 * len(chars):
         return False
     words = text.split()
-    if any(any(c.isalpha() for c in w) and any(c.isdigit() for c in w) for w in words):
-        return False  # "St3loo": OCR noise
+    if len(words) <= 3 and any(any(c.isalpha() for c in w) and any(c.isdigit() for c in w) for w in words):
+        return False  # "St3loo 3,": OCR noise (a longer line with one misread word, "cl0sing", stays)
     if len(words) <= 2 and any(w.strip(".,:;!?").isdigit() for w in words):
         return False  # "Level 23": a number label
     if len(words) == 1 and not ended:

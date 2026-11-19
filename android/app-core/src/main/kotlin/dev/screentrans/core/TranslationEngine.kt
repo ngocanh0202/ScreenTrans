@@ -59,6 +59,7 @@ data class EngineJob<I>(
     val regions: List<IntArray> = emptyList(),
     val liveOcr: Boolean = false,
     val liveParagraphs: List<List<Paragraph>>? = null,
+    val liveSpeaker: String? = null,  // the dialogue box's name line, for a remote LLM
     val control: EngineControl? = null,
 )
 
@@ -88,6 +89,8 @@ class TranslationEngine<I>(
     private val factory: () -> EngineBundle<I>,
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher,
+    /** Live OCR runs here: a slow (remote) translation on [dispatcher] never stops Live from reading the screen. */
+    private val ocrDispatcher: CoroutineDispatcher = dispatcher,
 ) {
     private val _state = MutableStateFlow<EngineState>(EngineState.Loading)
     val state: StateFlow<EngineState> = _state
@@ -99,6 +102,7 @@ class TranslationEngine<I>(
     private var liveOcrPending: EngineJob<I>? = null  // Live jobs: one slot per kind, never replace user jobs
     private var liveTranslatePending: EngineJob<I>? = null
     private val controls = ArrayDeque<EngineJob<I>>()  // control jobs: never superseded, run first
+    @Volatile
     private var bundle: EngineBundle<I>? = null
 
     fun start() {
@@ -114,6 +118,7 @@ class TranslationEngine<I>(
                 _state.value = EngineState.Failed(e.message ?: e.javaClass.simpleName)
             }
             process()
+            scope.launch(ocrDispatcher) { processOcr() }
         }
     }
 
@@ -128,7 +133,8 @@ class TranslationEngine<I>(
             }
         }
         if (old != null) _events.tryEmit(EngineEvent.JobFailed(old.id, SUPERSEDED))
-        scope.launch(dispatcher) { process() }
+        if (job.liveOcr && job.control == null && job.liveParagraphs == null) scope.launch(ocrDispatcher) { processOcr() }
+        else scope.launch(dispatcher) { process() }
     }
 
     /**
@@ -146,8 +152,25 @@ class TranslationEngine<I>(
     private fun take(): EngineJob<I>? = synchronized(lock) {
         controls.removeFirstOrNull()
             ?: pending?.also { pending = null }
-            ?: liveTranslatePending?.also { liveTranslatePending = null }  // finish shown sentences first
-            ?: liveOcrPending.also { liveOcrPending = null }
+            ?: liveTranslatePending.also { liveTranslatePending = null }
+    }
+
+    private fun takeOcr(): EngineJob<I>? = synchronized(lock) { liveOcrPending.also { liveOcrPending = null } }
+
+    /** Live OCR on [ocrDispatcher]: only OCR + postprocess (no Pipeline state), so it may run beside a translation. */
+    private fun processOcr() {
+        val s = _state.value
+        if (s is EngineState.Failed) {
+            while (true) {
+                val job = takeOcr() ?: return
+                _events.tryEmit(EngineEvent.JobFailed(job.id, s.message))
+            }
+        }
+        val b = bundle ?: return
+        while (true) {
+            val job = takeOcr() ?: return
+            run(b, job)
+        }
     }
 
     private fun process() {
@@ -173,7 +196,7 @@ class TranslationEngine<I>(
         private set
 
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
-        remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
+        if (!job.liveOcr) remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
         try {
             when (val c = job.control) {
                 is EngineControl.Correct -> {
@@ -199,7 +222,7 @@ class TranslationEngine<I>(
             }
             val live = job.liveParagraphs
             if (live != null) {
-                runLiveTranslate(b, job.id, live)
+                runLiveTranslate(b, job.id, live, job.liveSpeaker)
                 return
             }
             val lines = b.ocr(requireNotNull(job.image) { "job without image" })
@@ -226,14 +249,14 @@ class TranslationEngine<I>(
         }
     }
 
-    private fun runLiveTranslate(b: EngineBundle<I>, jobId: Int, groups: List<List<Paragraph>>) {
+    private fun runLiveTranslate(b: EngineBundle<I>, jobId: Int, groups: List<List<Paragraph>>, speaker: String? = null) {
         val sizes = groups.map { it.size }
         fun regroup(segs: List<Segment>): List<List<Segment>> {
             var i = 0
             return sizes.map { n -> segs.subList(i, i + n).also { i += n } }
         }
         var last: List<List<Segment>> = groups.map { emptyList() }
-        for (segs in b.pipeline.iterSentences(groups.flatten())) {
+        for (segs in b.pipeline.iterSentences(groups.flatten(), speaker)) {
             last = regroup(segs)
             _events.tryEmit(EngineEvent.Partial(jobId, last))
         }

@@ -15,7 +15,7 @@ from app.live.blocks import BlockTracker, RateLimiter
 from app.live.filter import worth_translating
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
-from app.live.sentences import SentenceGate
+from app.live.sentences import SentenceGate, ocr_key
 from app.live.style import BlockStyle, font_px_for, sample_style
 from app.live.thumb import diff, gray_thumb
 from app.profiles import Rel, to_px
@@ -90,7 +90,6 @@ class LiveController(QObject):
         self._ocr_final: dict[int, bool] = {}
         self._submitted_final: dict[int, bool] = {}  # every OCR job ever sent (tests / diagnostics)
         self._requests: dict[int, list[tuple[int, str, int, str]]] = {}  # translate job -> (region, key, idx, src)
-        self._inflight: set[tuple[int, str, int, str]] = set()
         self._overlays: list = []
         self._trackers: list[BlockTracker] = []
         self._blocks: dict[tuple[int, str], _BlockState] = {}
@@ -175,7 +174,6 @@ class LiveController(QObject):
         self._ocr_final.clear()
         self._ocr_images.clear()
         self._requests.clear()
-        self._inflight.clear()
         self._blocks.clear()
         self._pending = None
         self.last_segments = []
@@ -196,6 +194,15 @@ class LiveController(QObject):
     def tick(self, now_ms: int) -> None:
         if not self.running:
             return
+        try:
+            self._tick(now_ms)
+        except Exception:  # never let one bad frame stop Live: the single-shot timer must be re-armed
+            import traceback
+
+            traceback.print_exc()
+            self._schedule(self.params.interval_ms)
+
+    def _tick(self, now_ms: int) -> None:
         if self._frame_provider is not None and not self._follow_window(now_ms):
             self._schedule(self.params.interval_ms)
             return
@@ -274,19 +281,36 @@ class LiveController(QObject):
                 request += self._update_block(i, b.key, b.paragraph, final or b.key in kept, carry)
         self._request(request)
 
+    @property
+    def _inflight(self) -> set[tuple[int, str, int, str]]:
+        """Sentences some live translate job still carries (a sentence may be in two jobs at once)."""
+        return {item for items in self._requests.values() for item in items}
+
     def _request(self, request: list) -> None:
         if not request:
             return
         from app.gui.worker import Job
 
+        request = sorted(request, key=lambda item: item[0])  # region order = the worker's flattened order
         tr_id = self._next_id()
         self._requests[tr_id] = request
-        self._inflight.update(request)
         groups: list[list[Paragraph]] = [[] for _ in self.regions]
         for i, key, _, src in request:
             st = self._blocks[(i, key)]
             groups[i].append(Paragraph("text", src, [src], *st.box))
-        self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups))
+        self._submit(Job(tr_id, "live_translate", None, (0, 0), paragraphs=groups,
+                         payload={"speaker": self._speaker_for(request[0])}))
+
+    def _speaker_for(self, item: tuple) -> str | None:
+        """The name line of the dialogue box: the nearest name block above the first text block of the request
+        (or the only name in its region). A remote LLM gets it as the speaker."""
+        i, key = item[0], item[1]
+        top = self._blocks[(i, key)].box[1]
+        names = [(st.box, st.sentences[0]) for (j, _), st in self._blocks.items()
+                 if j == i and st.kind == "name" and st.sentences]
+        above = [n for n in names if n[0][3] <= top + 5]
+        pick = max(above, key=lambda n: n[0][3]) if above else (names[0] if len(names) == 1 else None)
+        return pick[1] if pick else None
 
     def _missing(self) -> list:
         """Finished sentences that are neither shown nor being translated."""
@@ -322,11 +346,12 @@ class LiveController(QObject):
             st.sentences, st.done = [p.text], 1
             self._draw(i, key)
             return []
-        if list(p.sentences) != st.sentences or not st.sentences:
-            st.stable_since = self._clock()
+        if [ocr_key(x) for x in p.sentences] != [ocr_key(x) for x in st.sentences] or not st.sentences:
+            st.stable_since = self._clock()  # a jittery read of the same text does not restart the 1.5 s
         st.done = SentenceGate.done(p.sentences, st.sentences or None, final)
         st.sentences = list(p.sentences)
-        st.shown = {k: v for k, v in st.shown.items() if k < len(st.sentences) and st.sentences[k] == v[0]}
+        st.shown = {k: v for k, v in st.shown.items()  # a jittery read keeps its translation (no re-request)
+                    if k < len(st.sentences) and ocr_key(st.sentences[k]) == ocr_key(v[0])}
         for k in range(st.done):
             src = st.sentences[k]
             if k not in st.shown and (carry and src in carry or src in self._known):
@@ -362,7 +387,7 @@ class LiveController(QObject):
         for (i, key, k, src), seg in zip(request, flat):
             st = self._blocks.get((i, key))
             if st is None or not seg.translation or seg.translation == "…" or k >= len(st.sentences) \
-                    or st.sentences[k] != src:
+                    or st.sentences[k] != src or seg.source != src:
                 continue
             st.shown[k] = (src, self._fixed.get(src, seg.translation))
             self._remember(src, st.shown[k][1])
@@ -413,8 +438,12 @@ class LiveController(QObject):
         self._finish(job_id)
         if was_translation and why == "superseded" and self.running:
             # The screen may stay still now (the line is complete): ask again at once, not on the next OCR.
-            self._request(self._missing())
+            # The job that replaced this one does not carry its sentences: send one job with both, which replaces
+            # it in turn; when that one is replaced nothing is missing any more, so this never ping-pongs.
+            missing = self._missing()
+            if missing:
+                newest = self._requests[max(self._requests)] if self._requests else []
+                self._request(missing + [item for item in newest if item not in missing])
 
     def _finish(self, job_id: int) -> None:
-        for item in self._requests.pop(job_id, []):
-            self._inflight.discard(item)
+        self._requests.pop(job_id, None)

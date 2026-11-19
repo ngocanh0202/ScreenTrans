@@ -1,0 +1,70 @@
+{
+ "name": "a block read with confusable letters (I/l/1, 0/O, case) is kept, not grown or new",
+ "params": {
+  "max_blocks": 30,
+  "near_px": 24
+ },
+ "steps": [
+  {
+   "paragraphs": [
+    {
+     "text": "The bridge is closing.",
+     "box": [
+      0,
+      0,
+      300,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [
+     "The bridge is closing."
+    ],
+    "kept": [],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "The bridge is cIosing.",
+     "box": [
+      0,
+      0,
+      300,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [
+     "The bridge is cIosing."
+    ],
+    "removed": []
+   }
+  },
+  {
+   "paragraphs": [
+    {
+     "text": "The bridge is c1osing. Run",
+     "box": [
+      0,
+      0,
+      300,
+      30
+     ]
+    }
+   ],
+   "expected": {
+    "added": [],
+    "kept": [],
+    "removed": [],
+    "grown": [
+     "The bridge is c1osing. Run"
+    ]
+   }
+  }
+ ]
+}

@@ -9,7 +9,8 @@ interface LiveHost {
     /** Capture the watched regions (async is fine) and submit an OCR job; return its id. */
     fun requestOcr(final: Boolean): Int
     /** Submit a sentence-by-sentence translation of [paragraphs] (per region); return its id. */
-    fun requestTranslate(paragraphs: List<List<Paragraph>>): Int
+    /** [speaker]: the name line of the dialogue box (a remote LLM gets it), null when there is none. */
+    fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int
     /** Draw (or redraw in place) one text block's translation over it; [box] = l, t, r, b in frame pixels. */
     fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float)
     fun removeBlock(region: Int, key: String)
@@ -53,7 +54,10 @@ class LiveSession(
     private val blocks = HashMap<Pair<Int, String>, BlockState>()
     private val ocrFinal = HashMap<Int, Boolean>()
     private val requests = HashMap<Int, List<Item>>()
-    private val inflight = HashSet<Item>()
+    /** Sentences some live translate job still carries (a sentence may be in two jobs at once). */
+    private val inflight: Set<Item> get() = requests.values.flatten().toSet()
+    private var submitting = false  // inside host.requestTranslate: the new job is not registered yet
+    private var resend = false
     private val fixed = HashMap<String, String>()  // the user's corrections: a late machine translation never wins
     private val known = LinkedHashMap<String, String>()  // sentence -> translation shown in this run (oldest first)
 
@@ -83,7 +87,7 @@ class LiveSession(
     fun stop() {
         running = false
         ocrJob = -1
-        ocrFinal.clear(); requests.clear(); inflight.clear(); blocks.clear()
+        ocrFinal.clear(); requests.clear(); blocks.clear()
         pending = null
     }
 
@@ -131,16 +135,56 @@ class LiveSession(
         request(request)
     }
 
-    private fun request(request: List<Item>) {
-        if (request.isEmpty()) return
+    private fun request(request0: List<Item>) {
+        if (request0.isEmpty()) return
+        val request = request0.sortedBy { it.region }  // region order = the engine's flattened order
         val groups = List(regionCount) { mutableListOf<Paragraph>() }
         for (it in request) {
             val b = blocks.getValue(it.region to it.key).box
             groups[it.region].add(Paragraph(Kind.TEXT, it.source, listOf(it.source), b[0], b[1], b[2], b[3]))
         }
-        val id = host.requestTranslate(groups)
+        submitting = true
+        val id = try {
+            host.requestTranslate(groups, speakerFor(request.first()))
+        } finally {
+            submitting = false
+        }
         requests[id] = request
-        inflight += request
+        if (resend) {
+            resend = false
+            resendMissing()
+        }
+    }
+
+    /**
+     * The scene went away (a fade to black / loading screen): take every translation off the screen. The memo of
+     * shown translations stays, so the same lines come back at once without a new translation.
+     */
+    fun clearBlocks() {
+        for ((k, _) in blocks) host.removeBlock(k.first, k.second)
+        blocks.clear()
+        trackers.forEach { it.clear() }
+    }
+
+    /** The nearest name block above the item's text block in its region (or the only name there). */
+    private fun speakerFor(item: Item): String? {
+        val top = blocks[item.region to item.key]?.box?.get(1) ?: return null
+        val names = blocks.entries.filter { (k, st) -> k.first == item.region && st.kind == Kind.NAME && st.sentences.isNotEmpty() }
+            .map { it.value.box to it.value.sentences[0] }
+        val above = names.filter { it.first[3] <= top + 5 }
+        val pick = above.maxByOrNull { it.first[3] } ?: names.singleOrNull()
+        return pick?.second
+    }
+
+    /**
+     * After a superseded translation: the job that replaced it does not carry its sentences, so send one job with
+     * both, which replaces it in turn; when that one is replaced nothing is missing any more (no ping-pong).
+     */
+    private fun resendMissing() {
+        val m = missing()
+        if (m.isEmpty()) return
+        val newest = requests.keys.maxOrNull()?.let { requests.getValue(it) }.orEmpty()
+        request(m + newest.filter { it !in m })
     }
 
     private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>, nowMs: Int): List<Item> {
@@ -155,10 +199,13 @@ class LiveSession(
             draw(i, key)
             return emptyList()
         }
-        if (p.sentences != st.sentences || st.sentences.isEmpty()) st.stableSince = nowMs
+        // a jittery read of the same text does not restart the 1.5 s
+        if (p.sentences.map(SentenceGate::ocrKey) != st.sentences.map(SentenceGate::ocrKey) || st.sentences.isEmpty()) st.stableSince = nowMs
         st.done = SentenceGate.done(p.sentences, st.sentences.ifEmpty { null }, final)
         st.sentences = p.sentences
-        st.shown.keys.removeAll { k -> k >= st.sentences.size || st.sentences[k] != st.shown.getValue(k).first }
+        st.shown.keys.removeAll { k ->  // a jittery read keeps its translation (no re-request)
+            k >= st.sentences.size || SentenceGate.ocrKey(st.sentences[k]) != SentenceGate.ocrKey(st.shown.getValue(k).first)
+        }
         for (k in 0 until st.done) {
             val tr = carry[st.sentences[k]] ?: known[st.sentences[k]]
             if (k !in st.shown && tr != null) st.shown[k] = st.sentences[k] to tr
@@ -191,7 +238,8 @@ class LiveSession(
         request.zip(flat).forEach { (item, seg) ->
             val st = blocks[item.region to item.key] ?: return@forEach
             val tr = seg.translation
-            if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source) return@forEach
+            if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source ||
+                seg.source != item.source) return@forEach
             st.shown[item.index] = item.source to (fixed[item.source] ?: tr)
             remember(item.source, st.shown.getValue(item.index).second)
             touched += item.region to item.key
@@ -221,7 +269,7 @@ class LiveSession(
 
     /** Done: the job no longer counts as running. */
     fun onJobEnded(jobId: Int) {
-        requests.remove(jobId)?.let { inflight -= it.toSet() }
+        requests.remove(jobId)
     }
 
     /** Finished sentences that are neither shown nor being translated. */
@@ -238,7 +286,9 @@ class LiveSession(
         if (jobId == ocrJob) ocrJob = -1
         val wasTranslation = jobId in requests
         onJobEnded(jobId)
-        if (wasTranslation && superseded && running) request(missing())
+        if (wasTranslation && superseded && running) {
+            if (submitting) resend = true else resendMissing()  // the new job registers first, then we resend
+        }
     }
 
     /** Tests only: pretend an OCR job [id] was requested. */

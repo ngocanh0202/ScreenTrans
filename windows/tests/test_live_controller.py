@@ -527,3 +527,99 @@ def test_remembered_translations_follow_the_users_fix_and_reset_on_restart():
     c.tick(0)
     c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
     assert sources(translate_jobs(jobs)[-1]) == ["Hello there."]
+
+
+# ---- Live review fixes ----------------------------------------------------------------------------------------
+class SupersedingWorker:
+    """Like TranslationWorker.submit: one waiting live_translate slot, the older one fails "superseded"
+    synchronously (Qt calls the slot directly on the UI thread). Nothing is taken: the worker is busy."""
+
+    def __init__(self):
+        self.c = None
+        self.jobs = []
+        self.waiting = None
+        self.depth = 0
+        self.max_depth = 0
+
+    def submit(self, job):
+        self.jobs.append(job)
+        if job.mode != "live_translate":
+            return
+        old, self.waiting = self.waiting, job
+        if old is not None:
+            self.depth += 1
+            self.max_depth = max(self.max_depth, self.depth)
+            self.c.on_job_failed(old.id, "superseded")
+            self.depth -= 1
+
+
+def make_superseding():
+    w = SupersedingWorker()
+    ids = iter(range(1, 10000))
+    overlays = []
+    c = LiveController(PARAMS, capture=Script([BLACK]), submit=w.submit, next_id=lambda: next(ids), notify=lambda m: None,
+                       overlay_factory=lambda r: overlays.append(FakeOverlay()) or overlays[-1], use_timer=False, clock=Clock())
+    w.c = c
+    c.start([REGION, (600, 500, 400, 80)])
+    return c, w, overlays
+
+
+def test_superseded_translations_do_not_ping_pong_and_nothing_is_lost():  # review #1 (stack overflow)
+    c, w, _ = make_superseding()
+    c.tick(0)
+    first = ocr_jobs(w.jobs)[-1]
+    c.on_ocr_done(first.id, [[para("Hello there.")], []])          # job A waits (the worker is busy)
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[para("Hello there."), para("Where to?", top=40)], [para("Good morning.")]])  # B supersedes A
+    assert w.max_depth <= 3
+    waiting = sources(w.waiting)
+    assert sorted(waiting) == ["Good morning.", "Hello there.", "Where to?"]  # the waiting job carries everything
+
+
+def test_a_resent_job_over_several_regions_draws_each_translation_in_its_own_region():  # review #2
+    c, jobs, _, overlays = make([BLACK], regions=(REGION, (600, 500, 400, 80)))
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[], [para("Good morning.")]])           # J1: region 1
+    j1 = translate_jobs(jobs)[-1]
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[para("Where is the key?")], [para("Good morning.")]])  # J2: region 0 only
+    c.on_job_failed(j1.id, "superseded")                                          # J3: both regions
+    translate(c, translate_jobs(jobs)[-1])
+    assert list(overlays[0].blocks.values()) == ["VI Where is the key?"]
+    assert list(overlays[1].blocks.values()) == ["VI Good morning."]
+
+
+def test_the_last_sentence_appears_on_an_animated_background_with_jittery_reads():  # review #4
+    clock = Clock()
+    c, jobs, _, overlays = make([BLACK], clock=clock)
+    texts = ["We need to go now. The bridge is closing.", "We need to go now. The bridge is cIosing."]
+    for n in range(8):  # never a final read: the background never stands still
+        clock.now = n * 500
+        c._ocr_final[1000 + n] = False
+        c.on_ocr_done(1000 + n, [[para(texts[n % 2])]])
+        for job in translate_jobs(jobs):
+            if job.id in c._requests:
+                translate(c, job)
+    shown = list(overlays[0].blocks.values())
+    assert shown in (["VI We need to go now. VI The bridge is closing."], ["VI We need to go now. VI The bridge is cIosing."])
+
+
+def test_live_translate_jobs_carry_the_speaker_of_the_dialogue_box():  # review #5
+    c, jobs, _, _ = make([BLACK])
+    c.tick(0)
+    name = Paragraph("name", "Vertin", ["Vertin"], 0, 0, 80, 18)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[name, para("Where are you going?", top=30)]])
+    job = translate_jobs(jobs)[-1]
+    assert job.payload == {"speaker": "Vertin"}
+
+
+def test_an_unexpected_error_in_a_tick_does_not_stop_live():  # review minor: the single-shot timer was never re-armed
+    c, jobs, notes, _ = make([BLACK])
+    scheduled = []
+    c._schedule = scheduled.append
+    c._on_screen = lambda r: 1 / 0  # anything unexpected while capturing
+    try:
+        c.tick(0)
+    except ZeroDivisionError:
+        pass
+    assert scheduled  # the next tick is still scheduled

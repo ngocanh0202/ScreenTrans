@@ -15,7 +15,7 @@ object LiveFilter {
         val ended = END.containsMatchIn(text)  // "Hi.", "No!" are real (short) lines of dialogue
         if (letters < (if (ended) 2 else 3) || letters < 0.5 * chars.length) return false
         val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (words.any { w -> w.any { it.isLetter() } && w.any { it.isDigit() } }) return false  // "St3loo"
+        if (words.size <= 3 && words.any { w -> w.any { it.isLetter() } && w.any { it.isDigit() } }) return false  // "St3loo 3,": OCR noise; a longer line with one misread word stays
         if (words.size <= 2 && words.any { w -> w.trim('.', ',', ':', ';', '!', '?').let { it.isNotEmpty() && it.all(Char::isDigit) } }) return false
         if (words.size == 1 && !ended) return false  // "AUTO", "SKIP": UI labels
         if (words.none { w -> w.count { it.isLetter() } >= 2 }) return false  // "X X X"

@@ -3,6 +3,7 @@ import itertools
 import math
 from dataclasses import dataclass, field
 
+from app.live.sentences import ocr_key
 from app.text.postprocess import Paragraph
 
 
@@ -56,7 +57,7 @@ class BlockTracker:
             box = (p.left, p.top, p.right, p.bottom)
             text = _norm(p.text)
             cx, cy = (p.left + p.right) / 2, (p.top + p.bottom) / 2
-            match = next((b for b in free if _norm(b.text) == text
+            match = next((b for b in free if ocr_key(b.text) == ocr_key(text)
                           and math.dist(b.center, (cx, cy)) <= self.near_px), None)
             if match is not None:
                 free.remove(match)

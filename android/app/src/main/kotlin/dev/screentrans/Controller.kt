@@ -76,7 +76,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private val capturer = ScreenCapturer(projection, context)
     private val overlays = Overlays(context)
     private val prefs = Prefs(context)
-    private val engine = TranslationEngine({ AppEngine.bundle(context) }, scope, engineThread.asCoroutineDispatcher())
+    // Live OCR on its own thread: a slow (remote) translation never stops Live from reading the screen
+    private val ocrThread = Executors.newSingleThreadExecutor { r -> Thread(r, "screentrans-live-ocr") }
+    private val engine = TranslationEngine({ AppEngine.bundle(context) }, scope, engineThread.asCoroutineDispatcher(),
+        ocrDispatcher = ocrThread.asCoroutineDispatcher())
 
     private val bubble = Bubble(context, onTap = ::showMenu, onMoved = { x, y -> prefs.bubbleX = x; prefs.bubbleY = y })
     private var menu: View? = null
@@ -114,7 +117,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     fun onRotated() {
-        capturer.resize()
+        if (!capturer.resize()) return  // night mode / font scale: same screen, keep Live and its translations
         // focusable panels sized for the old orientation would hide their buttons and block the game
         if (menu is LlmPanel) closeMenu()
         correctView?.let { overlays.remove(it); correctView = null; syncLivePause() }
@@ -142,6 +145,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         scope.cancel()
         capturer.release()
         engineThread.shutdown()
+        ocrThread.shutdown()
     }
 
     // ---- menu -----------------------------------------------------------------------------------
