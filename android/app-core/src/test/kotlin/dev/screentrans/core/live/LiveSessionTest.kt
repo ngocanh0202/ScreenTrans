@@ -299,4 +299,40 @@ class LiveSessionTest {
         s.onOcrDone(99, listOf(listOf(Paragraph(Kind.TEXT, "Hello.", listOf("Hello."), 8f, 6f, 308f, 26f))))
         assertEquals(before + 1, h.draws)
     }
+
+    /** The screen changes at [t], settles, and the final OCR reads [paras]. */
+    private fun read(s: LiveSession, h: Host, t: Int, vararg paras: Paragraph) {
+        val before = h.ocr.size
+        drive(s, t, t + 1000) { tt -> if (tt == t) 255f else 0f }
+        assertTrue(h.ocr.size > before, "no OCR after the change at $t")
+        s.onOcrDone(h.ocr.last().first, listOf(paras.toList()))
+    }
+
+    @Test
+    fun `a sentence translated before is shown at once without a new request`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there."))))
+        translate(s, h.translate.last())
+        read(s, h, 100, para("Something else."))
+        translate(s, h.translate.last())
+        val n = h.translate.size
+        read(s, h, 2000, para("Hello there."))  // the first line again (a new block)
+        assertEquals(n, h.translate.size)
+        assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
+    }
+
+    @Test
+    fun `remembered translations follow the users fix`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(para("Hello there."))))
+        translate(s, h.translate.last())
+        s.applyCorrection("Hello there.", "Chào bạn.")
+        read(s, h, 100)
+        read(s, h, 2000, para("Hello there."))
+        assertEquals(listOf("Chào bạn."), h.blocks.values.toList())
+    }
 }

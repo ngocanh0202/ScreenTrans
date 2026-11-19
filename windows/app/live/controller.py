@@ -24,6 +24,7 @@ from app.text.postprocess import Paragraph
 Region = tuple[int, int, int, int]  # x, y, w, h in physical pixels
 MOVE_SETTLE_MS = 300  # after the game window moved, wait this long without moves before reading
 KEPT_FINAL_MS = 1500  # a block whose text did not change for this long has stopped typing / fading in
+KNOWN_MAX = 500       # translations remembered by source sentence (shown again at once, no worker job)
 
 
 @dataclass
@@ -81,6 +82,7 @@ class LiveController(QObject):
         self._reported_paused = False
         self._hold_until = 0       # window dragged: no OCR until it stood still for MOVE_SETTLE_MS
         self._fixed: dict[str, str] = {}  # the user's corrections: a late machine translation never wins
+        self._known: dict[str, str] = {}  # sentence -> translation already shown in this Live run (oldest first)
         self.running = False
         self.regions: list[Region] = []
         self.machine = LiveMachine(params)
@@ -104,6 +106,7 @@ class LiveController(QObject):
     # ---- lifecycle ----------------------------------------------------------------------------
     def start(self, regions: list[Region]) -> None:
         self.stop()
+        self._known.clear()  # a new run (another model / game): translate again
         self.regions = list(regions)
         self.machine = LiveMachine(self.params)
         self._trackers = [BlockTracker(self._area_max_blocks) for _ in self.regions]
@@ -325,8 +328,9 @@ class LiveController(QObject):
         st.sentences = list(p.sentences)
         st.shown = {k: v for k, v in st.shown.items() if k < len(st.sentences) and st.sentences[k] == v[0]}
         for k in range(st.done):
-            if k not in st.shown and carry and st.sentences[k] in carry:
-                st.shown[k] = (st.sentences[k], carry[st.sentences[k]])
+            src = st.sentences[k]
+            if k not in st.shown and (carry and src in carry or src in self._known):
+                st.shown[k] = (src, carry[src] if carry and src in carry else self._known[src])
         self._draw(i, key)
         return [(i, key, k, st.sentences[k]) for k in range(st.done)
                 if k not in st.shown and (i, key, k, st.sentences[k]) not in self._inflight]
@@ -361,10 +365,17 @@ class LiveController(QObject):
                     or st.sentences[k] != src:
                 continue
             st.shown[k] = (src, self._fixed.get(src, seg.translation))
+            self._remember(src, st.shown[k][1])
             touched.add((i, key))
         for i, key in touched:
             self._draw(i, key)
         self.last_segments = flat
+
+    def _remember(self, source: str, translation: str) -> None:
+        self._known.pop(source, None)
+        self._known[source] = translation
+        while len(self._known) > KNOWN_MAX:
+            self._known.pop(next(iter(self._known)))
 
     def shown_segments(self) -> list:
         """Every translated sentence on screen now (for "edit the last translation")."""
@@ -380,6 +391,8 @@ class LiveController(QObject):
     def apply_correction(self, source: str, corrected: str) -> None:
         """The user fixed a sentence: redraw every block showing it (and keep it over late translations)."""
         self._fixed[source] = corrected
+        if source in self._known:
+            self._remember(source, corrected)
         for (i, key), st in self._blocks.items():
             hit = [k for k, (src, _) in st.shown.items() if src == source]
             for k in hit:

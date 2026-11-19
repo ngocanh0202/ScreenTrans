@@ -93,4 +93,11 @@ class BubbleClampTest {
         val (ex, ey) = Layout.cornerOnScreen(floatArrayOf(900f, 2300f, 1200f, 2420f), 0f, size = 40, screenW = 1080, screenH = 2400)
         assertEquals(1040, ex); assertEquals(2360, ey)  // clamped inside the screen
     }
+
+    @Test
+    fun `live translation starts a little above the source line`() {
+        assertEquals(94f, Layout.liftedTop(100f, 30f, tilted = false))  // 20 % of the text size
+        assertEquals(0f, Layout.liftedTop(2f, 30f, tilted = false))     // never above the screen
+        assertEquals(-4f, Layout.liftedTop(2f, 30f, tilted = true))     // tilted frame: coordinates may be negative
+    }
 }

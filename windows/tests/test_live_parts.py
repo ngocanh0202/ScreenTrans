@@ -99,7 +99,8 @@ def test_area_overlay_uses_the_source_size_and_colours(qtbot):
     shrink = AreaOverlay(Overlay(long_text="shrink"), QRect(0, 0, 1920, 1080), 1.5)
     qtbot.addWidget(shrink)
     shrink.set_block("b2", "Một câu khá dài " * 6, (0, 100, 300, 145), (0, 0), font_px=36)
-    assert shrink.blocks["b2"].px < 24 and shrink.blocks["b2"].draw_height <= int(30 * 1.5) + 1
+    sb = shrink.blocks["b2"]
+    assert sb.px < 24 and sb.draw_height <= int(30 * 1.5) + 1 + round(sb.px * 0.2)  # + the small lift
 
 
 def test_tilted_block_is_drawn_rotated(qtbot):
@@ -138,3 +139,22 @@ def test_a_short_line_appearing_on_a_full_screen_counts_as_a_change():
     # JPEG-like noise / a 2 % brightness flicker everywhere is not a change
     flicker = screen.point(lambda v: min(255, int(v * 1.02) + 1))
     assert diff(gray_thumb(screen), gray_thumb(flicker)) <= 5
+
+
+def test_live_translation_sits_a_little_higher_but_still_covers_the_source(qtbot):
+    """The text was drawn from the box top + padding, so it looked lower than the game's line."""
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import LIFT, AreaOverlay
+
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(ao)
+    ao.set_block("b1", "Chào.", (0, 100, 300, 130), (0, 0), font_px=30)
+    b = ao.blocks["b1"]
+    lift = round(30 * LIFT)
+    assert 0 < lift <= 8  # a nudge, not a jump
+    assert b.rect.top() == 100 - lift
+    assert b.rect.top() + b.draw_height >= 130  # the source line stays fully covered
+    ao.set_block("n1", "Druvis III", (0, 50, 100, 70), (0, 0), "name", font_px=20)
+    assert ao.blocks["n1"].rect.top() == 50  # names are not moved

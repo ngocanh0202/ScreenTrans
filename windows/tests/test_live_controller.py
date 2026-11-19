@@ -494,3 +494,36 @@ def test_m8_a_kept_block_that_moved_is_redrawn_at_its_new_place():
     c._ocr_final[99] = True
     c.on_ocr_done(99, [[Paragraph("text", "Hello.", ["Hello."], 8, 6, 308, 26)]])  # same text, 10 px away
     assert overlays[0].draws == draws + 1
+
+
+def test_a_sentence_translated_before_is_shown_at_once_without_a_new_request():
+    """Dialogue that comes back (re-opened, repeated line, scrolled log) reuses the shown translation."""
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[para("Something else.")]])  # the line is gone, another one shows
+    translate(c, translate_jobs(jobs)[-1])
+    n = len(translate_jobs(jobs))
+    c._ocr_final[901] = True
+    c.on_ocr_done(901, [[para("Hello there.")]])  # the first line again (a new block)
+    assert len(translate_jobs(jobs)) == n  # no new translation job
+    assert list(overlays[0].blocks.values()) == ["VI Hello there."]
+
+
+def test_remembered_translations_follow_the_users_fix_and_reset_on_restart():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
+    translate(c, translate_jobs(jobs)[-1])
+    c.apply_correction("Hello there.", "Chào bạn.")
+    c._ocr_final[900] = True
+    c.on_ocr_done(900, [[]])
+    c._ocr_final[901] = True
+    c.on_ocr_done(901, [[para("Hello there.")]])
+    assert list(overlays[-1].blocks.values()) == ["Chào bạn."]
+    c.start([REGION])  # e.g. another model: translate again
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[para("Hello there.")]])
+    assert sources(translate_jobs(jobs)[-1]) == ["Hello there."]

@@ -22,6 +22,7 @@ interface LiveHost {
  */
 /** A block whose text did not change for this long has stopped typing / fading in. */
 const val KEPT_FINAL_MS = 1500
+const val KNOWN_MAX = 500  // translations remembered by source sentence (shown again at once, no engine job)
 
 class LiveSession(
     params: LiveParams,
@@ -54,6 +55,13 @@ class LiveSession(
     private val requests = HashMap<Int, List<Item>>()
     private val inflight = HashSet<Item>()
     private val fixed = HashMap<String, String>()  // the user's corrections: a late machine translation never wins
+    private val known = LinkedHashMap<String, String>()  // sentence -> translation shown in this run (oldest first)
+
+    private fun remember(source: String, translation: String) {
+        known.remove(source)
+        known[source] = translation
+        while (known.size > KNOWN_MAX) known.remove(known.keys.first())
+    }
     private var pending: Boolean? = true  // translate what is already on screen; true = final OCR
     private var lastNow = 0
     var running = true
@@ -152,7 +160,7 @@ class LiveSession(
         st.sentences = p.sentences
         st.shown.keys.removeAll { k -> k >= st.sentences.size || st.sentences[k] != st.shown.getValue(k).first }
         for (k in 0 until st.done) {
-            val tr = carry[st.sentences[k]]
+            val tr = carry[st.sentences[k]] ?: known[st.sentences[k]]
             if (k !in st.shown && tr != null) st.shown[k] = st.sentences[k] to tr
         }
         draw(i, key)
@@ -185,6 +193,7 @@ class LiveSession(
             val tr = seg.translation
             if (tr.isNullOrEmpty() || tr == "…" || item.index >= st.sentences.size || st.sentences[item.index] != item.source) return@forEach
             st.shown[item.index] = item.source to (fixed[item.source] ?: tr)
+            remember(item.source, st.shown.getValue(item.index).second)
             touched += item.region to item.key
         }
         touched.forEach { (i, key) -> draw(i, key) }
@@ -201,6 +210,7 @@ class LiveSession(
     /** The user fixed a sentence: redraw every block showing it. */
     fun applyCorrection(source: String, corrected: String) {
         fixed[source] = corrected
+        if (source in known) remember(source, corrected)
         for ((key, st) in blocks) {
             val hit = st.shown.filterValues { it.first == source }.keys
             if (hit.isEmpty()) continue
