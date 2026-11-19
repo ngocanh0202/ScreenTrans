@@ -38,11 +38,13 @@ def test_scaled_screen(qtbot):
     assert w.blocks[0].rect == QRect(200, 200, 400, 100)
 
 
-def test_long_text_shrinks_and_elides(qtbot):
+def test_long_text_is_never_cut(qtbot):
+    """The whole translation is shown: the box may run past the source text (no "…", no expand button)."""
     w = _overlay(qtbot)
-    w.add_segment(seg("x", "rất dài " * 60, (0, 0, 120, 20)), (0, 0))
+    text = ("rất dài " * 60).strip()
+    w.add_segment(seg("x", text, (0, 0, 120, 20)), (0, 0))
     b = w.blocks[0]
-    assert b.font_size >= MIN_FONT and b.text.endswith("…")
+    assert b.font_size >= MIN_FONT and b.text == text and b.draw_height > 20 * 3
 
 
 def test_click_block_opens_detail_and_escape_closes(qtbot):
@@ -91,3 +93,12 @@ def test_i5_clicking_a_tilted_block_hits_it(qtbot):
     assert hit is o.blocks[-1]
     x, y = unrotate_point(dcx, dcy, 0)  # the unrotated rect centre: not on the drawn block any more
     assert o._block_at(QPoint(round(x), round(y))) is None
+
+
+def test_a_long_block_near_the_bottom_moves_up(qtbot):
+    w = _overlay(qtbot)
+    text = ("rất dài " * 60).strip()
+    h = w.height()
+    w.add_segment(seg("x", text, (0, h - 30, 120, h - 10)), (0, 0))
+    b = w.blocks[0]
+    assert b.text == text and b.rect.top() < h - 30 and b.rect.top() + b.draw_height <= h

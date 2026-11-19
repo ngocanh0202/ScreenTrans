@@ -41,15 +41,14 @@ class LiveAreaLayer(context: Context) : View(context) {
 
     /**
      * [box] = l, t, r, b in screen pixels; [fontPx] = the source text size (null: default size).
-     * Returns the drawn rect when the text had to be cut ("…"), null when it fits.
+     * The whole translation is drawn: the box may run past the source text (moved up near the screen bottom).
      */
     fun set(key: String, text: String, box: FloatArray, kind: Kind, fontPx: Float? = null, style: BlockStyle? = null,
-            angle: Float = 0f): RectF? {
+            angle: Float = 0f) {
         val rect = RectF(box[0], box[1], box[2], box[3])
         val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style?.bgArgb ?: Color.argb(204, 20, 20, 24) }
         val fg = style?.textArgb ?: if (kind == Kind.NAME) Color.rgb(255, 220, 140) else Color.WHITE
         val base = ((fontPx ?: basePx) * scale).coerceAtLeast(minPx)
-        var cut: RectF? = null
         if (kind == Kind.NAME) {
             val p = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = base; isFakeBoldText = true }
             blocks[key] = Block(kind, text, rect, null, p, bg, angle)
@@ -57,21 +56,17 @@ class LiveAreaLayer(context: Context) : View(context) {
             val w = maxOf(1, (rect.width() - 2 * pad).toInt())
             val screenH = resources.displayMetrics.heightPixels
             val fit = Layout.fitBlock(text.length, rect.width().toInt(), rect.height().toInt(), base,
-                maxH = maxOf(rect.height().toInt(), screenH - rect.top.toInt()), grow = growLong && angle == 0f)
+                grow = growLong && angle == 0f)
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = maxOf(minPx, fit.px) }
             val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, w)
                 .setAlignment(TextLayout.Alignment.ALIGN_NORMAL)
-                .setMaxLines(maxOf(1, (fit.height / (paint.textSize * 1.25f)).toInt()))
-                .setEllipsize(android.text.TextUtils.TruncateAt.END)
                 .build()
             rect.bottom = maxOf(rect.bottom, rect.top + layout.height + 2 * pad)
             rect.top = Layout.liftedTop(rect.top, paint.textSize, tilted = angle != 0f)
+            if (angle == 0f) rect.offsetTo(rect.left, Layout.onScreenTop(rect.top, rect.height().toInt(), screenH))
             blocks[key] = Block(kind, text, rect, layout, null, bg, angle)
-            val ellipsized = (0 until layout.lineCount).any { layout.getEllipsisCount(it) > 0 }
-            if (fit.truncated || ellipsized) cut = RectF(rect)
         }
         invalidate()
-        return cut
     }
 
     fun remove(key: String) {

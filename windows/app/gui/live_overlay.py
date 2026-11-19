@@ -43,25 +43,23 @@ def _font(px: int) -> QFont:
     return f
 
 
-def fit_px(text: str, width: int, height: int, base_px: int, room: int | None = None) -> tuple[int, str, int]:
-    """Largest pixel size from base_px down to MIN_PX whose wrapped text fits width x limit; else MIN_PX
-    with trailing words dropped and an ellipsis. Returns (px, text, drawn height). limit = height*GROW, or
-    with `room` (space down to the screen bottom) up to 3x the height or 40% of the room, never past it."""
-    limit = int(height * GROW) if room is None else int(min(room, max(height * 3, height + room * 0.4)))
+def fit_px(text: str, width: int, height: int, base_px: int, grow: bool = True) -> tuple[int, str, int]:
+    """The whole translation, never cut: (px, text, drawn height). grow: the source size, the box as tall as the
+    text needs; otherwise the largest size down to MIN_PX that fits height*GROW, and at MIN_PX it grows anyway."""
     inner = max(width - 2 * PAD, 10)
 
-    def needed(px: int, t: str) -> int:
+    def needed(px: int) -> int:
         fm = QFontMetrics(_font(px))
-        return fm.boundingRect(QRect(0, 0, inner, 100000), Qt.TextWordWrap, t).height() + 2 * PAD
+        return fm.boundingRect(QRect(0, 0, inner, 100000), Qt.TextWordWrap, text).height() + 2 * PAD
 
-    for px in range(max(base_px, MIN_PX), MIN_PX - 1, -1):
-        h = needed(px, text)
-        if h <= limit:
-            return px, text, max(h, height)
-    words = text.split()
-    while len(words) > 1 and needed(MIN_PX, " ".join(words) + "…") > limit:
-        words.pop()
-    return MIN_PX, " ".join(words) + "…", limit
+    base = max(base_px, MIN_PX)
+    if not grow:
+        for px in range(base, MIN_PX, -1):
+            h = needed(px)
+            if h <= int(height * GROW):
+                return px, text, max(h, height)
+        base = MIN_PX
+    return base, text, max(needed(base), height)
 
 
 class AreaOverlay(QWidget):
@@ -96,11 +94,13 @@ class AreaOverlay(QWidget):
             fg = fg if colors is not None else NAME_COLOR
             self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg, angle, pivot)
         else:
-            room = self.height() - r.top() if self.cfg.long_text != "shrink" and not angle else None
-            px, fitted, h = fit_px(text, r.width(), r.height(), base, room if room and room > r.height() else None)
+            px, fitted, h = fit_px(text, r.width(), r.height(), base, grow=self.cfg.long_text != "shrink")
             lift = min(round(px * LIFT), r.top()) if not angle else round(px * LIFT)  # never above the screen
             r.setTop(r.top() - lift)
-            self.blocks[key] = LiveBlock(r, kind, fitted, px, h + lift, fg, bg, angle, pivot)
+            h += lift
+            if not angle and r.top() + h > self.height():  # would run off the bottom: move up, not past the top
+                r.moveTop(max(0, self.height() - h))
+            self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg, angle, pivot)
         self._refresh()
 
     def remove_block(self, key: str) -> None:

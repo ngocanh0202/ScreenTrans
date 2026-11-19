@@ -100,7 +100,7 @@ def test_area_overlay_uses_the_source_size_and_colours(qtbot):
     qtbot.addWidget(shrink)
     shrink.set_block("b2", "Một câu khá dài " * 6, (0, 100, 300, 145), (0, 0), font_px=36)
     sb = shrink.blocks["b2"]
-    assert sb.px < 24 and sb.draw_height <= int(30 * 1.5) + 1 + round(sb.px * 0.2)  # + the small lift
+    assert sb.px < 24 and sb.text == "Một câu khá dài " * 6  # smaller font, never cut
 
 
 def test_tilted_block_is_drawn_rotated(qtbot):
@@ -158,3 +158,29 @@ def test_live_translation_sits_a_little_higher_but_still_covers_the_source(qtbot
     assert b.rect.top() + b.draw_height >= 130  # the source line stays fully covered
     ao.set_block("n1", "Druvis III", (0, 50, 100, 70), (0, 0), "name", font_px=20)
     assert ao.blocks["n1"].rect.top() == 50  # names are not moved
+
+
+def test_long_live_translations_are_never_cut_and_stay_on_screen(qtbot):
+    """No "…": the box grows past the source line (or the font shrinks, then it grows); near the bottom of the
+    screen it moves up instead of running off."""
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import AreaOverlay
+
+    text = ("Một câu dịch rất dài " * 30).strip()
+    for long_text in ("grow", "shrink"):
+        ao = AreaOverlay(Overlay(long_text=long_text), QRect(0, 0, 1920, 1080), 1.0)
+        qtbot.addWidget(ao)
+        ao.set_block("b1", text, (0, 100, 300, 130), (0, 0), font_px=30)
+        b = ao.blocks["b1"]
+        assert b.text == text and b.draw_height > 30 * 4
+        if long_text == "grow":
+            assert b.px == 30  # the source size is kept
+        short = ("Một câu dịch rất dài " * 6).strip()
+        ao.set_block("b2", short, (0, 1040, 300, 1070), (0, 0), font_px=30)
+        low = ao.blocks["b2"]
+        assert low.text == short and low.rect.top() < 1040 and low.rect.top() + low.draw_height <= 1080
+        if long_text == "grow":  # taller than the screen at the source size: from the top, never above it
+            ao.set_block("b3", text * 3, (0, 1040, 300, 1070), (0, 0), font_px=30)
+            assert ao.blocks["b3"].rect.top() == 0

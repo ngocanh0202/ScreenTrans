@@ -63,16 +63,25 @@ class BubbleClampTest {
     }
 
     @Test
-    fun `a long translation grows the box before the font shrinks, then reports truncation`() {
+    fun `a long translation grows the box before the font shrinks, and is never cut`() {
         // 40 px font, 400 px wide box of one 50 px line: ~18 chars per line
-        val short = Layout.fitBlock(10, 400, 50, 40f, maxH = 1000, grow = true)
-        assertEquals(40f, short.px); assertEquals(false, short.truncated)
-        val long = Layout.fitBlock(90, 400, 50, 40f, maxH = 1000, grow = true)  // 5 lines: needs 250 px > 1.5x
-        assertEquals(40f, long.px); assertTrue(long.height in 151..450); assertEquals(false, long.truncated)
-        val shrink = Layout.fitBlock(90, 400, 50, 40f, maxH = 1000, grow = false)
+        val short = Layout.fitBlock(10, 400, 50, 40f, grow = true)
+        assertEquals(40f, short.px); assertEquals(50, short.height)
+        val long = Layout.fitBlock(90, 400, 50, 40f, grow = true)  // 5 lines: needs 250 px > 1.5x
+        assertEquals(40f, long.px); assertEquals(250, long.height)
+        val shrink = Layout.fitBlock(40, 400, 50, 40f, grow = false)  // fits 1.5x once the font is smaller
         assertTrue(shrink.px < 40f); assertTrue(shrink.height <= 75)
-        val huge = Layout.fitBlock(2000, 400, 50, 40f, maxH = 120, grow = true)
-        assertEquals(true, huge.truncated); assertTrue(huge.height <= 150)
+        val huge = Layout.fitBlock(2000, 400, 50, 40f, grow = true)
+        assertEquals(40f, huge.px); assertEquals(5500, huge.height)  // never cut: 110 lines of 50 px
+        val hugeShrink = Layout.fitBlock(2000, 400, 50, 40f, grow = false)
+        assertEquals(Layout.MIN_TEXT_PX, hugeShrink.px); assertTrue(hugeShrink.height > 75)  // smallest font, then grows
+    }
+
+    @Test
+    fun `a box that would run off the bottom moves up, never above the top`() {
+        assertEquals(100f, Layout.onScreenTop(100f, 300, 2400))
+        assertEquals(2100f, Layout.onScreenTop(2300f, 300, 2400))
+        assertEquals(0f, Layout.onScreenTop(2300f, 3000, 2400))
     }
 
     @Test

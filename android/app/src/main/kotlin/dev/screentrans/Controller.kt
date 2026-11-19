@@ -96,7 +96,6 @@ class Controller(private val context: Context, projection: MediaProjection) {
     private val live = LiveController(context, scope, capturer, engine, overlays, newId = { nextId++ },
         notify = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show() },
         hideOthers = { hidden -> bubble.visibility = if (hidden) View.INVISIBLE else View.VISIBLE },
-        onExpand = { text -> showCard(null, text) },  // ⤢ on a cut translation: read all of it in a card
     )
     private var restartLiveOnClose = false  // settings changed while Live runs: redraw with them
 
