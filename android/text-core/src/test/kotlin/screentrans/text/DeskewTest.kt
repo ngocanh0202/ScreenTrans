@@ -1,7 +1,6 @@
 package screentrans.text
 
 import org.junit.jupiter.api.Test
-import kotlin.math.hypot
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -33,6 +32,12 @@ class DeskewTest {
             val (sx, sy) = Deskew.unrotate(x, y, 20f)
             assertTrue(sx >= b[0] - 0.01f && sx <= b[2] + 0.01f && sy >= b[1] - 0.01f && sy <= b[3] + 0.01f)
         }
-        assertTrue(hypot(1f, 1f) > 0)
+    }
+
+    @Test
+    fun `m1 the angle comes from the corners whatever sign a library uses`() {
+        val pts = corners(500f, 400f, 200f, 30f, 12f)
+        assertEquals(12f, Deskew.angleOf(pts), 0.05f)
+        assertEquals(-7f, Deskew.angleOf(corners(500f, 400f, 200f, 30f, -7f)), 0.05f)
     }
 }
