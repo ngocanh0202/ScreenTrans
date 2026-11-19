@@ -84,7 +84,16 @@ class Pipeline:
     @property
     def cache_ns(self) -> str:
         """Cache key prefix: a new model version or glossary edit must not reuse old translations."""
-        return f"{self.translator.model_id}@{self.model_version}#{self.glossary.digest()}"
+        return self._ns(self.translator.model_id)
+
+    def _ns(self, model_id: str) -> str:
+        return f"{model_id}@{self.model_version}#{self.glossary.digest()}"
+
+    EXAMPLES = 5
+
+    def examples(self) -> list[tuple[str, str]]:
+        """The user's latest corrections (source, fix), for a remote LLM to follow."""
+        return list(self.overrides.items())[-self.EXAMPLES:]
 
     def set_game(self, game: str | None, glossary: Glossary, overrides: dict[str, str]) -> None:
         self.game, self.glossary = game, glossary
@@ -92,7 +101,12 @@ class Pipeline:
 
     def correct(self, source: str, machine: str, corrected: str) -> None:
         """The user fixed a translation: use it from now on (before cache and model), and log it."""
-        self.overrides[normalize(source)] = corrected
+        key = normalize(source)
+        self.overrides.pop(key, None)  # newest last
+        self.overrides[key] = corrected
+        set_examples = getattr(self.translator, "set_examples", None)
+        if set_examples is not None:
+            set_examples(self.examples())
         if self.corrections is not None:
             self.corrections.log(self.game, self.translator.model_id, source, machine, corrected)
 
@@ -110,7 +124,10 @@ class Pipeline:
             {"ocr": ms(t0, t1), "postprocess": ms(t1, t2), "translate": ms(t2, t3), "total": ms(t0, t3)},
         )
 
-    def _translate_sentences(self, sentences: list[str]) -> dict[str, str]:
+    def _translate_sentences(self, sentences: list[str], remote_ok: bool = True,
+                             fallback: bool = True) -> dict[str, str] | None:
+        """remote_ok False: the local model only (a remote engine is down). fallback False: None instead of
+        translating locally when the remote engine fails (the caller falls back sentence by sentence)."""
         model = self.translator.model_id
         ns = self.cache_ns
         done: dict[str, str] = {}
@@ -129,7 +146,9 @@ class Pipeline:
             return done
         remote = getattr(self.translator, "translate_ctx", None)
         if remote is not None:  # a remote LLM: glossary terms go in the prompt, no placeholders
-            outputs = remote(todo, self.glossary.terms_in(todo))
+            outputs = remote(todo, self.glossary.terms_in(todo)) if remote_ok else None
+            if outputs is None and not fallback:
+                return None
             if outputs is not None:
                 for s, out in zip(todo, outputs):
                     done[s] = clean_output(s, out)
@@ -137,8 +156,18 @@ class Pipeline:
                     if self.pair_logger is not None:
                         self.pair_logger.log(s, done[s], model, self.game)
                 return done
-            # unavailable right now: the local model, and its results are not cached under the remote name
-            done.update(self._translate_local(todo, self.translator.local, None))
+            # unavailable right now: the local model, cached under its own name (never the remote one)
+            local = self.translator.local
+            local_ns = self._ns(local.model_id)
+            rest = []
+            for s in todo:
+                hit = self.cache.get(local_ns, s)
+                if hit is not None:
+                    done[s] = hit
+                else:
+                    rest.append(s)
+            if rest:
+                done.update(self._translate_local(rest, local, local_ns))
             return done
         done.update(self._translate_local(todo, self.translator, ns))
         return done
@@ -167,11 +196,12 @@ class Pipeline:
                 self.pair_logger.log(s, done[s], model, self.game)
         return done
 
-    def _speaker(self, paragraphs: list[Paragraph]) -> None:
+    def _speaker(self, paragraphs: list[Paragraph], only_one: bool = False) -> None:
         """Tell a remote LLM who is talking (the name line of the dialogue box), if anyone."""
         set_speaker = getattr(self.translator, "set_speaker", None)
         if set_speaker is not None:
-            set_speaker(next((p.text for p in paragraphs if p.kind == "name"), None))
+            names = [p.text for p in paragraphs if p.kind == "name"]
+            set_speaker(names[0] if names and (len(names) == 1 or not only_one) else None)
 
     def _observe(self, sentences: list[str]) -> None:
         if self.tracker is not None:
@@ -214,20 +244,23 @@ class Pipeline:
         if not order:
             yield snapshot()
             return
+        remote_ok = True
         if getattr(self.translator, "prefers_batch", False):  # one remote call, then show them one by one
-            translated = self._translate_sentences(order)
-            for sentence in order:
-                done[sentence] = translated[sentence]
-                yield snapshot()
-            return
+            translated = self._translate_sentences(order, fallback=False) if self.translator.available() else None
+            if translated is not None:
+                for sentence in order:
+                    done[sentence] = translated[sentence]
+                    yield snapshot()
+                return
+            remote_ok = False  # down: the local model, still sentence by sentence
         for sentence in order:
-            done.update(self._translate_sentences([sentence]))
+            done.update(self._translate_sentences([sentence], remote_ok=remote_ok))
             yield snapshot()
 
     def iter_segments(self, paragraphs: list[Paragraph]) -> Iterator[Segment]:
         """Yield each paragraph as soon as it is translated (full-screen mode shows blocks progressively)."""
         self._observe([s for p in paragraphs if p.kind == "text" for s in p.sentences])
-        self._speaker(paragraphs)
+        self._speaker(paragraphs, only_one=True)  # a whole screen: a speaker only when there is a single name
         for p in paragraphs:
             translated = self._translate_sentences(p.sentences) if p.kind == "text" and p.sentences else {}
             yield self._segment(p, translated)

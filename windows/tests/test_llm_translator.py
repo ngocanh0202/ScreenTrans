@@ -267,3 +267,47 @@ def test_kaggle_servers_get_their_own_cache_namespace():
     a = make_client("kaggle", "t", url="https://abc.ngrok-free.app/")
     b = make_client("kaggle", "t", url="https://xyz.ngrok-free.app")
     assert a.model == "abc.ngrok-free.app" and b.model == "xyz.ngrok-free.app"
+
+
+# ---- 5b-1 Task 4: pipeline fallback stays progressive and cached; fullscreen speaker; corrections ----------
+from app.text.postprocess import Paragraph, postprocess  # noqa: E402
+
+
+def test_live_fallback_still_shows_sentence_by_sentence(tmp_path):
+    clock = Clock()
+    tr, local, _ = make(tmp_path, FakeClient(error=RemoteError("server", "Gemini")), clock=clock)
+    tr.translate_ctx(["warm-up."], {})  # fails: backing off now
+    snaps = list(pipeline(tr).iter_sentences(postprocess(LINES)))
+    assert len(snaps) == 3 and [len(c) for c in local.calls] == [1, 1, 1]  # one sentence at a time, locally
+
+
+def test_fallback_results_are_cached_under_the_local_model(tmp_path):
+    clock = Clock()
+    tr, local, _ = make(tmp_path, FakeClient(error=RemoteError("server", "Gemini")), clock=clock)
+    p = pipeline(tr)
+    p.run(IMG)
+    n = len(local.calls)
+    p.run(IMG)  # still backing off: the local translations come from the cache
+    assert len(local.calls) == n
+
+
+def test_fullscreen_sends_a_speaker_only_when_the_screen_has_one_name(tmp_path):
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+    p = pipeline(tr)
+    one = [Paragraph("name", "Vertin", ["Vertin"], 0, 0, 50, 10), Paragraph("text", "Go.", ["Go."], 0, 20, 50, 30)]
+    list(p.iter_segments(one))
+    assert "Người nói: Vertin" in c.calls[-1][1]
+    two = one + [Paragraph("name", "Sonetto", ["Sonetto"], 300, 0, 350, 10),
+                 Paragraph("text", "Run.", ["Run."], 300, 20, 350, 30)]
+    list(p.iter_segments(two))
+    assert "Người nói:" not in c.calls[-1][1]
+
+
+def test_a_correction_becomes_an_example_for_the_next_call(tmp_path):
+    c = FakeClient()
+    tr, _, _ = make(tmp_path, c)
+    p = pipeline(tr)
+    p.correct("You're late.", "Bạn muộn rồi.", "Em đến muộn đấy.")
+    p.translate_paragraphs([Paragraph("text", "Hello.", ["Hello."], 0, 0, 50, 10)])
+    assert "- You're late. → Em đến muộn đấy." in c.calls[-1][1]
