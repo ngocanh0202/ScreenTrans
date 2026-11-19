@@ -352,3 +352,48 @@ def test_an_engine_that_cannot_start_falls_back_with_a_notice(qtbot, run_worker,
     assert [s.translation for s in segs if s.kind == "text"][0].startswith("VI ")
     notes = [e[1] for e in rec.of("notice")]
     assert len(notes) == 1 and "Claude" in notes[0] and "anthropic" not in notes[0]
+
+
+def test_live_ocr_is_not_held_up_by_a_slow_translation(qtbot):  # review #8
+    """Signals go to a QObject on the main thread, like TrayApp (lambdas would run on the busy worker thread)."""
+    from PySide6.QtCore import QObject, Slot
+
+    from app.text.postprocess import Paragraph
+
+    class Sink(QObject):
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        @Slot(int, object)
+        def ocr(self, i, per):
+            self.events.append(("ocr_done", i))
+
+        @Slot(int, object)
+        def done(self, i, segs):
+            self.events.append(("done", i))
+
+        @Slot(int)
+        def started(self, i):
+            self.events.append(("started", i))
+
+    sink = Sink()
+
+    def connect(w):
+        w.ocr_done.connect(sink.ocr)
+        w.job_done.connect(sink.done)
+        w.job_started.connect(sink.started)
+
+    thread, w = start_worker(_factory(delay=0.4), connect=connect)
+    try:
+        qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+        paras = [Paragraph("text", f"Line {n}.", [f"Line {n}."], 0, 30 * n, 100, 30 * n + 20) for n in range(3)]
+        w.submit(Job(1, "live_translate", None, (0, 0), paragraphs=[paras]))  # ~1.2 s (a slow remote call)
+        qtbot.waitUntil(lambda: ("started", 1) in sink.events, timeout=5000)
+        w.submit(Job(2, "live_ocr", None, (0, 0), images=[IMG]))
+        qtbot.waitUntil(lambda: ("ocr_done", 2) in sink.events, timeout=5000)
+        assert ("done", 1) not in sink.events  # the screen was read while the translation still ran
+        qtbot.waitUntil(lambda: ("done", 1) in sink.events, timeout=5000)
+    finally:
+        thread.quit()
+        assert thread.wait(5000)

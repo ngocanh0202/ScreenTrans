@@ -53,6 +53,12 @@ class TranslationWorker(QObject):
         self.is_ready = False
         self.error: str | None = None
         self._wake.connect(self._process)
+        # Live OCR runs on its own thread with its own OCR engine: a slow (remote) translation never stops Live
+        # from reading the screen. One waiting slot, like the other Live jobs.
+        self._ocr_cv = threading.Condition()
+        self._ocr_slot: Job | None = None
+        self._live_ocr = None
+        threading.Thread(target=self._ocr_loop, name="live-ocr", daemon=True).start()
 
     @Slot()
     def start(self) -> None:
@@ -64,21 +70,33 @@ class TranslationWorker(QObject):
         except Exception as e:  # any load failure is shown to the user, the app keeps running
             self.error = str(e) or type(e).__name__
             self.failed.emit(self.error)
+            with self._ocr_cv:
+                self._ocr_cv.notify_all()
             self._process()
             return
         self._pipeline = pipeline
         self._fast_ocr = pipeline.ocr  # Live always reads with the fast default engine
+        self._live_ocr = self._own_ocr(pipeline.ocr)
         self._local = pipeline.translator  # the local model: default engine and fallback of the remote ones
         self._translators: dict = {}
         self._no_key_noticed: set[str] = set()
         self._engines: dict = {}
         self.is_ready = True
         self.ready.emit()
+        with self._ocr_cv:
+            self._ocr_cv.notify_all()
         self._process()
 
     def submit(self, job: Job) -> None:
         """Thread-safe. Keeps only the newest waiting job of its kind (user / live); an older waiting
         one of the same kind is superseded. User jobs run first."""
+        if job.mode == "live_ocr":
+            with self._ocr_cv:
+                old, self._ocr_slot = self._ocr_slot, job
+                self._ocr_cv.notify_all()
+            if old is not None:
+                self.job_failed.emit(old.id, SUPERSEDED)
+            return
         with self._lock:
             if job.mode in CONTROL:
                 self._control.append(job)
@@ -115,6 +133,37 @@ class TranslationWorker(QObject):
             return
         while (job := self._take()) is not None:
             self._run(job)
+
+    @staticmethod
+    def _own_ocr(ocr):
+        """A separate Windows OCR instance for the Live OCR thread (never shared across threads)."""
+        try:
+            from app.ocr.windows_ocr import WindowsOcr
+
+            if isinstance(ocr, WindowsOcr):
+                return WindowsOcr()
+        except Exception:
+            pass
+        return ocr
+
+    def _ocr_loop(self) -> None:
+        while True:
+            with self._ocr_cv:
+                while self._ocr_slot is None or not (self.is_ready or self.error is not None):
+                    self._ocr_cv.wait()
+                job, self._ocr_slot = self._ocr_slot, None
+            if self.error is not None:
+                self.job_failed.emit(job.id, self.error)
+                continue
+            self.job_started.emit(job.id)
+            try:
+                per_region = [postprocess(self._live_ocr.recognize(img)) if img is not None else None
+                              for img in job.images or []]  # None: that region could not be captured
+            except Exception as e:
+                traceback.print_exc()
+                self.job_failed.emit(job.id, str(e) or type(e).__name__)
+                continue
+            self.ocr_done.emit(job.id, per_region)
 
     def _use_ocr(self, name: str) -> None:
         """The game's OCR engine for one-shot translations; falls back to the default if it cannot load."""
