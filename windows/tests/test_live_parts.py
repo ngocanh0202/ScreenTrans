@@ -197,7 +197,8 @@ def test_a_short_source_line_does_not_drop_the_last_word(qtbot):
 
     ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
     qtbot.addWidget(ao)
-    ao.set_block("b1", "Xin chào", (0, 100, 80, 130), (0, 0), font_px=30)
+    source_w = QFontMetrics(_font(30)).horizontalAdvance("Hello") + 2 * PAD  # as wide as the English line
+    ao.set_block("b1", "Xin chào", (0, 100, source_w, 130), (0, 0), font_px=30)
     b = ao.blocks["b1"]
     assert QFontMetrics(_font(b.px)).horizontalAdvance("Xin chào") <= b.rect.width() - 2 * PAD  # one line
     assert b.rect.left() == 0

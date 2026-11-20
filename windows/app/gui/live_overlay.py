@@ -100,7 +100,7 @@ class AreaOverlay(QWidget):
 
                 def lines(w: int) -> int:
                     h = fm.boundingRect(QRect(0, 0, max(w - 2 * PAD, 10), 100000), Qt.TextWordWrap, text).height()
-                    return max(1, round(h / fm.lineSpacing()))
+                    return max(1, round(h / max(1, fm.lineSpacing())))
 
                 r.setWidth(widen(r.width(), lines, self.width() - r.left(), max(base, MIN_PX)))
             px, fitted, h = fit_px(text, r.width(), r.height(), base, grow=self.cfg.long_text != "shrink")
