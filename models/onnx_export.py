@@ -9,12 +9,14 @@ from models.sp_export import export_sp
 OUT = Path(__file__).parent / "out"
 
 
-def export_onnx(key: str) -> Path:
+def export_onnx(key: str, hf_id: str | None = None) -> Path:
     from onnxruntime.quantization import QuantType, quantize_dynamic
     from optimum.exporters.onnx import main_export
     from transformers import AutoTokenizer
 
-    spec = MODELS[key]
+    from models.registry import spec_for
+
+    spec = spec_for(key, hf_id)
     if spec.kind != "marian":
         raise ValueError("Android ONNX export is only defined for Marian models in Phase 0")
     out_dir = OUT / f"{key}-onnx"

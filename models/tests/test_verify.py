@@ -38,3 +38,14 @@ def test_model_meta_for_opus_onnx():
     from models.export import model_meta
 
     assert model_meta("opus-mt-en-vi", "onnx")["kind"] == "marian"
+
+
+def test_fine_tuned_model_exports_from_any_hf_id_or_folder():  # Phase 6 (RF5)
+    from models.export import model_meta
+    from models.registry import MODELS, spec_for
+
+    assert MODELS["screentrans-en-vi"].kind == "marian" and MODELS["screentrans-en-vi"].tgt_prefix is None
+    assert spec_for("screentrans-en-vi", "someone/my-en-vi").hf_id == "someone/my-en-vi"
+    assert spec_for("opus-mt-en-vi").hf_id == "Helsinki-NLP/opus-mt-en-vi"
+    assert model_meta("screentrans-en-vi", "onnx") == {"id": "screentrans-en-vi", "kind": "marian", "format": "onnx",
+                                                       "src_lang": None, "tgt_prefix": None}
