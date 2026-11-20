@@ -25,6 +25,7 @@ data class LlmValues(
     val dailyLimit: Int,
     val usedToday: Int,
     val notes: String,
+    val localModel: String = "",  // the on-device model in use (shown for "Máy")
 )
 
 /** What the user saved: [key] only when typed (null = unchanged), [deleteKey] for the shown engine. */
@@ -70,6 +71,10 @@ class LlmPanel(
     private val notes = field("Bối cảnh, nhân vật, cách xưng hô (vd: Vertin: nữ, gọi Sonetto là \"em\")",
         InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE).apply { setText(v.notes); minLines = 2 }
     private val remoteRows = mutableListOf<android.view.View>()
+    private val localNote = TextView(context).apply {
+        textSize = 13f; setTextColor(Color.rgb(200, 200, 210)); setPadding(0, context.dp(8), 0, context.dp(4))
+        text = "Model trên máy: ${v.localModel} — đổi ở ⚙ → 🧠 Model."
+    }
     private var urlRow: android.view.View? = null
 
     init {
@@ -82,6 +87,7 @@ class LlmPanel(
         val grid = FlowLayout(context)
         segments.values.forEach { grid.addView(it) }
         body.addView(grid)
+        body.addView(localNote)
         fun row(label: String, view: android.view.View, remote: Boolean = true): android.view.View {
             val r = LinearLayout(context).apply {
                 orientation = VERTICAL
@@ -143,6 +149,7 @@ class LlmPanel(
         segments.forEach { (id, s) -> (s.background as GradientDrawable).setColor(if (id == engine) blue else idle) }
         val remote = engine in NAMES
         remoteRows.forEach { it.visibility = if (remote) VISIBLE else GONE }
+        localNote.visibility = if (remote || v.localModel.isEmpty()) GONE else VISIBLE
         urlRow?.visibility = if (engine == "kaggle") VISIBLE else GONE
         val saved = engine in v.savedKeys && !deleteKey
         key.hint = if (saved) "•••• (đã lưu — nhập để thay)" else "Dán key / token vào đây"

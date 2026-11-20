@@ -89,10 +89,17 @@ class SettingsScreens(private val context: Context, private val scope: Coroutine
         return panel
     }
 
+    /** The on-device model in use, shortly ("opus-mt", "ScreenTrans", or a downloaded model's id). */
+    fun localModelName(): String = when (prefs.modelId) {
+        AppEngine.MODEL_ID -> "opus-mt"
+        "screentrans-en-vi" -> "ScreenTrans"
+        else -> prefs.modelId
+    }
+
     fun tiles() = listOf(
-        PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy"}", ::showLlm),
+        PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy (${localModelName()})"}", ::showLlm),
         PanelTile("📖", "Thuật ngữ", ::showTerms),
-        PanelTile("🧠", "Model", ::showModels),
+        PanelTile("🧠", "Model: ${localModelName()}", ::showModels),
     )
 
     /** 🌐 Dịch bằng: the game's engine (on-device or a remote LLM), key, model, limit, notes. */
@@ -103,7 +110,7 @@ class SettingsScreens(private val context: Context, private val scope: Coroutine
             savedKeys = dev.screentrans.core.llm.NAMES.keys.filter { keyVault.has(it) }.toSet(),
             models = prefs.llmModels, liveModels = prefs.llmLiveModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
             usedToday = dev.screentrans.core.llm.UsageStore(File(context.filesDir, "llm")).used(),
-            notes = p.llmNotes,
+            notes = p.llmNotes, localModel = localModelName(),
         )
         host.present(LlmPanel(context, values, onSave = { e ->
             if (e.deleteKey) keyVault.set(e.engine, "")
