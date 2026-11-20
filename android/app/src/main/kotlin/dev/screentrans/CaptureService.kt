@@ -60,6 +60,7 @@ class CaptureService : Service() {
 
     private fun onProjectionReady(projection: MediaProjection) {
         controller = Controller(this, projection).also { it.start() }
+        current = this
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -89,6 +90,7 @@ class CaptureService : Service() {
     }
 
     override fun onDestroy() {
+        if (current === this) current = null
         controller?.stop()
         controller = null
         projection?.unregisterCallback(projectionCallback)
@@ -111,6 +113,15 @@ class CaptureService : Service() {
         fun start(context: Context, resultCode: Int, data: Intent) {
             val i = Intent(context, CaptureService::class.java).putExtra(EXTRA_CODE, resultCode).putExtra(EXTRA_DATA, data)
             context.startForegroundService(i)
+        }
+
+        @Volatile
+        private var current: CaptureService? = null
+
+        /** A setting changed on the app's start screen: the running session applies it (main thread). */
+        fun settingsChanged(change: SettingsChange) {
+            val s = current ?: return
+            s.main.post { s.controller?.onSettingsChanged(change) }
         }
 
         fun stop(context: Context) {

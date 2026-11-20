@@ -43,7 +43,6 @@ import dev.screentrans.ui.SettingsValues
 import dev.screentrans.ui.CorrectView
 import dev.screentrans.ui.Fix
 import dev.screentrans.ui.LlmPanel
-import dev.screentrans.ui.LlmValues
 import dev.screentrans.ui.Bubble
 import dev.screentrans.ui.FullScreenLayer
 import dev.screentrans.ui.MenuPanel
@@ -51,8 +50,6 @@ import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.Prefs
 import dev.screentrans.ui.RegionEditView
 import dev.screentrans.ui.ResultCard
-import dev.screentrans.ui.ModelsPanel
-import dev.screentrans.ui.TermsPanel
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -183,6 +180,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             extras = listOf(
                 PanelTile("✍", "Sửa bản dịch", ::editLast),
                 PanelTile("⚙", "Cài đặt", ::showSettings),
+                PanelTile("⏻", "Tắt", ::quit),
             ),
             onClose = ::closeMenu,
         )
@@ -200,43 +198,51 @@ class Controller(private val context: Context, projection: MediaProjection) {
         syncLivePause()
     }
 
-    private fun settingsValues() = SettingsValues(
-        readable = profile().style == "classic", textScale = prefs.textScale,
-        growLong = prefs.longText != "shrink", game = repo.label(gameId()),
-    )
+    /** The ⚙ settings screens (the same on the app's start screen), shown as overlays here. */
+    private val screens = SettingsScreens(context, scope, object : SettingsHost {
+        override fun present(panel: View, focusable: Boolean) {
+            closeMenu()
+            val w = (capturer.width * 0.9f).toInt()
+            val h = (capturer.height * 0.85f).toInt()
+            overlays.add(panel, overlays.params(w, h, focusable = focusable).apply {
+                x = (capturer.width - w) / 2; y = (capturer.height - h) / 4
+            })
+            menu = panel
+            syncLivePause()
+        }
+
+        override fun dismiss() = closeMenu()
+
+        override fun gameId(): String = if (live.running) liveGame ?: this@Controller.gameId() else this@Controller.gameId()
+
+        override fun changed(change: SettingsChange) = onSettingsChanged(change)
+    })
+
+    /** A setting changed in ⚙ here or on the app's start screen (CaptureService passes it on). */
+    fun onSettingsChanged(change: SettingsChange) {
+        when (change) {
+            SettingsChange.STYLE -> if (menu != null) restartLiveOnClose = true else if (live.running) startLive()
+            SettingsChange.MODEL -> {
+                engine.reload()  // the old model keeps translating until the new one is loaded
+                engineGame = null  // then the game (glossary, engine) again
+                useGame(profile())
+            }
+            SettingsChange.GAME -> {
+                engineGame = null  // send the game (glossary, engine) to the engine again
+                useGame(profile())
+            }
+        }
+    }
 
     /** ⚙ Cài đặt: style, text size, long translations, and the tools. */
     private fun showSettings() {
         closeMenu()
-        lateinit var panel: SettingsPanel
-        panel = SettingsPanel(
-            context, settingsValues(),
-            onReadable = { readable ->
-                repo.save(profile().copy(style = if (readable) "classic" else "match"))
-                restartLiveOnClose = true
-                panel.render(settingsValues())
-            },
-            onScale = { up ->
-                prefs.textScale = if (up) Layout.nextScale(prefs.textScale) else Layout.prevScale(prefs.textScale)
-                restartLiveOnClose = true
-                panel.render(settingsValues())
-            },
-            onGrowLong = { growLong ->
-                prefs.longText = if (growLong) "grow" else "shrink"
-                restartLiveOnClose = true
-                panel.render(settingsValues())
-            },
-            tools = listOf(
-                PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
-                PanelTile("🎮", "Game: ${repo.label(gameId())}", ::showGameMenu),
-                PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
-                PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
-                PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy"}", ::showLlm),
-                PanelTile("📖", "Thuật ngữ", ::showTerms),
-                PanelTile("🧠", "Model", ::showModels),
-            ),
-            onClose = ::closeMenu,
-        )
+        val panel = screens.settingsPanel(listOf(
+            PanelTile("⊘", "Vùng bỏ qua", ::chooseIgnore),
+            PanelTile("🎮", "Game: ${repo.label(gameId())}", ::showGameMenu),
+            PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
+            PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
+        ), onClose = ::closeMenu)
         // a fixed width: measured "unspecified" the rows were narrow, laid out on screen they stretched past the edge
         val w = minOf(context.dp(460), (capturer.width * 0.9f).toInt())
         panel.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
@@ -251,150 +257,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
         syncLivePause()
     }
 
-    private val keyVault by lazy { dev.screentrans.engine.KeyVault(context) }
-
-    /** 🌐 Dịch bằng: the game's engine (on-device or a remote LLM), key, model, limit, notes. */
-    private fun showLlm() {
+    /** ⏻ Tắt in the floating panel: stop ScreenTrans (the bubble, Live and the capture). */
+    private fun quit() {
         closeMenu()
-        val p = profile()
-        val values = LlmValues(
-            game = repo.label(p.id), engine = p.engine,
-            savedKeys = dev.screentrans.core.llm.NAMES.keys.filter { keyVault.has(it) }.toSet(),
-            models = prefs.llmModels, liveModels = prefs.llmLiveModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
-            usedToday = dev.screentrans.core.llm.UsageStore(java.io.File(context.filesDir, "llm")).used(),
-            notes = p.llmNotes,
-        )
-        lateinit var panel: LlmPanel
-        panel = LlmPanel(context, values, onSave = { e ->
-            if (e.deleteKey) keyVault.set(e.engine, "")
-            e.key?.let {  // encrypted (Android Keystore), never in prefs or logs
-                if (!keyVault.set(e.engine, it)) android.widget.Toast.makeText(context, "Không lưu được key (Keystore lỗi).", android.widget.Toast.LENGTH_LONG).show()
-            }
-            if (e.engine in dev.screentrans.core.llm.NAMES) {
-                prefs.llmModels = dev.screentrans.core.ui.LlmPrefsLogic.models(prefs.llmModels, e.engine, e.model)
-                prefs.llmLiveModels = dev.screentrans.core.ui.LlmPrefsLogic.liveModels(prefs.llmLiveModels, e.engine, e.liveModel, prefs.llmModels)
-            }
-            if (e.engine == "kaggle") prefs.kaggleUrl = e.kaggleUrl
-            prefs.dailyLimit = e.dailyLimit
-            repo.save(profile(p.id).copy(engine = e.engine, llmNotes = e.notes))  // the game the panel showed
-            engineGame = null  // send the game (with its engine) to the engine again
-            useGame(profile())
-            closeMenu()
-        }, onClose = ::closeMenu)
-        val w = (capturer.width * 0.9f).toInt()
-        val h = (capturer.height * 0.85f).toInt()
-        overlays.add(panel, overlays.params(w, h, focusable = true).apply {
-            x = (capturer.width - w) / 2; y = (capturer.height - h) / 4
-        })
-        menu = panel
-        syncLivePause()
-    }
-
-    /** 📖 Thuật ngữ: the game's own glossary terms; saved to its file and sent to the engine at once. */
-    private fun showTerms() {
-        closeMenu()
-        val id = if (live.running) liveGame ?: gameId() else gameId()
-        val file = repo.userGlossary(id)
-        var rows = emptyList<screentrans.text.TermEdit.Row>()
-        if (file.isFile) {
-            val parsed = runCatching { screentrans.text.TermEdit.parse(file.readText()) }.getOrNull()
-            if (parsed == null) {  // keep the broken file for the user, start a new one
-                file.renameTo(java.io.File(file.path + ".bad"))
-                android.widget.Toast.makeText(context, "File thuật ngữ hỏng, đã đổi tên thành ${file.name}.bad.", android.widget.Toast.LENGTH_LONG).show()
-            } else rows = parsed
-        }
-        lateinit var panel: TermsPanel
-        panel = TermsPanel(context, repo.label(id), rows, onSave = { edited ->
-            repo.saveTerms(id, edited)
-            engineGame = null  // reload the game's glossaries in the engine
-            useGame(profile(id))
-            closeMenu()
-        }, onClose = ::closeMenu)
-        val w = (capturer.width * 0.9f).toInt()
-        val h = (capturer.height * 0.85f).toInt()
-        overlays.add(panel, overlays.params(w, h, focusable = true).apply {
-            x = (capturer.width - w) / 2; y = (capturer.height - h) / 4
-        })
-        menu = panel
-        syncLivePause()
-    }
-
-    // ---- models (Settings → Model) -------------------------------------------------------------------
-    private val modelStore by lazy { AppEngine.store(context) }
-    private var modelsPanel: ModelsPanel? = null
-    private var manifest: List<dev.screentrans.core.model.ManifestModel>? = null
-    private var modelBusy: String? = null
-
-    private fun modelRows(): List<dev.screentrans.core.model.ModelRow> {
-        // the bundled model is updated with the app: never shown as "Có bản mới"
-        val bundledVersion = manifest?.firstOrNull { it.id == AppEngine.MODEL_ID }?.version ?: "app"
-        return dev.screentrans.core.model.ModelCatalog.rows(manifest.orEmpty(), modelStore.installed(),
-            mapOf(AppEngine.MODEL_ID to bundledVersion), prefs.modelId)
-    }
-
-    private fun renderModels(message: String) {
-        modelsPanel?.render(modelRows(), modelBusy, message)
-    }
-
-    /** 🧠 Model: the published models (Hugging Face) and the downloaded ones; download / use / delete. */
-    private fun showModels() {
-        closeMenu()
-        lateinit var panel: ModelsPanel
-        panel = ModelsPanel(context,
-            onDownload = { r -> downloadModel(r, use = false) },
-            onUse = { r -> if (r.status == "missing") downloadModel(r, use = true) else useModel(r) },
-            onDelete = { r ->
-                modelStore.delete(r.id)
-                renderModels("Đã xóa ${r.label}.")
-            },
-            onClose = { modelsPanel = null; closeMenu() })
-        modelsPanel = panel
-        val w = (capturer.width * 0.9f).toInt()
-        val h = (capturer.height * 0.85f).toInt()
-        overlays.add(panel, overlays.params(w, h).apply { x = (capturer.width - w) / 2; y = (capturer.height - h) / 4 })
-        menu = panel
-        syncLivePause()
-        renderModels("Đang đọc danh sách model…")
-        scope.launch {
-            val m = kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { modelStore.manifest() }.getOrNull() }
-            if (m != null) manifest = m
-            renderModels(if (m == null) "Không đọc được danh sách model trên mạng: chỉ hiện model trên máy."
-                else "Model tải về nằm trong bộ nhớ của app. Đang tải thì vẫn đóng bảng này được.")
-        }
-    }
-
-    private fun downloadModel(r: dev.screentrans.core.model.ModelRow, use: Boolean) {
-        val m = manifest?.firstOrNull { it.id == r.id } ?: return
-        if (modelBusy != null) return
-        modelBusy = r.id
-        renderModels("Đang tải ${r.label}…")
-        scope.launch {
-            var shownAt = 0L
-            val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                runCatching {
-                    modelStore.download(m) { done, total ->
-                        val now = SystemClock.uptimeMillis()
-                        if (now - shownAt > 300) {
-                            shownAt = now
-                            scope.launch { renderModels("Đang tải ${r.label}: ${done * 100 / maxOf(total, 1L)}%") }
-                        }
-                    }
-                }
-            }
-            modelBusy = null
-            result.fold(
-                onSuccess = { if (use) useModel(r) else renderModels("Đã tải ${r.label}.") },
-                onFailure = { renderModels("Không tải được: ${it.message}") },
-            )
-        }
-    }
-
-    private fun useModel(r: dev.screentrans.core.model.ModelRow) {
-        prefs.modelId = r.id
-        engine.reload()  // the old model keeps translating until the new one is loaded
-        engineGame = null  // then the game (glossary, engine) again
-        useGame(profile())
-        renderModels("Đang chuyển sang ${r.label}…")
+        CaptureService.stop(context)
     }
 
     private fun stopLive() {
@@ -403,7 +269,6 @@ class Controller(private val context: Context, projection: MediaProjection) {
     }
 
     private fun closeMenu() {
-        if (menu === modelsPanel) modelsPanel = null
         overlays.remove(menu)
         menu = null
         syncLivePause()
