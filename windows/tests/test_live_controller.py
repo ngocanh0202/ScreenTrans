@@ -675,3 +675,19 @@ def test_match_colours_stay_the_same_for_the_next_lines_of_the_dialogue_box():
     translate(c, translate_jobs(jobs)[-1])
     key = next(k for k, v in overlays[0].blocks.items() if "Goodbye" in v)
     assert overlays[0].styles[key][1] == colors_first
+
+
+def test_the_font_size_stays_the_same_for_the_next_lines_of_the_dialogue_box():
+    """The size came from each block's OCR line height, which depends on its letters ("Thy" is taller than "ace"):
+    every new line had another size."""
+    c, jobs, _, overlays = make([_boxed((250, 250, 250), (20, 20, 20))] * 2 + [_boxed((250, 250, 250), (235, 235, 235))] * 6)
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[Paragraph("text", "Hello.", ["Hello."], 0, 0, 300, 30, line_height=30)]])
+    translate(c, translate_jobs(jobs)[-1])
+    first = overlays[0].styles[next(iter(overlays[0].blocks))][0]
+    drive(c, 100, 2000)
+    shorter = Paragraph("text", "we saw a crow over a mesa.", ["we saw a crow over a mesa."], 0, 0, 300, 24, line_height=24)  # no tall letters
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[shorter]])
+    translate(c, translate_jobs(jobs)[-1])
+    key = next(k for k, v in overlays[0].blocks.items() if "crow" in v)
+    assert overlays[0].styles[key][0] == first

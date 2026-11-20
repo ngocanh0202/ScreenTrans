@@ -107,6 +107,7 @@ class LiveController(QObject):
         self.stop()
         self._known.clear()  # a new run (another model / game): translate again
         self._cell_styles: dict[tuple[int, str], BlockStyle] = {}  # remembered "match" colours per region cell
+        self._cell_fonts: dict[tuple[int, str], float] = {}  # remembered font size per region cell
         self.regions = list(regions)
         self.machine = LiveMachine(self.params)
         self._trackers = [BlockTracker(self._area_max_blocks) for _ in self.regions]
@@ -160,6 +161,7 @@ class LiveController(QObject):
 
     def _clear_blocks(self) -> None:
         self._cell_styles = {}  # another place / scene: sample again
+        self._cell_fonts = {}
         for (i, key) in list(self._blocks):
             if i < len(self._overlays):
                 self._overlays[i].remove_block(key)
@@ -324,9 +326,14 @@ class LiveController(QObject):
         """Font size from the source line height; colours remembered per cell of the region (style_cell): every
         block of the dialogue box gets the same colours, sampled once (again only while sampling fails)."""
         st = self._blocks.setdefault((i, key), _BlockState())
-        st.font_px = steady_font(st.font_px, font_px_for(getattr(p, "line_height", 0.0)))
+        size = (image.width, image.height) if image is not None else (max(1, self.regions[i][2]), max(1, self.regions[i][3]))
+        cell = (i, style_cell((p.left, p.top), size, p.kind))
+        # the OCR line height depends on the letters ("Thy" vs "ace"): every line of the dialogue box keeps one size
+        fonts = getattr(self, "_cell_fonts", {})
+        st.font_px = steady_font(st.font_px or fonts.get(cell), font_px_for(getattr(p, "line_height", 0.0)))
+        if st.font_px is not None:
+            fonts[cell] = st.font_px
         if self.style == "match" and not st.sampled and image is not None:
-            cell = (i, style_cell((p.left, p.top), (image.width, image.height), p.kind))
             known = getattr(self, "_cell_styles", {}).get(cell)
             if known is not None:
                 st.colors, st.sampled = known, True

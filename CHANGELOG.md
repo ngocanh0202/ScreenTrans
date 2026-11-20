@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- Live kiểu "Giống game": cỡ chữ bản dịch không còn to nhỏ theo từng câu — cỡ được nhớ theo vị trí như màu (chiều cao dòng OCR phụ thuộc chữ cái: "Thy" cao hơn "ace"); chỉ đổi khi chữ gốc đổi cỡ thật (> 30%).
+
 - Live kiểu "Giống game": màu bản dịch không còn đổi liên tục — màu được nhớ theo vị trí (lưới 6×6 của vùng Live, theo loại tên / lời thoại), câu sau trong hộp thoại dùng lại màu câu trước; lấy màu thất bại (chữ đang hiện dần) thì lần sau lấy lại.
 
 - Android: màn hình mở app có luôn **Cài đặt** (kiểu bản dịch, cỡ chữ, bản dịch dài, 🌐 Dịch bằng, 📖 Thuật ngữ, 🧠 Model) dưới nút Bắt đầu; đổi khi đang chạy được áp dụng ngay. Bảng nổi có nút **⏻ Tắt**.
