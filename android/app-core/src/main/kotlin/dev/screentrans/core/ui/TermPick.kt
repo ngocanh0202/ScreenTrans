@@ -52,6 +52,12 @@ class TermList {
 }
 
 object LlmPrefsLogic {
+    /** The stored Live models: empty, or the same as the one-shot model ([main] or the default), is no choice. */
+    fun liveModels(current: Map<String, String>, engine: String, typed: String, main: Map<String, String>): Map<String, String> {
+        val m = typed.trim()
+        return if (m.isEmpty() || m == (main[engine] ?: DEFAULT_MODELS[engine])) current - engine else current + (engine to m)
+    }
+
     /** The stored model names after the user typed [typed] for [engine]: empty or the default is not a choice. */
     fun models(current: Map<String, String>, engine: String, typed: String): Map<String, String> {
         val m = typed.trim()

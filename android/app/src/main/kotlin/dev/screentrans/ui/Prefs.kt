@@ -60,6 +60,16 @@ class Prefs(context: Context) {
         }
         set(v) = sp.edit().putString("llm_models", com.google.gson.Gson().toJson(v)).apply()
 
+    /** Models for Live (engine -> model); empty / the same as the one-shot model are not stored. */
+    var llmLiveModels: Map<String, String>
+        get() = try {
+            com.google.gson.JsonParser.parseString(sp.getString("llm_live_models", "{}") ?: "{}").asJsonObject.entrySet()
+                .filter { it.value.isJsonPrimitive }.associate { it.key to it.value.asString }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+        set(v) = sp.edit().putString("llm_live_models", com.google.gson.Gson().toJson(v)).apply()
+
     /** The Kaggle server URL (training/kaggle_serve.ipynb). */
     var kaggleUrl: String
         get() = sp.getString("kaggle_url", "") ?: ""

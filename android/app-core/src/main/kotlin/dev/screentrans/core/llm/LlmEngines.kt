@@ -5,7 +5,13 @@ import java.io.File
 import java.security.MessageDigest
 
 /** Non-secret remote-engine settings of a game (the key comes from [KeyProvider]). */
-data class LlmSettings(val model: String = "", val url: String = "", val dailyLimit: Int = 50_000, val notes: String = "")
+data class LlmSettings(
+    val model: String = "",
+    val url: String = "",
+    val dailyLimit: Int = 50_000,
+    val notes: String = "",
+    val liveModel: String = "",  // empty: Live uses [model]
+)
 
 /** Saved API keys (Android Keystore in the app); "" when none. */
 fun interface KeyProvider {
@@ -40,10 +46,11 @@ class LlmEngines(
         }
         noKeyTold.remove(engine)
         val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
-        val id = listOf(engine, s.model, s.url, digest)
+        val id = listOf(engine, s.model, s.liveModel, s.url, digest)
         val tr = translators.getOrPut(id) {
+            val live = if (s.liveModel.isNotBlank() && s.liveModel != s.model) clientFactory(engine, key, s.liveModel, s.url) else null
             LlmTranslator(engine, clientFactory(engine, key, s.model, s.url), local, localModelId, usage, s.dailyLimit,
-                { notify(it) }, contexts = contexts)
+                { notify(it) }, contexts = contexts, liveClient = live)
         }
         tr.dailyLimit = s.dailyLimit
         tr.setGame(game, s.notes, examples)

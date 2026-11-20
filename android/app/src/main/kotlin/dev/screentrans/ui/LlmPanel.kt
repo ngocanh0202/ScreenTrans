@@ -20,6 +20,7 @@ data class LlmValues(
     val engine: String,
     val savedKeys: Set<String>,
     val models: Map<String, String>,
+    val liveModels: Map<String, String>,
     val kaggleUrl: String,
     val dailyLimit: Int,
     val usedToday: Int,
@@ -32,6 +33,7 @@ data class LlmEdit(
     val key: String?,
     val deleteKey: Boolean,
     val model: String,
+    val liveModel: String,
     val kaggleUrl: String,
     val dailyLimit: Int,
     val notes: String,
@@ -59,6 +61,9 @@ class LlmPanel(
         InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
     private val deleteButton = button("Xóa key") { deleteKey = true; key.setText(""); show() }
     private val model = field("Tên model", InputType.TYPE_CLASS_TEXT)
+    private val liveModel = field("Để trống: dùng model ở trên", InputType.TYPE_CLASS_TEXT)
+    private val modelChips = FlowLayout(context)  // the provider's usual models: tap to fill (any name can be typed)
+    private val liveChips = FlowLayout(context)
     private val url = field("https://….ngrok-free.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
     private val limit = field("Ký tự mỗi ngày", InputType.TYPE_CLASS_NUMBER).apply { setText(v.dailyLimit.toString()) }
     private val privacy = TextView(context).apply { textSize = 12f; setTextColor(Color.rgb(250, 190, 90)) }
@@ -93,7 +98,16 @@ class LlmPanel(
             addView(key, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(deleteButton)
         })
-        row("Tên model", model)
+        row("Tên model", LinearLayout(context).apply {
+            orientation = VERTICAL
+            addView(model)
+            addView(modelChips)
+        })
+        row("Model cho Live (nhanh / rẻ hơn, để trống = như trên)", LinearLayout(context).apply {
+            orientation = VERTICAL
+            addView(liveModel)
+            addView(liveChips)
+        })
         urlRow = row("URL server Kaggle", url)
         row("Giới hạn mỗi ngày (đã dùng hôm nay: ${v.usedToday} ký tự)", limit)
         body.addView(privacy)
@@ -115,6 +129,12 @@ class LlmPanel(
         }
         engine = id
         model.setText(v.models[id] ?: DEFAULT_MODELS[id] ?: "")
+        liveModel.setText(v.liveModels[id] ?: "")
+        val suggested = dev.screentrans.core.llm.SUGGESTED_MODELS[id].orEmpty()
+        for ((chips, target) in listOf(modelChips to model, liveChips to liveModel)) {
+            chips.removeAllViews()
+            suggested.forEach { name -> chips.addView(suggestion(name) { target.setText(name) }) }
+        }
         url.setText(v.kaggleUrl)
         show()
     }
@@ -137,6 +157,7 @@ class LlmPanel(
         key = key.text.toString().takeIf { it.isNotBlank() },
         deleteKey = deleteKey,
         model = model.text.toString().trim(),
+        liveModel = liveModel.text.toString().trim(),
         kaggleUrl = url.text.toString().trim(),
         dailyLimit = limit.text.toString().toIntOrNull()?.coerceAtLeast(1000) ?: v.dailyLimit,
         notes = notes.text.toString().trim(),
@@ -156,6 +177,15 @@ class LlmPanel(
         setTextColor(Color.WHITE)
         setPadding(context.dp(10), context.dp(8), context.dp(10), context.dp(8))
         background = GradientDrawable().apply { cornerRadius = context.dp(7).toFloat() }
+        setOnClickListener { action() }
+    }
+
+    private fun suggestion(label: String, action: () -> Unit) = TextView(context).apply {
+        text = label
+        textSize = 12f
+        setTextColor(Color.WHITE)
+        setPadding(context.dp(7), context.dp(4), context.dp(7), context.dp(4))
+        background = GradientDrawable().apply { setColor(idle); cornerRadius = context.dp(6).toFloat() }
         setOnClickListener { action() }
     }
 
