@@ -15,6 +15,13 @@ from app.translate.llm_prompt import REPLY_SCHEMA
 
 Kind = Literal["auth", "quota", "timeout", "network", "server", "bad_reply"]
 NAMES = {"gemini": "Gemini", "openai": "OpenAI", "claude": "Claude", "kaggle": "Kaggle"}
+# shown as suggestions in the settings ("Tên model"); any other name of the provider can be typed
+SUGGESTED_MODELS = {
+    "gemini": ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"],
+    "openai": ["gpt-5-mini", "gpt-5-nano", "gpt-5"],
+    "claude": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+    "kaggle": [],
+}
 DEFAULT_MODELS = {"gemini": "gemini-2.5-flash", "openai": "gpt-5-mini", "claude": "claude-opus-5-5", "kaggle": "server"}
 MAX_TOKENS = 4096
 

@@ -397,3 +397,25 @@ def test_live_ocr_is_not_held_up_by_a_slow_translation(qtbot):  # review #8
     finally:
         thread.quit()
         assert thread.wait(5000)
+
+
+def test_live_jobs_use_the_live_model(qtbot, run_worker, monkeypatch, tmp_path):  # 5c
+    from app.secrets import KeyStore
+    from app.text.postprocess import Paragraph
+    from app.translate import remote
+
+    clients = {}
+    monkeypatch.setattr(remote, "make_client", lambda engine, key, model="", url="", **kw: clients.setdefault(
+        model, FakeLlm(model)))
+    KeyStore(tmp_path).set("gemini", "AIza-1")
+    payload = _llm_game(tmp_path)
+    payload["llm"]["live_model"] = "lite"
+    w, rec = run_worker()
+    qtbot.waitUntil(lambda: w.is_ready, timeout=5000)
+    w.submit(Job(1, "set_game", None, (0, 0), payload=payload))
+    w.submit(Job(2, "region", IMG, (0, 0)))
+    qtbot.waitUntil(lambda: any(e[1] == 2 for e in rec.of("done")), timeout=5000)
+    para = Paragraph("text", "New line.", ["New line."], 0, 0, 100, 20)
+    w.submit(Job(3, "live_translate", None, (0, 0), paragraphs=[[para]]))
+    qtbot.waitUntil(lambda: any(e[1] == 3 for e in rec.of("done")), timeout=5000)
+    assert clients["m1"].timeouts == [6.0] and clients["lite"].timeouts == [2.5]

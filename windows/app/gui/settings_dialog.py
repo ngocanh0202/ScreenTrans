@@ -31,6 +31,7 @@ class SettingsValues:
     ocr: str = "windows"   # OCR engine for the current game (one-shot translations)
     engine: str = "local"  # translation engine for the current game
     llm_models: dict[str, str] = field(default_factory=dict)  # engine -> model name (empty: the default)
+    llm_live_models: dict[str, str] = field(default_factory=dict)  # engine -> model for Live (empty: the same)
     kaggle_url: str = ""
     daily_limit: int = DAILY_LIMIT  # characters sent to remote engines per day
     keys: dict[str, str] = field(default_factory=dict)  # keys the user typed now (never the saved ones)
@@ -117,7 +118,8 @@ class SettingsDialog(QDialog):
         key_box.addWidget(self.key, 1)
         key_box.addWidget(self.delete_key)
         form.addRow("Key / token:", key_row)
-        form.addRow("Tên model:", self.llm_model)
+        form.addRow("Tên model:", self.model_combo)
+        form.addRow("Model cho Live:", self.live_combo)
         form.addRow("URL server Kaggle:", self.kaggle_url)
         form.addRow("Giới hạn mỗi ngày:", self.limit)
         form.addRow("", self.usage_label)
@@ -142,6 +144,7 @@ class SettingsDialog(QDialog):
             ocr=str(self.ocr.currentData()) if self.ocr.currentData() in self._ocr_ok else "windows",
             engine=str(self.engine.currentData()),
             llm_models=self._models_now(),
+            llm_live_models=self._live_models_now(),
             kaggle_url=self.kaggle_url.text().strip(),
             daily_limit=int(self.limit.value()),
             keys=self._keys_now(),
@@ -157,6 +160,7 @@ class SettingsDialog(QDialog):
 
         self._defaults, self._names = DEFAULT_MODELS, NAMES
         self._models = dict(values.llm_models)
+        self._live_models = dict(values.llm_live_models)
         self._typed: dict[str, str] = {}
         self._saved_keys, self._used_today = tuple(values.saved_keys), values.used_today
         self._deleted: list[str] = []
@@ -171,7 +175,14 @@ class SettingsDialog(QDialog):
             self.engine.addItem(label, v)
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.Password)
-        self.llm_model = QLineEdit()
+        # editable lists: the provider's usual models as suggestions, any other name can be typed
+        self.model_combo = QComboBox()
+        self.model_combo.setEditable(True)
+        self.llm_model = self.model_combo.lineEdit()
+        self.live_combo = QComboBox()
+        self.live_combo.setEditable(True)
+        self.live_model = self.live_combo.lineEdit()
+        self.live_model.setPlaceholderText("(để trống: dùng model ở trên; chọn model nhanh / rẻ hơn cho Live)")
         self.kaggle_url = QLineEdit(values.kaggle_url)
         self.kaggle_url.setPlaceholderText("https://….ngrok-free.app")
         self.limit = QSpinBox()
@@ -195,13 +206,21 @@ class SettingsDialog(QDialog):
             if self.key.text().strip():
                 self._typed[e] = self.key.text().strip()
             self._models[e] = self.llm_model.text().strip()
+            self._live_models[e] = self.live_model.text().strip()
 
     def _show_engine(self) -> None:
         self._remember_fields()
         e = str(self.engine.currentData())
         self._shown_engine = e
         remote = e in self._names
-        for w in (self.key, self.llm_model, self.limit, self.notes):
+        from app.translate.remote import SUGGESTED_MODELS
+
+        for combo in (self.model_combo, self.live_combo):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(SUGGESTED_MODELS.get(e, []) if remote else [])
+            combo.blockSignals(False)
+        for w in (self.key, self.model_combo, self.live_combo, self.limit, self.notes):
             w.setEnabled(remote)
         self.delete_key.setEnabled(e in self._saved_keys and e not in self._deleted)
         self.kaggle_url.setEnabled(e == "kaggle")
@@ -209,6 +228,7 @@ class SettingsDialog(QDialog):
         self.key.setPlaceholderText("•••• (đã lưu — nhập để thay)" if e in self._saved_keys else
                                     ("Dán key vào đây" if remote else ""))
         self.llm_model.setText(self._models.get(e) or self._defaults.get(e, "") if remote else "")
+        self.live_model.setText(self._live_models.get(e, "") if remote else "")
         self.privacy.setText(f"Chữ trong game sẽ được gửi tới {self._names[e]} để dịch (tính phí theo tài khoản "
                              f"của bạn). Lỗi / hết hạn mức → tự dùng model trên máy." if remote else "")
         self.privacy.setHidden(not remote)
@@ -221,6 +241,12 @@ class SettingsDialog(QDialog):
             self.key.clear()
             self.key.setPlaceholderText("Dán key vào đây")
         self.delete_key.setEnabled(False)
+
+    def _live_models_now(self) -> dict[str, str]:
+        self._remember_fields()
+        main = self._models_now()
+        return {e: m for e, m in self._live_models.items()  # the same as the one-shot model: no separate choice
+                if m and m != (main.get(e) or self._defaults.get(e))}
 
     def _models_now(self) -> dict[str, str]:
         self._remember_fields()

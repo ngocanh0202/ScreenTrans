@@ -620,12 +620,15 @@ class TrayApp(QObject):
         limit = llm.get("daily_limit")
         return {"models": {k: v for k, v in models.items() if isinstance(k, str) and isinstance(v, str)},
                 "kaggle_url": llm.get("kaggle_url") if isinstance(llm.get("kaggle_url"), str) else "",
-                "daily_limit": limit if isinstance(limit, int) and limit > 0 else DAILY_LIMIT}
+                "daily_limit": limit if isinstance(limit, int) and limit > 0 else DAILY_LIMIT,
+                "live_models": {k: v for k, v in (llm.get("live_models") or {}).items()
+                                if isinstance(k, str) and isinstance(v, str)} if isinstance(llm.get("live_models"), dict) else {}}
 
     def _llm_payload(self, p: Profile) -> dict:
         llm = self._llm_settings()
         return {"model": llm["models"].get(p.engine, ""), "url": llm["kaggle_url"] if p.engine == "kaggle" else "",
-                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir()), "notes": p.llm_notes}
+                "daily_limit": llm["daily_limit"], "data_dir": str(self._data_dir()), "notes": p.llm_notes,
+                "live_model": llm["live_models"].get(p.engine, "")}
 
     def open_settings(self) -> None:
         from app.secrets import KeyStore
@@ -643,7 +646,8 @@ class TrayApp(QObject):
                                 "Bật/tắt Live": display_combo(hk.toggle_live),
                                 "Sửa bản dịch": display_combo(hk.edit_last)},
                                p0.ocr if p0.ocr != "auto" else "windows",
-                               engine=p0.engine, llm_models=llm["models"], kaggle_url=llm["kaggle_url"],
+                               engine=p0.engine, llm_models=llm["models"], llm_live_models=llm["live_models"],
+                               kaggle_url=llm["kaggle_url"],
                                daily_limit=llm["daily_limit"],
                                saved_keys=tuple(e for e in NAMES if keys.get(e)),
                                used_today=Usage(self._data_dir()).used(), llm_notes=p0.llm_notes)
@@ -656,7 +660,8 @@ class TrayApp(QObject):
             keys.set(engine, "")
         for engine, key in v.keys.items():  # encrypted, never in settings.json
             keys.set(engine, key)
-        new_llm = {"models": dict(v.llm_models), "kaggle_url": v.kaggle_url, "daily_limit": v.daily_limit}
+        new_llm = {"models": dict(v.llm_models), "kaggle_url": v.kaggle_url, "daily_limit": v.daily_limit,
+                   "live_models": dict(v.llm_live_models)}
         engine_changed = (v.engine != p.engine or bool(v.keys) or bool(v.delete_keys) or new_llm != llm
                           or v.llm_notes != p.llm_notes)
         ocr_changed = v.ocr != (p.ocr if p.ocr != "auto" else "windows") or engine_changed

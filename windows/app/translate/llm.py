@@ -25,9 +25,10 @@ class LlmTranslator:
 
     def __init__(self, engine: str, client: Client, local: Translator, usage: Usage, daily_limit: int,
                  notify: Callable[[str], None], clock: Callable[[], float] = time.monotonic,
-                 contexts: ContextStore | None = None):
+                 contexts: ContextStore | None = None, live_client: Client | None = None):
         self.engine, self.client, self.local = engine, client, local
-        self.model_id = f"{engine}:{client.model}"
+        self.live_client = live_client  # a faster / cheaper model for Live (None: the same model)
+        self.live = False               # the worker sets it per job
         self.usage, self.daily_limit = usage, daily_limit
         self._notify, self._clock = notify, clock
         self.timeout_s = 6.0
@@ -43,6 +44,14 @@ class LlmTranslator:
         self._limit_day = ""           # one limit notice per day
         # one overall deadline per call (socket timeouts are per step; DNS has none): a late call finishes here
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"llm-{engine}")
+
+    @property
+    def model_id(self) -> str:
+        """engine:model of the model used now (the cache namespace: Live and one-shot models never mix)."""
+        return f"{self.engine}:{self._active().model}"
+
+    def _active(self) -> Client:
+        return self.live_client if self.live and self.live_client is not None else self.client
 
     def set_game(self, game: str | None, notes: str, examples: list[tuple[str, str]]) -> None:
         """The game being translated: its notes, the user's corrections and its saved context. Applying the
@@ -84,7 +93,7 @@ class LlmTranslator:
             self.usage.add(chars)  # before the call: a timed-out request is usually still processed (and billed)
         except OSError:
             pass  # usage.json locked (scanner / indexer): never fail the translation over the counter
-        future = self._pool.submit(self.client.complete, system, user, self.timeout_s)
+        future = self._pool.submit(self._active().complete, system, user, self.timeout_s)
         try:
             reply = future.result(timeout=self.timeout_s)
         except FutureTimeout:
