@@ -17,6 +17,18 @@ Giấy phép dữ liệu: [báo cáo](../docs/superpowers/reports/2026-11-20-en-
    .venv\Scripts\python -m models.export onnx screentrans-en-vi --hf-id D:\path\screentrans-en-vi    # Android
    ```
 
+6. Đưa model lên repo model của app (`anhbui02/screentrans-models`) để app tải về được (Cài đặt → Quản lý model /
+   ⚙ → 🧠 Model). Lệnh đầu chỉ in ra sẽ tải gì; thêm `--yes` mới tải lên (token **ghi** trong biến `HF_TOKEN`):
+
+   ```
+   set HF_TOKEN=hf_...
+   .venv\Scripts\python -m models.manifest --version 2026-11-25 --stage models\out\hf --only screentrans-en-vi ^
+       --merge-from https://huggingface.co/anhbui02/screentrans-models/resolve/main/manifest.json ^
+       --upload anhbui02/screentrans-models
+   ```
+
+   `--version` mới (ví dụ ngày huấn luyện) → app hiện "Có bản mới". Lần đầu, bỏ `--only` để đưa cả opus-mt / vinai lên.
+
 Dữ liệu dùng: ALT, Tatoeba, translatewiki, ELRC_2922 (CC BY, ghi công) + tập con đã lọc của NLLB (ODC-By) và
 ParaCrawl-Bonus (CC0 đóng gói). Không dùng PhoMT, TED/IWSLT, QED, MTet, OpenSubtitles. `DATA_LICENSES.md` được ghi kèm model.
 

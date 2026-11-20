@@ -56,7 +56,8 @@ def save_settings(data_dir: Path, values: dict) -> None:
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, values: SettingsValues, game: str = "", parent=None, on_terms=None):
+    def __init__(self, values: SettingsValues, game: str = "", parent=None, on_terms=None, models=None,
+                 on_models=None):
         super().__init__(parent, Qt.WindowStaysOnTopHint)
         self.setWindowTitle("Cài đặt — ScreenTrans")
         self.setFont(QFont(FONT, 10))
@@ -100,15 +101,26 @@ class SettingsDialog(QDialog):
         self.ocr_note.setStyleSheet("color: #666;")
         self._llm(values)
         self.model = QComboBox()
-        for v, label in MODELS:
-            self.model.addItem(label, v)
+        labels = dict(MODELS)
+        for v in models or [m for m, _ in MODELS]:  # the usual models and every model on this PC
+            self.model.addItem(labels.get(v, v), v)
         self.model.setCurrentIndex(max(0, self.model.findData(values.model)))
 
         form = QFormLayout()
         form.addRow(f"Kiểu bản dịch{f' ({game})' if game else ''}:", style_box)
         form.addRow("Cỡ chữ bản dịch:", self.scale)
         form.addRow("Khi bản dịch dài:", long_box)
-        form.addRow("Model dịch:", self.model)
+        if on_models is not None:
+            model_row = QWidget()
+            model_box = QHBoxLayout(model_row)
+            model_box.setContentsMargins(0, 0, 0, 0)
+            model_box.addWidget(self.model, 1)
+            self.models_button = QPushButton("Quản lý model…")
+            self.models_button.clicked.connect(on_models)
+            model_box.addWidget(self.models_button)
+            form.addRow("Model dịch:", model_row)
+        else:
+            form.addRow("Model dịch:", self.model)
         form.addRow(f"Bộ OCR{f' ({game})' if game else ''}:", self.ocr)
         form.addRow("", self.ocr_note)
         form.addRow(f"Dịch bằng{f' ({game})' if game else ''}:", self.engine)

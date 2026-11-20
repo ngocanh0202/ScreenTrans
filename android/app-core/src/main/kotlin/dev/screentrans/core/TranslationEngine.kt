@@ -122,6 +122,32 @@ class TranslationEngine<I>(
         }
     }
 
+    /**
+     * Load the model again (another one was chosen in Settings → Model): built on the engine dispatcher, swapped
+     * in, the old bundle closed on the OCR dispatcher once its running Live OCR is over. When the new model fails,
+     * the old one keeps translating and the user is told. The caller sends the game again (SetGame).
+     */
+    fun reload() {
+        scope.launch(dispatcher) {
+            val old = bundle  // null: the first load failed, this is a new try
+            val b = try {
+                factory().also { it.llm?.notify = { m -> _events.tryEmit(EngineEvent.Notice(m)) }; it.warmUp() }
+            } catch (e: Throwable) {
+                _events.tryEmit(EngineEvent.Notice("Không nạp được model: ${e.message ?: e.javaClass.simpleName}"))
+                return@launch
+            }
+            bundle = b
+            remote = null  // the old bundle's remote engines: SetGame makes new ones
+            activeModelId = b.pipeline.activeModelId
+            _state.value = EngineState.Ready
+            if (old != null) CoroutineScope(ocrDispatcher).launch {
+                old.llm?.close()
+                old.close()
+            }
+            process()
+        }
+    }
+
     /** Thread-safe; call from the UI thread. */
     fun submit(job: EngineJob<I>) {
         val old = synchronized(lock) {

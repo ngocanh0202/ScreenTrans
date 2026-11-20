@@ -1,0 +1,27 @@
+[
+ {"name": "windows: one installed, one to download, one update",
+  "manifest": [
+   {"id": "opus-mt-en-vi", "version": "1", "label": "opus-mt (nhanh)", "files": [{"size": 100}, {"size": 20}]},
+   {"id": "vinai-en2vi", "version": "1", "label": "vinai (chất lượng)", "files": [{"size": 400}]},
+   {"id": "screentrans-en-vi", "version": "2026-11-25", "label": "ScreenTrans (fine-tune)", "files": [{"size": 80}]}],
+  "installed": {"opus-mt-en-vi": ["1"], "screentrans-en-vi": ["2026-11-20"]}, "bundled": {}, "active": "opus-mt-en-vi",
+  "rows": [
+   {"id": "opus-mt-en-vi", "label": "opus-mt (nhanh)", "status": "installed", "version": "1", "latest": "1", "download": 0, "deletable": true, "active": true},
+   {"id": "vinai-en2vi", "label": "vinai (chất lượng)", "status": "missing", "version": null, "latest": "1", "download": 400, "deletable": false, "active": false},
+   {"id": "screentrans-en-vi", "label": "ScreenTrans (fine-tune)", "status": "update", "version": "2026-11-20", "latest": "2026-11-25", "download": 80, "deletable": true, "active": false}]},
+ {"name": "android: bundled model, a local-only model",
+  "manifest": [{"id": "opus-mt-en-vi", "version": "1", "label": "opus-mt", "files": [{"size": 130}]}],
+  "installed": {"my-private": ["a", "b"]}, "bundled": {"opus-mt-en-vi": "1"}, "active": "my-private",
+  "rows": [
+   {"id": "opus-mt-en-vi", "label": "opus-mt", "status": "bundled", "version": "1", "latest": "1", "download": 0, "deletable": false, "active": false},
+   {"id": "my-private", "label": "my-private", "status": "installed", "version": "b", "latest": null, "download": 0, "deletable": true, "active": true}]},
+ {"name": "android: newer version than the bundled one",
+  "manifest": [{"id": "opus-mt-en-vi", "version": "2", "label": "opus-mt", "files": [{"size": 130}]}],
+  "installed": {}, "bundled": {"opus-mt-en-vi": "1"}, "active": "opus-mt-en-vi",
+  "rows": [
+   {"id": "opus-mt-en-vi", "label": "opus-mt", "status": "update", "version": "1", "latest": "2", "download": 130, "deletable": false, "active": true}]},
+ {"name": "offline: no manifest",
+  "manifest": [], "installed": {"vinai-en2vi": ["1"]}, "bundled": {}, "active": "vinai-en2vi",
+  "rows": [
+   {"id": "vinai-en2vi", "label": "vinai-en2vi", "status": "installed", "version": "1", "latest": null, "download": 0, "deletable": true, "active": true}]}
+]

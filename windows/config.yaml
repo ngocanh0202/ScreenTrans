@@ -31,6 +31,6 @@ logging:
   save_pairs: true
   save_corrections: true      # ghi corrections.jsonl khi bạn sửa bản dịch
 models:
-  manifest_url: "https://github.com/ngocanh0202/ScreenTrans/releases/download/models-v1/manifest.json"
+  manifest_url: "https://huggingface.co/anhbui02/screentrans-models/resolve/main/manifest.json"
 paths:
   data_dir: null           # null = %LOCALAPPDATA%\ScreenTrans

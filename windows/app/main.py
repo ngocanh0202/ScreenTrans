@@ -28,6 +28,7 @@ from app.live.controller import LiveController
 from app.live.machine import LiveParams
 from app.cache import normalize
 from app.gui.correct_dialog import CorrectDialog
+from app.gui.models_dialog import ModelsDialog
 from app.gui.terms_dialog import TermsDialog
 from app.gui.settings_dialog import SettingsDialog, SettingsValues, load_settings, save_settings
 from app.gui.foreground import current_game, game_window
@@ -134,8 +135,10 @@ class TrayApp(QObject):
         self._select_ctx = None
         self._last_segments: list = []   # last one-shot result, for "edit the last translation"
         self._dialog_factory = CorrectDialog
-        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name, on_terms=self.edit_terms)
+        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name, on_terms=self.edit_terms,
+                                                               models=self._model_ids(), on_models=self.open_models)
         self._terms_factory = TermsDialog
+        self._models_factory = ModelsDialog
         self._apply_saved_settings()
         self._build_tray()
         if timers:
@@ -187,16 +190,9 @@ class TrayApp(QObject):
         self.status_action.setEnabled(False)
         self.retry_action = menu.addAction("Thử lại", self.restart_worker)
         self.retry_action.setVisible(False)
-        models = menu.addMenu("Model")
-        group = QActionGroup(menu)
+        self.models_menu = menu.addMenu("Model")
         self.model_actions: dict[str, QAction] = {}
-        for model_id in MODELS:
-            action = models.addAction(model_id)
-            action.setCheckable(True)
-            action.setChecked(model_id == self.config.translator.model)
-            action.triggered.connect(lambda checked=False, m=model_id: self.switch_model(m))
-            group.addAction(action)
-            self.model_actions[model_id] = action
+        self._fill_model_menu()
         menu.addAction("Cài đặt…", self.open_settings)
         menu.addAction("Mở thư mục dữ liệu", self._open_data_dir)
         menu.addSeparator()
@@ -267,7 +263,38 @@ class TrayApp(QObject):
         if model_id == self.config.translator.model and self.error is None:
             return
         self.config.translator.model = model_id
+        if model_id not in self.model_actions:  # e.g. chosen in "Quản lý model"
+            self._fill_model_menu()
+        self.model_actions[model_id].setChecked(True)
         self.restart_worker()
+
+    def _model_ids(self) -> list[str]:
+        """The models to choose from: the usual ones, every model on disk, and the one in use."""
+        from app.models import installed
+
+        return list(dict.fromkeys([*MODELS, *installed(self._data_dir()), self.config.translator.model]))
+
+    def _fill_model_menu(self) -> None:
+        menu = self.models_menu
+        menu.clear()
+        group = QActionGroup(menu)
+        self.model_actions = {}
+        for model_id in self._model_ids():
+            action = menu.addAction(model_id)
+            action.setCheckable(True)
+            action.setChecked(model_id == self.config.translator.model)
+            action.triggered.connect(lambda checked=False, m=model_id: self.switch_model(m))
+            group.addAction(action)
+            self.model_actions[model_id] = action
+        menu.addSeparator()
+        menu.addAction("Quản lý model…", self.open_models)
+
+    def open_models(self) -> None:
+        """Cài đặt → Quản lý model: download / update / delete / use, or add an exported model from a folder."""
+        dialog = self._models_factory(self._data_dir(), self.config.models.manifest_url,
+                                      self.config.translator.model, self.switch_model)
+        dialog.exec()
+        self._fill_model_menu()
 
     def _current(self) -> bool:
         """Only the active worker may change app state; a retired one (model switch) is ignored."""
@@ -611,7 +638,7 @@ class TrayApp(QObject):
             o.text_scale = float(s["text_scale"])
         if s.get("long_text") in ("grow", "shrink"):
             o.long_text = s["long_text"]
-        if s.get("model") in MODELS:
+        if isinstance(s.get("model"), str) and s["model"] in self._model_ids():
             self.config.translator.model = s["model"]
 
     def _llm_settings(self) -> dict:

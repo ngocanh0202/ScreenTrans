@@ -71,7 +71,7 @@ class Logging:
 
 @dataclass
 class Models:
-    manifest_url: str = "https://github.com/ngocanh0202/ScreenTrans/releases/download/models-v1/manifest.json"
+    manifest_url: str = "https://huggingface.co/anhbui02/screentrans-models/resolve/main/manifest.json"
 
 
 @dataclass
@@ -108,6 +108,9 @@ def _apply(obj, data: dict, where: str) -> None:
             setattr(obj, key, value)
 
 
+OLD_MANIFEST_URL = "https://github.com/ngocanh0202/ScreenTrans/releases/download/models-v1/manifest.json"
+
+
 def load_config(path: Path | None) -> Config:
     cfg = Config()
     if path is None or not Path(path).is_file():
@@ -116,4 +119,6 @@ def load_config(path: Path | None) -> Config:
     if not isinstance(data, dict):
         raise ConfigError("Config file must contain a mapping")
     _apply(cfg, data, "")
+    if cfg.models.manifest_url == OLD_MANIFEST_URL:  # never published there: the models moved to Hugging Face
+        cfg.models.manifest_url = Models().manifest_url
     return cfg

@@ -140,3 +140,54 @@ def test_offline_ignores_incomplete_download(tmp_path):
     (partial / "model.bin").write_bytes(b"half")
     with pytest.raises(ModelDownloadError):
         ensure_model("tiny", "http://127.0.0.1:1/manifest.json", tmp_path / "data")
+
+
+def test_a_new_version_replaces_the_old_one_on_disk(server, tmp_path):
+    root, base = server
+    first = ensure_model("tiny", _publish(root, base, FILES), tmp_path / "data")
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    manifest["models"][0]["version"] = "2"
+    (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    second = ensure_model("tiny", f"{base}/manifest.json", tmp_path / "data")
+    assert second.name == "2" and (second / "model.bin").is_file() and not first.exists()
+
+
+def test_a_model_only_on_disk_is_used_although_the_manifest_lacks_it(server, tmp_path):
+    from app.models import import_folder
+
+    root, base = server
+    url = _publish(root, base, FILES)
+    src = tmp_path / "my-export"
+    src.mkdir()
+    (src / "model.bin").write_bytes(b"w")
+    local = import_folder(src, tmp_path / "data", "my-private")
+    assert (local / "model.bin").read_bytes() == b"w"
+    assert ensure_model("my-private", url, tmp_path / "data") == local
+
+
+def test_installed_lists_complete_versions_and_delete_removes_them(server, tmp_path):
+    from app.models import delete_model, installed
+
+    root, base = server
+    ensure_model("tiny", _publish(root, base, FILES), tmp_path / "data")
+    (tmp_path / "data" / "models" / "half" / "1").mkdir(parents=True)  # never completed
+    assert installed(tmp_path / "data") == {"tiny": ["1"]}
+    delete_model(tmp_path / "data", "tiny")
+    assert installed(tmp_path / "data") == {} and not (tmp_path / "data" / "models" / "tiny").exists()
+
+
+def test_import_folder_refuses_a_folder_that_is_not_a_model(tmp_path):
+    from app.models import import_folder
+
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(ModelDownloadError, match="model.bin"):
+        import_folder(tmp_path / "empty", tmp_path / "data", "x")
+
+
+def test_fetch_manifest_lists_this_platform(server, tmp_path):
+    from app.models import fetch_manifest
+
+    root, base = server
+    url = _publish(root, base, FILES)
+    assert [m["id"] for m in fetch_manifest(url)] == ["tiny"]
+    assert fetch_manifest(url, platform="android") == []
