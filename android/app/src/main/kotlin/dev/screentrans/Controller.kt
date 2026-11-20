@@ -233,11 +233,13 @@ class Controller(private val context: Context, projection: MediaProjection) {
             ),
             onClose = ::closeMenu,
         )
-        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        // a fixed width: measured "unspecified" the rows were narrow, laid out on screen they stretched past the edge
+        val w = minOf(context.dp(460), (capturer.width * 0.9f).toInt())
+        panel.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
         // at most 90% of the screen height: the sections scroll, the title and "Đóng" stay on screen
         val h = minOf(panel.measuredHeight, (capturer.height * 0.9f).toInt())
-        val lp = overlays.params(WRAP_CONTENT, h).apply {
-            x = ((capturer.width - panel.measuredWidth) / 2).coerceAtLeast(0)
+        val lp = overlays.params(w, h).apply {
+            x = ((capturer.width - w) / 2).coerceAtLeast(0)
             y = ((capturer.height - h) / 2).coerceAtLeast(0)
         }
         overlays.add(panel, lp)

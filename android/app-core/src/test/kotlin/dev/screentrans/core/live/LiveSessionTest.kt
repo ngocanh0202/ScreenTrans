@@ -21,12 +21,14 @@ class LiveSessionTest {
         override fun requestTranslate(paragraphs: List<List<Paragraph>>, speaker: String?): Int =
             (++ids).also { translate.add(it to paragraphs); speakers.add(speaker) }
         val angles = LinkedHashMap<String, Float>()
+        val boxes = LinkedHashMap<String, FloatArray>()
         var draws = 0
         override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
             draws++
             blocks["$region:$key"] = text
             lineHeights["$region:$key"] = lineHeight
             angles["$region:$key"] = angle
+            boxes["$region:$key"] = box.copyOf()
         }
         override fun removeBlock(region: Int, key: String) {
             blocks.remove("$region:$key")
@@ -418,5 +420,34 @@ class LiveSessionTest {
         s.onOcrDone(900, listOf(listOf(para("Hello there."))))
         assertEquals(listOf("VI Hello there."), h.blocks.values.toList())
         assertEquals(n, h.translate.size)  // remembered: no new translation job
+    }
+
+    @Test
+    fun `the translation box and text size stay put across jittery reads`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        val reads = listOf(floatArrayOf(100f, 130f, 300f, 30f), floatArrayOf(103f, 132f, 296f, 32f),
+            floatArrayOf(98f, 129f, 310f, 28.5f), floatArrayOf(101f, 131f, 305f, 31f))
+        reads.forEachIndexed { n, (top, bottom, right, lh) ->
+            s.debugExpectOcr(700 + n, true)
+            s.onOcrDone(700 + n, listOf(listOf(Paragraph(Kind.TEXT, "Hello there.", listOf("Hello there."), 10f, top, right, bottom, lineHeight = lh))))
+            h.translate.lastOrNull()?.let { if (n == 0) translate(s, it) }
+        }
+        val key = h.boxes.keys.single()
+        assertEquals(listOf(10f, 100f, 310f, 132f), h.boxes.getValue(key).toList())  // top-left kept, only grows
+        assertEquals(30f, h.lineHeights.getValue(key))  // the size of the first read
+    }
+
+    @Test
+    fun `a block that really moved follows it`() {
+        val h = Host()
+        val s = session(h)
+        s.onFrame(0, 0f)
+        s.onOcrDone(h.ocr.last().first, listOf(listOf(Paragraph(Kind.TEXT, "Hello there.", listOf("Hello there."), 10f, 100f, 300f, 130f, lineHeight = 30f))))
+        translate(s, h.translate.last())
+        s.debugExpectOcr(800, true)
+        s.onOcrDone(800, listOf(listOf(Paragraph(Kind.TEXT, "Hello there.", listOf("Hello there."), 10f, 118f, 300f, 148f, lineHeight = 30f))))
+        assertEquals(118f, h.boxes.values.single()[1])
     }
 }

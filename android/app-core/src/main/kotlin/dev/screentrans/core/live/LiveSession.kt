@@ -190,9 +190,10 @@ class LiveSession(
     private fun updateBlock(i: Int, key: String, p: Paragraph, final: Boolean, carry: Map<String, String>, nowMs: Int): List<Item> {
         val st = blocks.getOrPut(i to key) { BlockState() }
         st.kind = p.kind
-        if (p.lineHeight > 0) st.lineHeight = p.lineHeight
+        // OCR line heights / boxes jitter between reads: translations jumped up and down and changed size
+        if (p.lineHeight > 0) st.lineHeight = steadySize(st.lineHeight, p.lineHeight)
         st.angle = p.angle
-        st.box = floatArrayOf(p.left, p.top, p.right, p.bottom)
+        st.box = steadyBox(st.box, floatArrayOf(p.left, p.top, p.right, p.bottom))
         if (p.kind == Kind.NAME) {
             st.sentences = listOf(p.text)
             st.done = 1
@@ -295,5 +296,24 @@ class LiveSession(
     fun debugExpectOcr(id: Int, final: Boolean) {
         ocrFinal[id] = final
         ocrJob = id
+    }
+
+    private companion object {
+        const val SIZE_STEADY = 0.30f
+
+        /** Same as windows/app/live/style.steady_font: only a real change of the source size (> 30 %) is followed. */
+        fun steadySize(old: Float, new: Float): Float =
+            if (old <= 0f) new else if (kotlin.math.abs(new - old) <= SIZE_STEADY * old) old else new
+
+        /**
+         * Same as style.steady_box: a read whose top-left is within max(8 px, 0.35 x the line height) of the old one
+         * keeps the old top-left and may only grow right / down; a larger shift is a block that really moved.
+         */
+        fun steadyBox(old: FloatArray, new: FloatArray): FloatArray {
+            if (old.all { it == 0f }) return new
+            val tol = maxOf(8f, 0.35f * (old[3] - old[1]))
+            if (kotlin.math.abs(new[0] - old[0]) > tol || kotlin.math.abs(new[1] - old[1]) > tol) return new
+            return floatArrayOf(old[0], old[1], maxOf(old[2], new[2]), maxOf(old[3], new[3]))
+        }
     }
 }

@@ -56,3 +56,26 @@ def sample_style(block: np.ndarray) -> BlockStyle | None:
 def font_px_for(line_height: float) -> float | None:
     """Font size in pixels matching a source line of `line_height` pixels (None when unknown)."""
     return line_height * FONT_PER_LINE if line_height > 0 else None
+
+
+FONT_STEADY = 0.30  # a new read whose size differs less than this keeps the old size (OCR line heights jitter)
+
+
+def steady_font(old: float | None, new: float | None) -> float | None:
+    """The size to draw: OCR line heights jitter a few pixels between reads, which made translations shrink and
+    grow; only a real change of the source size (> 30 %) is followed."""
+    if old is None or new is None:
+        return new if old is None else old
+    return old if abs(new - old) <= FONT_STEADY * old else new
+
+
+def steady_box(old: tuple | None, new: tuple) -> tuple:
+    """Where to draw (left, top, right, bottom): a read whose top-left is within max(8 px, 0.35 x the line height)
+    of the old one keeps the old top-left (OCR boxes jitter, translations jumped up and down) and may only grow
+    to the right / down (text still typing); a larger shift is a block that really moved."""
+    if old is None or old == (0, 0, 0, 0):
+        return new
+    tol = max(8.0, 0.35 * (old[3] - old[1]))
+    if abs(new[0] - old[0]) > tol or abs(new[1] - old[1]) > tol:
+        return new
+    return old[0], old[1], max(old[2], new[2]), max(old[3], new[3])
