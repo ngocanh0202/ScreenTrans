@@ -637,3 +637,72 @@ def test_settings_window_deletes_a_saved_key(qtbot, tmp_path):
     app._settings_factory = FakeSettings
     app.open_settings()
     assert KeyStore(tmp_path).get("gemini") == ""
+
+
+def test_terms_window_edits_the_game_glossary_and_reloads_it(qtbot, tmp_path):
+    """Cài đặt → Thuật ngữ: the game's own terms are listed, edited, saved, and the worker reloads them."""
+    import json
+
+    app, factory, hotkeys, _, _, _ = _live_app(qtbot, tmp_path, game())
+    path = tmp_path / "glossary" / "games" / "game.exe.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"entries": [{"source": "Vertin", "type": "keep", "case_sensitive": True},
+                                            {"source": "storm", "type": "map", "target": "Bão", "case_sensitive": False}]}),
+                    encoding="utf-8")
+    factory.workers[0].ready.emit()
+    app._check_foreground()  # the game is in front
+    app._send_set_game(app._profile())
+    seen = []
+
+    class FakeTerms:
+        def __init__(self, rows, game_name):
+            seen.append((rows, game_name))
+
+        def exec(self):
+            return True
+
+        def rows(self):
+            return [("storm", "Cơn bão", False), ("Arcanist", None, True)]
+
+    app._terms_factory = FakeTerms
+    jobs_before = len(factory.workers[0].all_jobs)
+    app.edit_terms()
+    assert seen[0][0] == [("Vertin", None, True), ("storm", "Bão", False)]
+    assert json.loads(path.read_text(encoding="utf-8"))["entries"] == [
+        {"source": "storm", "type": "map", "target": "Cơn bão", "case_sensitive": False},
+        {"source": "Arcanist", "type": "keep", "case_sensitive": True}]
+    reload = factory.workers[0].all_jobs[jobs_before:]
+    assert [j.mode for j in reload] == ["set_game"] and str(path) in reload[0].payload["glossaries"]
+
+
+def test_a_broken_terms_file_is_kept_aside(qtbot, tmp_path):
+    app, factory, _, _, _, _ = _live_app(qtbot, tmp_path, game())
+    path = tmp_path / "glossary" / "games" / "game.exe.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{oops", encoding="utf-8")
+    app._check_foreground()
+
+    class Cancel:
+        def __init__(self, rows, game_name):
+            assert rows == []
+
+        def exec(self):
+            return False
+
+    app._terms_factory = Cancel
+    app.edit_terms()
+    assert (path.parent / "game.exe.json.bad").read_text(encoding="utf-8") == "{oops" and not path.exists()
+
+
+def test_terms_dialog_rows_are_cleaned(qtbot):
+    from app.gui.terms_dialog import TermsDialog
+
+    d = TermsDialog([("Vertin", None, True), ("storm", "Bão", False)], "Reverse: 1999")
+    qtbot.addWidget(d)
+    d.add_row()
+    d.table.item(2, 0).setText("  vertin ")
+    d.table.item(2, 1).setText("Vertin")
+    assert d.rows() == [("vertin", "Vertin", True), ("storm", "Bão", False)]
+    d.table.selectRow(1)
+    d.remove_selected()
+    assert d.rows() == [("vertin", "Vertin", True)]

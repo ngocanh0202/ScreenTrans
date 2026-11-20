@@ -56,7 +56,7 @@ def save_settings(data_dir: Path, values: dict) -> None:
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, values: SettingsValues, game: str = "", parent=None):
+    def __init__(self, values: SettingsValues, game: str = "", parent=None, on_terms=None):
         super().__init__(parent, Qt.WindowStaysOnTopHint)
         self.setWindowTitle("Cài đặt — ScreenTrans")
         self.setFont(QFont(FONT, 10))
@@ -125,6 +125,10 @@ class SettingsDialog(QDialog):
         form.addRow("", self.usage_label)
         form.addRow("", self.privacy)
         form.addRow(f"Ghi chú game cho LLM{f' ({game})' if game else ''}:", self.notes)
+        if on_terms is not None:  # the game's own glossary, in its own window (saved there, applied at once)
+            self.terms_button = QPushButton("Xem / sửa thuật ngữ…")
+            self.terms_button.clicked.connect(on_terms)
+            form.addRow(f"Thuật ngữ{f' ({game})' if game else ''}:", self.terms_button)
         for name, combo in values.hotkeys.items():
             form.addRow(f"{name}:", QLabel(combo))
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)

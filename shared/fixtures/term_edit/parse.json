@@ -1,0 +1,8 @@
+[
+ {"name": "keep and map", "text": "{\"entries\": [{\"source\": \"Vertin\", \"type\": \"keep\", \"case_sensitive\": true}, {\"source\": \"Arcanist\", \"type\": \"map\", \"target\": \"Thuật sĩ\"}]}", "rows": [["Vertin", null, true], ["Arcanist", "Thuật sĩ", true]]},
+ {"name": "case_sensitive kept", "text": "{\"entries\": [{\"source\": \"storm\", \"type\": \"map\", \"target\": \"Bão\", \"case_sensitive\": false}]}", "rows": [["storm", "Bão", false]]},
+ {"name": "bad entries skipped", "text": "{\"entries\": [1, {\"type\": \"keep\"}, {\"source\": 5}, {\"source\": \"A\", \"type\": \"keep\", \"target\": \"x\"}]}", "rows": [["A", null, true]]},
+ {"name": "not json", "text": "{oops", "rows": null},
+ {"name": "no entries list", "text": "{\"entries\": {}}", "rows": null},
+ {"name": "empty file object", "text": "{\"entries\": []}", "rows": []}
+]

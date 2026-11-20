@@ -1,0 +1,5 @@
+[
+ {"name": "trimmed, empty target is keep", "rows": [["  Sonetto  ", "  ", true], ["Manus  Vindictae", " Manus Vindictae ", true]], "expected": [["Sonetto", null, true], ["Manus Vindictae", "Manus Vindictae", true]]},
+ {"name": "empty source dropped", "rows": [["", "x", true], ["   ", null, true], ["A", null, true]], "expected": [["A", null, true]]},
+ {"name": "a later duplicate replaces the earlier one in place", "rows": [["Vertin", null, true], ["Arcanist", "Thuật sĩ", true], ["vertin", "Vertin", true]], "expected": [["vertin", "Vertin", true], ["Arcanist", "Thuật sĩ", true]]}
+]
