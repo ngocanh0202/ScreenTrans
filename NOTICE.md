@@ -6,10 +6,12 @@ Mã nguồn ScreenTrans: **GNU AGPL-3.0** (xem [LICENSE](LICENSE)).
 
 | Model | Nguồn | Giấy phép | Ghi chú |
 |---|---|---|---|
-| `Helsinki-NLP/opus-mt-en-vi` | Hugging Face | Apache-2.0 | Dùng / phân phối lại tự do, giữ thông báo giấy phép |
-| `vinai/vinai-translate-en2vi-v2` | VinAI Research, Hugging Face | AGPL-3.0 | Phân phối app kèm model này → phải công bố mã nguồn theo AGPL (repo này đáp ứng) |
+| `Helsinki-NLP/opus-mt-en-vi` | Helsinki-NLP / OPUS-MT (Tiedemann & Thottingal, 2020), Hugging Face | Apache-2.0 (thẻ HF); OPUS-MT ghi CC-BY 4.0 cho model phát hành | Cả hai đều cho phép phân phối lại / thương mại, **ghi công** Helsinki-NLP / OPUS-MT |
+| `vinai/vinai-translate-en2vi-v2` | VinAI Research, Hugging Face | AGPL-3.0 | Phân phối app kèm model này → công bố mã nguồn theo AGPL (repo này AGPL-3.0). VinAI đề nghị trích dẫn bài báo INTERSPEECH 2022 khi dùng trong phần mềm khác |
 
-Model fine-tune sau này (Phase 6) mang theo giới hạn của dữ liệu huấn luyện (vd PhoMT chỉ cho nghiên cứu, phi thương mại) — kiểm tra trước khi phát hành.
+Model fine-tune (Phase 6) mang theo giới hạn của dữ liệu huấn luyện: model phát hành chỉ dùng dữ liệu giấy phép mở
+(xem [báo cáo rà giấy phép](docs/superpowers/reports/2026-11-20-en-vi-licenses.md)); không dùng PhoMT / TED / QED (chỉ
+nghiên cứu, phi thương mại) hay dữ liệu sinh bởi LLM thương mại.
 
 ## Dữ liệu
 

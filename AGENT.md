@@ -316,11 +316,24 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
   - Các lỗi nhỏ để lại từ 5a (báo cáo merge `phase-5a`): tên model mặc định bị lưu như lựa chọn, chưa xóa được key, chặn sai key chỉ hết khi nhập key mới, cache chung cho mọi server Kaggle, Live mất hiện từng câu khi fallback, bản dịch fallback không được cache, `usage.json` ghi không an toàn, đổi engine lỗi giữ engine cũ, toàn màn hình dùng một người nói.
 - [ ] *(Người dùng chọn 2026-11-20: chất lượng cao hơn = gọi LLM qua API như 5a/5b; **không** chạy model nặng / LLM trên máy, không tải model lớn về để đo; chỉ dùng model giấy phép mở — bỏ NLLB. Mục dưới chỉ còn tinh chỉnh model nhỏ đang có, không đổi sang model lớn.)* **Tối ưu model trên máy:** đo lại bằng `windows/scripts/compare_engines.py` trên câu thoại thật; Android: thử vinai lượng tử hóa int8 / ONNX (độ trễ trên POCO X8 Pro) hoặc model en→vi khác tốt hơn opus-mt cùng cỡ; Windows: beam / số luồng; dịch theo lô câu của một lần OCR. Chỉ thay model mặc định khi tốt hơn rõ trên bộ câu thật.
 
-### Phase 6 — Fine-tune trên Kaggle (khi đã có dữ liệu sửa thật)
-- [ ] Notebook `training/kaggle_finetune.ipynb`: GPU T4/P100, checkpoint định kỳ vào `/kaggle/working` (phiên tối đa 12 h, ~30 h GPU/tuần).
-- [ ] Dữ liệu: PhoMT, IWSLT'15 en-vi, `corrections.jsonl` (upload làm Kaggle Dataset).
-- [ ] Fine-tune `Seq2SeqTrainer`, `fp16=True`, tập con ~500k–1M cặp.
-- [ ] Đánh giá sacreBLEU + COMET trên test PhoMT, so với model gốc. Chỉ thay nếu tốt hơn → export qua `models.yml`, cập nhật manifest trên HF Hub.
+### Phase 6 — Model dịch nhỏ tốt hơn (fine-tune `opus-mt-en-vi` trên Kaggle)
+> Người dùng chọn 2026-11-20: app mã nguồn mở, model phát hành cho mọi người → **chỉ dữ liệu giấy phép mở**; dữ liệu sinh
+> bởi LLM (Claude / Gemini / OpenAI) **không** dùng cho model phát hành (điều khoản "không làm mô hình cạnh tranh"), chỉ
+> qua công cụ để mỗi người tự tạo model riêng bằng key của mình. Rà giấy phép: [báo cáo](docs/superpowers/reports/2026-11-20-en-vi-licenses.md).
+- [ ] **Model phát hành** (Apache-2.0 / CC-BY 4.0 như opus-mt, ghi công): fine-tune `Helsinki-NLP/opus-mt-en-vi` (75M, giữ tốc độ
+  hiện tại: ~53 ms/câu trên điện thoại) bằng dữ liệu **cho phép**: ALT (CC BY 4.0), Tatoeba (CC BY 2.0 FR), translatewiki
+  (CC BY 3.0), ELRC_2922 (CC BY 4.0), tập con lọc của NLLB-OPUS (ODC-By) / ParaCrawl-Bonus (CC0 đóng gói). Không dùng:
+  PhoMT, IWSLT/TED2020/NeuLab, QED, MTet, OpenSubtitles, bản đóng gói lại trên HF. CC-BY-SA (WikiMatrix, wikimedia) chỉ
+  khi chấp nhận phát hành model theo CC-BY-SA 4.0.
+- [ ] **Model riêng (tùy người dùng)**: script `training/distill_data.py` sinh câu thoại tiếng Anh + bản dịch bằng LLM qua key
+  của chính người dùng (Batch API, ước tính chi phí trước, thử 2.000 câu trước), cộng `corrections.jsonl` của họ;
+  notebook dùng chung với model phát hành. Repo chỉ chứa công cụ — không chứa dữ liệu hay model sinh từ LLM; app nạp
+  model riêng như model trên máy (thư mục models/).
+- [ ] Notebook `training/kaggle_finetune.ipynb`: GPU T4/P100, checkpoint vào `/kaggle/working` (phiên tối đa 12 h), lọc dữ
+  liệu (độ dài, tỷ lệ độ dài, trùng lặp, ngôn ngữ), `Seq2SeqTrainer` `fp16`, vài trăm nghìn – 1 triệu cặp.
+- [ ] Đánh giá: bộ câu thoại game thật để riêng (không huấn luyện) + `compare_engines.py` (người dùng chấm) + sacreBLEU /
+  chrF; chỉ thay model mặc định khi tốt hơn rõ opus-mt (và gần vinai trên Windows). Export qua `models.yml` (ONNX Android,
+  CT2 Windows), cập nhật manifest.
 
 ### Phase 7 — Tiếng Nhật
 - [ ] OCR tiếng Nhật (Windows OCR gói Japanese / RapidOCR japan; ML Kit Japanese), lọc furigana, hậu xử lý riêng (không khoảng trắng, tách câu theo 。！？), fixtures tiếng Nhật; dịch qua engine LLM từ xa của Phase 5 (Gemini / OpenAI / Claude / Kaggle).
