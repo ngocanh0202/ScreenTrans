@@ -1,0 +1,8 @@
+[
+ {"name": "short source: Hello -> Xin chao stays on one line", "words": [30, 40], "space": 5, "width": 40, "room": 1000, "px": 16, "expected": 75},
+ {"name": "already fits: unchanged", "words": [30, 40], "space": 5, "width": 100, "room": 1000, "px": 16, "expected": 100},
+ {"name": "last word alone on a line is pulled back", "words": [50, 50, 50, 50, 20], "space": 5, "width": 220, "room": 1000, "px": 10, "expected": 240},
+ {"name": "long text: widen at most 25% (saves one line)", "words": [50, 50, 50, 50, 50, 50, 50, 50, 50, 50], "space": 5, "width": 200, "room": 1000, "px": 10, "expected": 215},
+ {"name": "no room to the screen edge: unchanged", "words": [30, 40], "space": 5, "width": 40, "room": 60, "px": 16, "expected": 40},
+ {"name": "wider box would not save a line: unchanged", "words": [100, 100, 100], "space": 5, "width": 100, "room": 1000, "px": 2, "expected": 100}
+]

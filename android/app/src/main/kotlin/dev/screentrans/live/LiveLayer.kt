@@ -53,8 +53,16 @@ class LiveAreaLayer(context: Context) : View(context) {
             val p = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = base; isFakeBoldText = true }
             blocks[key] = Block(kind, text, rect, null, p, bg, angle)
         } else {
+            val screen = realScreenSize()  // like the captured frames (with the navigation bar)
+            val screenH = screen.y
+            if (angle == 0f) {  // a short source ("Hello" -> "Xin chào") must not drop its last word to a new line
+                val probe = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = base }
+                val lines = { bw: Int ->
+                    StaticLayout.Builder.obtain(text, 0, text.length, probe, maxOf(1, (bw - 2 * pad).toInt())).build().lineCount
+                }
+                rect.right = rect.left + Layout.widen(rect.width().toInt(), lines, (screen.x - rect.left).toInt(), base)
+            }
             val w = maxOf(1, (rect.width() - 2 * pad).toInt())
-            val screenH = realScreenHeight()  // like the captured frames (with the navigation bar)
             val fit = Layout.fitBlock(text.length, rect.width().toInt(), rect.height().toInt(), base,
                 grow = growLong && angle == 0f)
             val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = fg; textSize = maxOf(minPx, fit.px) }
@@ -69,10 +77,14 @@ class LiveAreaLayer(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun realScreenHeight(): Int {
+    private fun realScreenSize(): android.graphics.Point {
         val wm = context.getSystemService(android.view.WindowManager::class.java)
-        return if (android.os.Build.VERSION.SDK_INT >= 30) wm.currentWindowMetrics.bounds.height()
-        else android.util.DisplayMetrics().also { @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(it) }.heightPixels
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val b = wm.currentWindowMetrics.bounds
+            return android.graphics.Point(b.width(), b.height())
+        }
+        val m = android.util.DisplayMetrics().also { @Suppress("DEPRECATION") wm.defaultDisplay.getRealMetrics(it) }
+        return android.graphics.Point(m.widthPixels, m.heightPixels)
     }
 
     fun remove(key: String) {
@@ -83,15 +95,20 @@ class LiveAreaLayer(context: Context) : View(context) {
         getLocationOnScreen(onScreen)
         canvas.save()
         canvas.translate(-onScreen[0].toFloat(), -onScreen[1].toFloat())
+        // straight blocks moved down so none covers another (a tall translation covered the next one)
+        val straight = blocks.values.filter { it.angle == 0f }
+        val placed = straight.zip(Layout.separate(straight.map { floatArrayOf(it.rect.left, it.rect.top, it.rect.right, it.rect.bottom) }))
+            .associate { (b, r) -> b to RectF(r[0], r[1], r[2], r[3]) }
         for (b in blocks.values) {
+            val rect = placed[b] ?: b.rect
             canvas.save()
             if (b.angle != 0f) canvas.rotate(b.angle)  // the block is in a frame tilted around the screen origin
-            canvas.drawRoundRect(b.rect, pad, pad, b.bg)
+            canvas.drawRoundRect(rect, pad, pad, b.bg)
             val layout = b.layout
             if (layout == null) {
-                b.name?.let { p -> canvas.drawText(b.text, b.rect.left + pad, b.rect.bottom - p.descent(), p) }
+                b.name?.let { p -> canvas.drawText(b.text, rect.left + pad, rect.bottom - p.descent(), p) }
             } else {
-                canvas.translate(b.rect.left + pad, b.rect.top + pad)
+                canvas.translate(rect.left + pad, rect.top + pad)
                 layout.draw(canvas)
             }
             canvas.restore()
