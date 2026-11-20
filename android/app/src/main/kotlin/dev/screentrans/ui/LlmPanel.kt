@@ -26,6 +26,8 @@ data class LlmValues(
     val usedToday: Int,
     val notes: String,
     val localModel: String = "",  // the on-device model in use (shown for "Máy")
+    val localModels: List<Pair<String, String>> = emptyList(),  // on-device models on the phone: id to name
+    val localModelId: String = "",
 )
 
 /** What the user saved: [key] only when typed (null = unchanged), [deleteKey] for the shown engine. */
@@ -38,6 +40,7 @@ data class LlmEdit(
     val kaggleUrl: String,
     val dailyLimit: Int,
     val notes: String,
+    val localModelId: String = "",  // the on-device model chosen under "Máy"
 )
 
 /**
@@ -51,6 +54,7 @@ class LlmPanel(
     private val v: LlmValues,
     private val onSave: (LlmEdit) -> Unit,
     private val onClose: () -> Unit,
+    private val onMoreModels: () -> Unit = {},
 ) : LinearLayout(context) {
     private val blue = Color.rgb(37, 99, 235)
     private val idle = Color.argb(45, 255, 255, 255)
@@ -71,9 +75,12 @@ class LlmPanel(
     private val notes = field("Bối cảnh, nhân vật, cách xưng hô (vd: Vertin: nữ, gọi Sonetto là \"em\")",
         InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE).apply { setText(v.notes); minLines = 2 }
     private val remoteRows = mutableListOf<android.view.View>()
-    private val localNote = TextView(context).apply {
-        textSize = 13f; setTextColor(Color.rgb(200, 200, 210)); setPadding(0, context.dp(8), 0, context.dp(4))
-        text = "Model trên máy: ${v.localModel} — đổi ở ⚙ → 🧠 Model."
+    private var localId = v.localModelId
+    private val localChips = FlowLayout(context)  // the on-device models: tap to choose, "+ Tải thêm…" opens 🧠 Model
+    private val localNote = LinearLayout(context).apply {
+        orientation = VERTICAL
+        addView(caption("Model trên máy"))
+        addView(localChips)
     }
     private var urlRow: android.view.View? = null
 
@@ -125,6 +132,7 @@ class LlmPanel(
             addView(button("Hủy") { onClose() })
             addView(button("Lưu") { onSave(edit()) })
         })
+        showLocal()
         pick(engine)
     }
 
@@ -149,7 +157,7 @@ class LlmPanel(
         segments.forEach { (id, s) -> (s.background as GradientDrawable).setColor(if (id == engine) blue else idle) }
         val remote = engine in NAMES
         remoteRows.forEach { it.visibility = if (remote) VISIBLE else GONE }
-        localNote.visibility = if (remote || v.localModel.isEmpty()) GONE else VISIBLE
+        localNote.visibility = if (remote || v.localModels.isEmpty()) GONE else VISIBLE
         urlRow?.visibility = if (engine == "kaggle") VISIBLE else GONE
         val saved = engine in v.savedKeys && !deleteKey
         key.hint = if (saved) "•••• (đã lưu — nhập để thay)" else "Dán key / token vào đây"
@@ -157,6 +165,16 @@ class LlmPanel(
         deleteButton.alpha = if (saved) 1f else 0.4f
         privacy.text = if (remote) "Chữ trong game sẽ được gửi tới ${NAMES[engine]} để dịch (tính phí theo tài khoản của bạn). " +
             "Lỗi / hết hạn mức → tự dùng model trên máy." else ""
+    }
+
+    private fun showLocal() {
+        localChips.removeAllViews()
+        v.localModels.forEach { (id, name) ->
+            localChips.addView(suggestion(name) { localId = id; showLocal() }.apply {
+                (background as GradientDrawable).setColor(if (id == localId) blue else idle)
+            })
+        }
+        localChips.addView(suggestion("+ Tải thêm…") { onMoreModels() })
     }
 
     private fun edit() = LlmEdit(
@@ -168,6 +186,7 @@ class LlmPanel(
         kaggleUrl = url.text.toString().trim(),
         dailyLimit = limit.text.toString().toIntOrNull()?.coerceAtLeast(1000) ?: v.dailyLimit,
         notes = notes.text.toString().trim(),
+        localModelId = localId,
     )
 
     private fun field(hint: String, type: Int) = EditText(context).apply {

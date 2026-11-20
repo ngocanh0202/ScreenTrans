@@ -89,12 +89,18 @@ class SettingsScreens(private val context: Context, private val scope: Coroutine
         return panel
     }
 
-    /** The on-device model in use, shortly ("opus-mt", "ScreenTrans", or a downloaded model's id). */
-    fun localModelName(): String = when (prefs.modelId) {
+    /** An on-device model's short name ("opus-mt", "ScreenTrans", or a downloaded model's id). */
+    private fun modelName(id: String): String = when (id) {
         AppEngine.MODEL_ID -> "opus-mt"
         "screentrans-en-vi" -> "ScreenTrans"
-        else -> prefs.modelId
+        else -> id
     }
+
+    fun localModelName(): String = modelName(prefs.modelId)
+
+    /** The models on the phone: the bundled one, then the downloaded ones. */
+    private fun localModels(): List<Pair<String, String>> =
+        (listOf(AppEngine.MODEL_ID) + modelStore.installed().keys.filter { it != AppEngine.MODEL_ID }).map { it to modelName(it) }
 
     fun tiles() = listOf(
         PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy (${localModelName()})"}", ::showLlm),
@@ -110,7 +116,7 @@ class SettingsScreens(private val context: Context, private val scope: Coroutine
             savedKeys = dev.screentrans.core.llm.NAMES.keys.filter { keyVault.has(it) }.toSet(),
             models = prefs.llmModels, liveModels = prefs.llmLiveModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
             usedToday = dev.screentrans.core.llm.UsageStore(File(context.filesDir, "llm")).used(),
-            notes = p.llmNotes, localModel = localModelName(),
+            notes = p.llmNotes, localModel = localModelName(), localModels = localModels(), localModelId = prefs.modelId,
         )
         host.present(LlmPanel(context, values, onSave = { e ->
             if (e.deleteKey) keyVault.set(e.engine, "")
@@ -124,9 +130,14 @@ class SettingsScreens(private val context: Context, private val scope: Coroutine
             if (e.engine == "kaggle") prefs.kaggleUrl = e.kaggleUrl
             prefs.dailyLimit = e.dailyLimit
             repo.save(profile(p.id).copy(engine = e.engine, llmNotes = e.notes))  // the game the panel showed
-            host.changed(SettingsChange.GAME)  // send the game (with its engine) to the engine again
+            if (e.localModelId.isNotEmpty() && e.localModelId != prefs.modelId) {
+                prefs.modelId = e.localModelId
+                host.changed(SettingsChange.MODEL)  // reloads the model, then sends the game again
+            } else {
+                host.changed(SettingsChange.GAME)  // send the game (with its engine) to the engine again
+            }
             host.dismiss()
-        }, onClose = host::dismiss), focusable = true)
+        }, onClose = host::dismiss, onMoreModels = ::showModels), focusable = true)
     }
 
     /** 📖 Thuật ngữ: the game's own glossary terms; saved to its file and sent to the engine at once. */
