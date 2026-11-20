@@ -24,3 +24,13 @@ def test_notebook_uses_only_catalogued_open_corpora():
     assert all(n in names for n in ["ALT", "Tatoeba", "translatewiki", "ELRC_2922", "NLLB", "ParaCrawl-Bonus"])
     for banned in ("PhoMT", "TED2020", "QED", "OpenSubtitles"):
         assert banned not in src
+
+
+def test_publishing_to_the_apps_is_guarded():
+    """Only a model better than the base one, never with private LLM data or share-alike data, needs a token."""
+    from training.make_finetune_notebook import CELLS
+
+    cell = next("".join(c["source"]) for c in CELLS if "publish to the apps" in "".join(c["source"]))
+    order = [cell.index(s) for s in ("elif EXTRA_TSV:", "elif ALLOW_SHARE_ALIKE:", "elif not better:", "elif token:")]
+    assert order == sorted(order)
+    assert '"--only", "screentrans-en-vi"' in cell and '"--merge-from", MANIFEST' in cell

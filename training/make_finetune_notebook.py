@@ -26,7 +26,9 @@ model ScreenTrans ships) on **openly licensed** English–Vietnamese corpora onl
 the model and `docs/superpowers/reports/2026-11-20-en-vi-licenses.md` in the repo).
 
 1. Notebook settings: **Accelerator = GPU T4 x2 or P100**, **Internet = On**.
-2. Optional (to publish): Add-ons → Secrets → `HF_TOKEN` (write token) and set `PUSH_TO` below.
+2. Add-ons → Secrets → `HF_TOKEN` (a **write** token): the notebook then publishes the model to the app's model
+   repo `APP_MODELS_REPO` (the apps show "Có bản mới") — only when it scores better than the base model, never
+   with private LLM data. Optional: `PUSH_TO` for the plain Hugging Face model.
 3. **Run all.** Downloading + filtering takes ~20–40 min (NLLB is large), training a few hours. The result is in
    `/kaggle/working/screentrans-en-vi` (and `screentrans-en-vi.zip` to download).
 4. On your PC: `python -m models.export ct2 screentrans-en-vi --hf-id <folder or repo>` (Windows) and `onnx` (Android).
@@ -47,6 +49,7 @@ BATCH = 64
 EVAL_SAMPLES = 500               # dev sentences scored during training (generation is slow)
 OUT = "/kaggle/working/screentrans-en-vi"
 PUSH_TO = ""                     # e.g. "yourname/screentrans-en-vi" (needs the HF_TOKEN secret)
+APP_MODELS_REPO = "anhbui02/screentrans-models"  # the apps' model list: exported + published here ("" = off)
 '''),
     code('''
 !pip -q install sacrebleu sentencepiece
@@ -137,7 +140,8 @@ base_scores = Seq2SeqTrainer(model=AutoModelForSeq2SeqLM.from_pretrained(BASE), 
                              data_collator=DataCollatorForSeq2Seq(tok), compute_metrics=compute_metrics).evaluate()
 print("base model:", base_scores)
 trainer.train()
-print("fine-tuned:", trainer.evaluate())
+fine_scores = trainer.evaluate()
+print("fine-tuned:", fine_scores)
 '''),
     code('''
 # ---- game sentences, side by side (judge by eye: they were never trained on) ----
@@ -184,6 +188,47 @@ if PUSH_TO and not EXTRA_TSV:
     print("published https://huggingface.co/" + PUSH_TO)
 elif PUSH_TO:
     print("not published: this model used private (LLM-generated) data")
+'''),
+    code('''
+# ---- publish to the apps: export CTranslate2 (Windows) + ONNX (Android), upload with a new version ----
+import datetime, os, subprocess, sys
+REPO_DIR = "/kaggle/working/ScreenTrans"
+MANIFEST = f"https://huggingface.co/{APP_MODELS_REPO}/resolve/main/manifest.json"
+better = fine_scores.get("eval_chrf", 0) > base_scores.get("eval_chrf", 0)
+token = ""
+if APP_MODELS_REPO and not EXTRA_TSV and better:
+    try:
+        from kaggle_secrets import UserSecretsClient
+        token = UserSecretsClient().get_secret("HF_TOKEN")
+    except Exception as e:
+        print("no HF_TOKEN secret (Add-ons → Secrets, a write token):", e)
+
+def sh(*args, check=True):
+    print("$", " ".join(args))
+    return subprocess.run(list(args), cwd=REPO_DIR, check=check).returncode
+
+if not APP_MODELS_REPO:
+    print("APP_MODELS_REPO is empty: not published to the apps")
+elif EXTRA_TSV:
+    print("not published to the apps: this model used private (LLM-generated) data")
+elif ALLOW_SHARE_ALIKE:
+    print("not published to the apps: share-alike data (CC BY-SA) — the app's model list says apache-2.0")
+elif not better:
+    print(f"not published: chrF {fine_scores.get('eval_chrf', 0):.2f} is not above the base model's "
+          f"{base_scores.get('eval_chrf', 0):.2f}")
+elif token:
+    sh(sys.executable, "-m", "pip", "-q", "install", "ctranslate2", "sentencepiece", "sacremoses")
+    sh(sys.executable, "-m", "models.export", "ct2", "screentrans-en-vi", "--hf-id", OUT)
+    # ONNX needs optimum: if this Kaggle image's libraries do not fit, Windows still gets the model
+    onnx_ok = (sh(sys.executable, "-m", "pip", "-q", "install", "optimum[onnxruntime]", "onnx", check=False) == 0
+               and sh(sys.executable, "-m", "models.export", "onnx", "screentrans-en-vi", "--hf-id", OUT, check=False) == 0)
+    if not onnx_ok:
+        print("ONNX export failed: only the Windows model is published this time")
+    version = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M")
+    subprocess.run([sys.executable, "-m", "models.manifest", "--version", version, "--stage", "/kaggle/working/hf",
+                    "--only", "screentrans-en-vi", "--merge-from", MANIFEST, "--upload", APP_MODELS_REPO, "--yes"],
+                   cwd=REPO_DIR, check=True, env={**os.environ, "HF_TOKEN": token})
+    print(f"published version {version}: the apps list it in Settings → Model (Có bản mới)")
 '''),
 ]
 
