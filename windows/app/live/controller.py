@@ -16,7 +16,7 @@ from app.live.filter import worth_translating
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
 from app.live.sentences import SentenceGate, ocr_key
-from app.live.style import BlockStyle, font_px_for, sample_style
+from app.live.style import BlockStyle, font_px_for, sample_style, steady_box, steady_font
 from app.live.thumb import diff, gray_thumb
 from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
@@ -321,9 +321,7 @@ class LiveController(QObject):
     def _style_block(self, i: int, key: str, p: Paragraph, image) -> None:
         """Font size from the source line height; colours sampled once from the block's pixels."""
         st = self._blocks.setdefault((i, key), _BlockState())
-        size = font_px_for(getattr(p, "line_height", 0.0))
-        if size is not None:
-            st.font_px = size
+        st.font_px = steady_font(st.font_px, font_px_for(getattr(p, "line_height", 0.0)))
         if self.style == "match" and not st.sampled and image is not None:
             st.sampled = True
             from app.ocr.deskew import bounds
@@ -340,7 +338,8 @@ class LiveController(QObject):
 
     def _update_block(self, i: int, key: str, p: Paragraph, final: bool, carry: dict | None = None) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())
-        st.kind, st.box = p.kind, (p.left, p.top, p.right, p.bottom)
+        st.kind = p.kind
+        st.box = steady_box(st.box, (p.left, p.top, p.right, p.bottom))  # no jumping with OCR jitter
         st.angle = getattr(p, "angle", 0.0)
         if p.kind == "name":
             st.sentences, st.done = [p.text], 1

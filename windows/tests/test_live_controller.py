@@ -37,6 +37,8 @@ class FakeOverlay:
         self.styles[key] = (font_px, colors)
         self.angles = getattr(self, "angles", {})
         self.angles[key] = angle
+        self.boxes = getattr(self, "boxes", {})
+        self.boxes[key] = box
         self.draws += 1
 
     def remove_block(self, key):
@@ -623,3 +625,33 @@ def test_an_unexpected_error_in_a_tick_does_not_stop_live():  # review minor: th
     except ZeroDivisionError:
         pass
     assert scheduled  # the next tick is still scheduled
+
+
+
+def test_the_translation_box_and_font_stay_put_across_jittery_reads():  # user report: boxes move up/down, resize
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    reads = [(100, 130, 300, 30.0), (103, 132, 296, 32.0), (98, 129, 310, 28.5), (101, 131, 305, 31.0)]
+    for n, (top, bottom, right, lh) in enumerate(reads):
+        c._ocr_final[700 + n] = True
+        c.on_ocr_done(700 + n, [[Paragraph("text", "Hello there.", ["Hello there."], 10, top, right, bottom, lh)]])
+        for job in translate_jobs(jobs):
+            if job.id in c._requests:
+                translate(c, job)
+        box = overlays[0].boxes["b1"]
+        font = overlays[0].styles["b1"][0]
+        if n == 0:
+            first_box, first_font = box, font
+        assert (box[0], box[1]) == (first_box[0], first_box[1])  # the top-left never jumps
+        assert font == first_font                               # nor does the text size
+    assert overlays[0].boxes["b1"][2] == 310  # the box may only grow (text still typing)
+
+
+def test_a_block_that_really_moved_follows_it():
+    c, jobs, _, overlays = make([BLACK])
+    c.tick(0)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[Paragraph("text", "Hello there.", ["Hello there."], 10, 100, 300, 130, 30.0)]])
+    translate(c, translate_jobs(jobs)[-1])
+    c._ocr_final[800] = True
+    c.on_ocr_done(800, [[Paragraph("text", "Hello there.", ["Hello there."], 10, 118, 300, 148, 30.0)]])  # 18 px: moved
+    assert overlays[0].boxes["b1"][1] == 118
