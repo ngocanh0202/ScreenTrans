@@ -121,9 +121,12 @@ def compute_metrics(p):
     ref = tok.batch_decode(labels, skip_special_tokens=True)
     return {"chrf": sacrebleu.corpus_chrf(hyp, [ref]).score, "bleu": sacrebleu.corpus_bleu(hyp, [ref]).score}
 
+# warmup as a step count: transformers 5 dropped warmup_ratio
+import math, torch
+steps = math.ceil(len(tds["train"]) / (BATCH * max(1, torch.cuda.device_count()))) * EPOCHS
 args = Seq2SeqTrainingArguments(
     output_dir="/kaggle/working/ckpt", per_device_train_batch_size=BATCH, per_device_eval_batch_size=BATCH,
-    learning_rate=LR, num_train_epochs=EPOCHS, warmup_ratio=0.03, weight_decay=0.01, fp16=True,
+    learning_rate=LR, num_train_epochs=EPOCHS, warmup_steps=int(steps * 0.03), weight_decay=0.01, fp16=True,
     eval_strategy="steps", eval_steps=2000, save_steps=2000, save_total_limit=2, logging_steps=200,
     load_best_model_at_end=True, metric_for_best_model="chrf", greater_is_better=True,
     predict_with_generate=True, generation_max_length=128, report_to="none",
