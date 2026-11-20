@@ -26,11 +26,12 @@ def write_meta(out_dir: Path, key: str, fmt: str) -> None:
     (out_dir / META_FILE).write_text(json.dumps(model_meta(key, fmt), indent=1) + "\n", encoding="utf-8")
 
 
-def export_ct2(key: str) -> Path:
+def export_ct2(key: str, hf_id: str | None = None) -> Path:
     import ctranslate2
+    from models.registry import spec_for
     from models.verify import load_tokenizer
 
-    spec = MODELS[key]
+    spec = spec_for(key, hf_id)
     out_dir = OUT / f"{key}-ct2"
     ctranslate2.converters.TransformersConverter(spec.hf_id).convert(
         str(out_dir), quantization="int8", force=True
@@ -43,13 +44,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("backend", choices=["ct2", "onnx"])
     ap.add_argument("key", choices=list(MODELS))
+    ap.add_argument("--hf-id", help="read the model from this Hugging Face repo or local folder (a fine-tuned model)")
     args = ap.parse_args()
     if args.backend == "ct2":
-        out = export_ct2(args.key)
+        out = export_ct2(args.key, args.hf_id)
     else:
         from models.onnx_export import export_onnx
 
-        out = export_onnx(args.key)
+        out = export_onnx(args.key, args.hf_id)
     write_meta(out, args.key, args.backend)
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file()) / 1e6
     print(f"Exported {args.key} -> {out} ({size:.0f} MB)")
