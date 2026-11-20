@@ -42,7 +42,7 @@ class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var dialog: Dialog? = null
 
-    private val host = object : SettingsHost {
+    private val host: SettingsHost = object : SettingsHost {
         override fun present(panel: View, focusable: Boolean) {
             dialog?.dismiss()
             dialog = Dialog(this@MainActivity).apply {
@@ -66,7 +66,7 @@ class MainActivity : Activity() {
 
         override fun changed(change: SettingsChange) = CaptureService.settingsChanged(change)
     }
-    private val screens by lazy { SettingsScreens(this, scope, host) }
+    private val screens: SettingsScreens by lazy { SettingsScreens(this, scope, host) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
