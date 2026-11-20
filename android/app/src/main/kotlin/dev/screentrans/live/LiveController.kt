@@ -69,6 +69,7 @@ class LiveController(
     private var lastOcrFrame: Bitmap? = null
     private val styles = HashMap<String, BlockStyle?>()  // block -> sampled colours (null: readable style)
     private val cellStyles = HashMap<String, BlockStyle>()  // region cell + kind -> its remembered "match" colours
+    private val cellFonts = HashMap<String, Float>()  // region cell + kind -> its remembered font size (px)
     private var blackTicks = 0
     private var blackReported = false
     private var sawGame = false  // a non-black frame since Live started: later black frames are scene fades
@@ -167,6 +168,7 @@ class LiveController(
         frames.clear()
         styles.clear()
         cellStyles.clear()
+        cellFonts.clear()
         lastOcrFrame = null
         if (capturing) hideOthers(false)
         capturing = false
@@ -292,15 +294,20 @@ class LiveController(
 
     override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
         val k = "$region:$key"
+        // one style and one size per cell of the region and kind (BlockStyle.styleCell): the dialogue box keeps them
+        val r = regions.getOrNull(region)
+        val cell = "$region:" + if (r == null) "" else
+            BlockStyle.styleCell(box[0] - r[0], box[1] - r[1], r[2] - r[0], r[3] - r[1], kind.name.lowercase())
         val colors = if (style != "match") null else styles[k] ?: run {
-            // one style per cell of the region and kind (BlockStyle.styleCell): the dialogue box keeps its colours
-            val r = regions.getOrNull(region)
-            val cell = "$region:" + if (r == null) "" else
-                BlockStyle.styleCell(box[0] - r[0], box[1] - r[1], r[2] - r[0], r[3] - r[1], kind.name.lowercase())
             (cellStyles[cell] ?: sampleStyle(screentrans.text.Deskew.bounds(box, angle))?.also { cellStyles[cell] = it })
                 ?.also { styles[k] = it }  // a failed sample (fading in) is tried again on the next draw
         }
-        layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors, angle)  // whole text, never cut
+        // the OCR line height depends on the letters ("Thy" vs "ace"): a change under 30 % keeps the cell's size
+        val read = BlockStyle.fontPxFor(lineHeight)
+        val old = cellFonts[cell]
+        val fontPx = if (read == null) old else if (old != null && kotlin.math.abs(read - old) <= 0.30f * old) old else read
+        if (fontPx != null) cellFonts[cell] = fontPx
+        layer?.set(k, text, box, kind, fontPx, colors, angle)  // whole text, never cut
     }
 
     /** Colours of the source text block, from the frame its OCR read (null: readable white on dark). */
