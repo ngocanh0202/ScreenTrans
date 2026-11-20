@@ -18,7 +18,7 @@ class LlmTranslatorTest {
 
     private open class FakeClient(var error: Exception? = null, var reply: String? = null) : LlmClient {
         override val name = "Gemini"
-        override val model = "gemini-x"
+        override open val model = "gemini-x"
         val calls = mutableListOf<Triple<String, String, Int>>()
         override fun complete(system: String, user: String, timeoutMs: Int): String {
             calls.add(Triple(system, user, timeoutMs))
@@ -194,5 +194,20 @@ class LlmTranslatorTest {
         Thread.sleep(100)
         assertEquals(2, started.get())  // the pool is bounded like Python (max_workers=2)
         gate.countDown()
+    }
+
+    @Test
+    fun `live jobs use the live model and cache apart`() {
+        val main = object : FakeClient() { override val model = "gemini-pro" }
+        val live = object : FakeClient() { override val model = "gemini-lite" }
+        val tr = LlmTranslator("gemini", main, local, "opus", UsageStore(dir), 50_000, {}, Clock(), null, liveClient = live)
+        assertEquals("gemini:gemini-pro", tr.modelId)
+        tr.live = true
+        assertEquals("gemini:gemini-lite", tr.modelId)
+        tr.translateCtx(listOf("Hi."), emptyMap())
+        assertEquals(1, live.calls.size); assertEquals(0, main.calls.size)
+        tr.live = false
+        tr.translateCtx(listOf("Yo."), emptyMap())
+        assertTrue("- Hi." in main.calls.single().second)  // one shared context
     }
 }

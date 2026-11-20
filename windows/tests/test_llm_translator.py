@@ -330,3 +330,27 @@ def test_live_sentences_send_the_given_speaker(tmp_path):  # review #5
     p = pipeline(tr)
     list(p.iter_sentences([Paragraph("text", "Go.", ["Go."], 0, 20, 50, 30)], speaker="Vertin"))
     assert "Người nói: Vertin" in c.calls[-1][1]
+
+
+# ---- 5c: a separate model for Live --------------------------------------------------------------------------
+def test_live_jobs_use_the_live_model_and_cache_apart(tmp_path):
+    main, live = FakeClient(), FakeClient()
+    main.model, live.model = "gemini-pro", "gemini-lite"
+    notes = []
+    tr = LlmTranslator("gemini", main, FakeTranslator(lambda t: t, "vinai"), Usage(tmp_path), 50_000, notes.append,
+                       clock=Clock(), live_client=live)
+    assert tr.model_id == "gemini:gemini-pro"
+    tr.live = True
+    assert tr.model_id == "gemini:gemini-lite"  # a different cache namespace: Live and one-shot never mix
+    tr.translate_ctx(["Hi."], {})
+    assert len(live.calls) == 1 and not main.calls
+    tr.live = False
+    tr.translate_ctx(["Yo."], {})
+    assert len(main.calls) == 1 and "- Hi." in main.calls[0][1]  # one shared context
+
+
+def test_suggested_models_per_engine():
+    from app.translate.remote import DEFAULT_MODELS, SUGGESTED_MODELS
+
+    for engine in ("gemini", "openai", "claude"):
+        assert DEFAULT_MODELS[engine] in SUGGESTED_MODELS[engine] and len(SUGGESTED_MODELS[engine]) >= 3

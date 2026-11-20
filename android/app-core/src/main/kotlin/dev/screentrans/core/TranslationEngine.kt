@@ -196,7 +196,10 @@ class TranslationEngine<I>(
         private set
 
     private fun run(b: EngineBundle<I>, job: EngineJob<I>) {
-        if (!job.liveOcr) remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
+        if (!job.liveOcr) {
+            remote?.timeoutMs = if (job.liveParagraphs != null) 2500 else 6000  // Live must not stall
+            remote?.live = job.liveParagraphs != null  // Live may use its own (faster) model
+        }
         try {
             when (val c = job.control) {
                 is EngineControl.Correct -> {

@@ -91,8 +91,16 @@ class LlmTranslator(
     private val notify: (String) -> Unit,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val contexts: ContextStore? = null,
+    private val liveClient: LlmClient? = null,  // a faster / cheaper model for Live (null: the same model)
 ) : RemoteEngine {
-    override val modelId = "$engine:${client.model}"
+    /** The engine sets it per job: Live jobs use [liveClient] when there is one. */
+    @Volatile
+    var live = false
+
+    private fun active(): LlmClient = if (live) liveClient ?: client else client
+
+    /** engine:model of the model used now (the cache namespace: Live and one-shot models never mix). */
+    override val modelId: String get() = "$engine:${active().model}"
     var timeoutMs = 6000
     private var context: List<Pair<String?, String>> = emptyList()
     private var speaker: String? = null
@@ -149,8 +157,9 @@ class LlmTranslator(
         } catch (e: IOException) {
             // usage.json not writable right now: never fail the translation over the counter
         }
+        val c = active()
         val future = try {
-            pool.submit<String> { client.complete(system, user, timeoutMs) }
+            pool.submit<String> { c.complete(system, user, timeoutMs) }
         } catch (e: java.util.concurrent.RejectedExecutionException) {  // two calls still hanging: as slow as a timeout
             fail(RemoteError("timeout", client.name))
             return null

@@ -58,4 +58,21 @@ class LlmEnginesTest {
         assertNotSame(a, engines.use("g", "gemini", LlmSettings(model = "m1"), emptyList()))
         assertEquals("AIza-2", made.last().first)
     }
+
+    @Test
+    fun `a live model gets its own client`() {
+        keys["gemini"] = "AIza-1"
+        val tr = engines.use("g", "gemini", LlmSettings(model = "pro", liveModel = "lite"), emptyList())!!
+        assertEquals(setOf("pro", "lite"), made.map { it.second.model }.toSet())
+        tr.live = true
+        assertEquals("gemini:lite", tr.modelId)
+        made.clear()
+        engines.use("g", "gemini", LlmSettings(model = "pro", liveModel = "pro"), emptyList())  // the same: one client
+        assertEquals(listOf("pro"), made.map { it.second.model })
+    }
+
+    @Test
+    fun `suggested models include the default`() {
+        for (e in listOf("gemini", "openai", "claude")) assertTrue(DEFAULT_MODELS.getValue(e) in SUGGESTED_MODELS.getValue(e))
+    }
 }

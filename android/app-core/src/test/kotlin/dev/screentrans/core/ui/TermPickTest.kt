@@ -58,4 +58,13 @@ class TermPickTest {
         assertEquals(mapOf("openai" to "gpt-x", "gemini" to "gemini-2.5-pro"), LlmPrefsLogic.models(m, "gemini", "gemini-2.5-pro"))
         assertEquals(emptyMap(), LlmPrefsLogic.models(mapOf("openai" to "gpt-x"), "openai", ""))
     }
+
+    @Test
+    fun `a live model equal to the one-shot model or empty is not stored`() {
+        val main = mapOf("gemini" to "gemini-2.5-pro")
+        assertEquals(mapOf("gemini" to "gemini-2.5-flash-lite"), LlmPrefsLogic.liveModels(emptyMap(), "gemini", "gemini-2.5-flash-lite", main))
+        assertEquals(emptyMap(), LlmPrefsLogic.liveModels(mapOf("gemini" to "x"), "gemini", "gemini-2.5-pro", main))
+        assertEquals(emptyMap(), LlmPrefsLogic.liveModels(mapOf("gemini" to "x"), "gemini", " ", main))
+        assertEquals(emptyMap(), LlmPrefsLogic.liveModels(emptyMap(), "gemini", "gemini-2.5-flash", emptyMap()))  // = default
+    }
 }

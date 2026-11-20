@@ -216,12 +216,15 @@ class TranslationWorker(QObject):
             return
         self._no_key_noticed.discard(engine)
         model, url = llm.get("model", ""), llm.get("url", "")
+        live_model = llm.get("live_model", "") or ""
         limit = int(llm.get("daily_limit") or 50000)
-        cache_key = (engine, model, url, hashlib.sha256(key.encode()).hexdigest(), limit, str(data_dir))
+        cache_key = (engine, model, live_model, url, hashlib.sha256(key.encode()).hexdigest(), limit, str(data_dir))
         tr = self._translators.get(cache_key)
         if tr is None:
+            live = remote.make_client(engine, key, model=live_model, url=url) if live_model and live_model != model else None
             tr = LlmTranslator(engine, remote.make_client(engine, key, model=model, url=url), self._local,
-                               Usage(data_dir), limit, self.notice.emit, contexts=ContextStore(data_dir))
+                               Usage(data_dir), limit, self.notice.emit, contexts=ContextStore(data_dir),
+                               live_client=live)
             self._translators[cache_key] = tr
         tr.set_game(game, str(llm.get("notes") or ""), self._pipeline.examples())
         self._pipeline.translator = tr
@@ -230,6 +233,7 @@ class TranslationWorker(QObject):
         self.job_started.emit(job.id)
         if hasattr(self._pipeline.translator, "timeout_s"):  # remote engine: Live must not stall
             self._pipeline.translator.timeout_s = 2.5 if job.mode == "live_translate" else 6.0
+            self._pipeline.translator.live = job.mode == "live_translate"  # Live may use its own (faster) model
         try:
             if job.mode == "correct":
                 for src, machine, fixed in job.payload.get("corrections", []):

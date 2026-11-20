@@ -256,7 +256,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val values = LlmValues(
             game = repo.label(p.id), engine = p.engine,
             savedKeys = dev.screentrans.core.llm.NAMES.keys.filter { keyVault.has(it) }.toSet(),
-            models = prefs.llmModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
+            models = prefs.llmModels, liveModels = prefs.llmLiveModels, kaggleUrl = prefs.kaggleUrl, dailyLimit = prefs.dailyLimit,
             usedToday = dev.screentrans.core.llm.UsageStore(java.io.File(context.filesDir, "llm")).used(),
             notes = p.llmNotes,
         )
@@ -266,7 +266,10 @@ class Controller(private val context: Context, projection: MediaProjection) {
             e.key?.let {  // encrypted (Android Keystore), never in prefs or logs
                 if (!keyVault.set(e.engine, it)) android.widget.Toast.makeText(context, "Không lưu được key (Keystore lỗi).", android.widget.Toast.LENGTH_LONG).show()
             }
-            if (e.engine in dev.screentrans.core.llm.NAMES) prefs.llmModels = dev.screentrans.core.ui.LlmPrefsLogic.models(prefs.llmModels, e.engine, e.model)
+            if (e.engine in dev.screentrans.core.llm.NAMES) {
+                prefs.llmModels = dev.screentrans.core.ui.LlmPrefsLogic.models(prefs.llmModels, e.engine, e.model)
+                prefs.llmLiveModels = dev.screentrans.core.ui.LlmPrefsLogic.liveModels(prefs.llmLiveModels, e.engine, e.liveModel, prefs.llmModels)
+            }
             if (e.engine == "kaggle") prefs.kaggleUrl = e.kaggleUrl
             prefs.dailyLimit = e.dailyLimit
             repo.save(profile(p.id).copy(engine = e.engine, llmNotes = e.notes))  // the game the panel showed
@@ -369,7 +372,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
         val json = listOfNotNull(user) + shipped + common  // the user's terms win
         val llm = dev.screentrans.core.llm.LlmSettings(
             model = prefs.llmModels[p.engine] ?: "", url = if (p.engine == "kaggle") prefs.kaggleUrl else "",
-            dailyLimit = prefs.dailyLimit, notes = p.llmNotes,
+            dailyLimit = prefs.dailyLimit, notes = p.llmNotes, liveModel = prefs.llmLiveModels[p.engine] ?: "",
         )
         engine.submit(EngineJob<Bitmap>(nextId++, fullScreen = false, image = null,
             control = EngineControl.SetGame(json, p.overrides, game = p.id, engine = p.engine, llm = llm)))

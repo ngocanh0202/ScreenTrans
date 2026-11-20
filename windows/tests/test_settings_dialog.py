@@ -84,3 +84,19 @@ def test_game_notes_delete_key_and_default_models_not_saved(qtbot):
     assert d.values().llm_notes == "Bối cảnh mới."
     d.engine.setCurrentIndex(d.engine.findData("claude"))  # no saved key for Claude
     assert not d.delete_key.isEnabled()
+
+
+def test_model_suggestions_and_a_separate_live_model(qtbot):  # 5c
+    d = SettingsDialog(SettingsValues(**{**V.__dict__, "engine": "gemini", "llm_live_models": {"gemini": "gemini-2.5-flash-lite"}}))
+    qtbot.addWidget(d)
+    items = [d.model_combo.itemText(i) for i in range(d.model_combo.count())]
+    assert "gemini-2.5-pro" in items and "gemini-2.5-flash-lite" in items  # suggestions, any name can still be typed
+    assert d.live_model.text() == "gemini-2.5-flash-lite"
+    d.llm_model.setText("gemini-2.5-pro")
+    d.live_model.setText("")  # empty: Live uses the same model
+    v = d.values()
+    assert v.llm_models == {"gemini": "gemini-2.5-pro"} and v.llm_live_models == {}
+    d.engine.setCurrentIndex(d.engine.findData("claude"))
+    assert "claude-haiku-5-5" in [d.model_combo.itemText(i) for i in range(d.model_combo.count())]
+    d.live_model.setText("claude-haiku-5-5")
+    assert d.values().llm_live_models == {"claude": "claude-haiku-5-5"}

@@ -51,6 +51,13 @@ object UrlConnectionTransport : HttpTransport {
 }
 
 val NAMES = mapOf("gemini" to "Gemini", "openai" to "OpenAI", "claude" to "Claude", "kaggle" to "Kaggle")
+/** Shown as suggestions in "🌐 Dịch bằng"; any other model name of the provider can be typed. */
+val SUGGESTED_MODELS = mapOf(
+    "gemini" to listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"),
+    "openai" to listOf("gpt-5-mini", "gpt-5-nano", "gpt-5"),
+    "claude" to listOf("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"),
+    "kaggle" to emptyList(),
+)
 val DEFAULT_MODELS = mapOf("gemini" to "gemini-2.5-flash", "openai" to "gpt-5-mini", "claude" to "claude-opus-5-5", "kaggle" to "server")
 private const val MAX_TOKENS = 4096L
 

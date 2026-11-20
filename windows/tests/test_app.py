@@ -570,6 +570,7 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
             v = shown[-1]
             return SettingsValues(v.style, v.text_scale, v.long_text, v.model, v.hotkeys, v.ocr, engine="claude",
                                   llm_models={"claude": "claude-haiku-5-5"}, daily_limit=1000,
+                                  llm_live_models={"claude": "claude-haiku-5-5-fast"},
                                   keys={"claude": "sk-ant-SECRET"}, llm_notes="Vertin: nữ.")
 
     app._settings_factory = FakeSettings
@@ -581,7 +582,8 @@ def test_settings_window_saves_the_remote_engine_and_its_key_apart(qtbot, tmp_pa
     job = [j for j in factory.workers[-1].all_jobs if j.mode == "set_game"][-1]
     assert job.payload["engine"] == "claude" and "SECRET" not in str(job.payload)
     assert job.payload["llm"] == {"model": "claude-haiku-5-5", "url": "", "daily_limit": 1000, "data_dir": str(tmp_path),
-                                  "notes": "Vertin: nữ."}
+                                  "notes": "Vertin: nữ.", "live_model": "claude-haiku-5-5-fast"}
+    assert json.loads(saved)["llm"]["live_models"] == {"claude": "claude-haiku-5-5-fast"}
     assert ProfileStore(tmp_path / "profiles").get("game.exe").llm_notes == "Vertin: nữ."
     app.open_settings()  # shown again: the key is known to be saved, the engine is the game's
     assert shown[-1].engine == "claude" and "claude" in shown[-1].saved_keys and shown[-1].daily_limit == 1000
