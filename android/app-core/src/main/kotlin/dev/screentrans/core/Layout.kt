@@ -66,6 +66,58 @@ object Layout {
         return Fit(size, maxOf(needed(size), blockH))
     }
 
+    private const val WIDEN_SHARE = 0.25f  // a box may grow this much of its width...
+    private const val WIDEN_EMS = 4f       // ...or this many text sizes (a short source: "Hello" -> "Xin chào")
+
+    /**
+     * Live box width (port of windows/app/live/layout.py, rules in shared/fixtures/live_layout): the source [width],
+     * or the smallest wider one up to the cap that needs as few [lines] as the cap. Vietnamese runs longer than
+     * English: a short source dropped its last word to a new line.
+     */
+    fun widen(width: Int, lines: (Int) -> Int, room: Int, px: Float): Int {
+        val cap = minOf(room, width + maxOf((WIDEN_SHARE * width).toInt(), (WIDEN_EMS * px).toInt()))
+        if (cap <= width) return width
+        val target = lines(cap)
+        if (lines(width) <= target) return width
+        var lo = width
+        var hi = cap
+        while (hi - lo > 1) {
+            val mid = (lo + hi) / 2
+            if (lines(mid) <= target) hi = mid else lo = mid
+        }
+        return hi
+    }
+
+    /**
+     * Boxes (l, t, r, b) moved down until none covers another, upper ones first; input order kept. A translation
+     * taller than its source used to cover the next block's translation.
+     */
+    fun separate(rects: List<FloatArray>, gap: Float = 2f): List<FloatArray> {
+        val order = rects.indices.sortedWith(compareBy({ rects[it][1] }, { rects[it][0] }))
+        val placed = mutableListOf<FloatArray>()
+        val out = rects.map { it.copyOf() }.toMutableList()
+        for (i in order) {
+            val (l, t0, r, b0) = rects[i]
+            var t = t0
+            var b = b0
+            var moved = true
+            while (moved) {
+                moved = false
+                for (p in placed) {
+                    if (l < p[2] && r > p[0] && t < p[3] && b > p[1]) {
+                        val h = b - t
+                        t = p[3] + gap
+                        b = t + h
+                        moved = true
+                    }
+                }
+            }
+            out[i] = floatArrayOf(l, t, r, b)
+            placed.add(out[i])
+        }
+        return out
+    }
+
     /** Top of a box of [height] px starting at [top]: moved up so it ends on screen, never above the top. */
     fun onScreenTop(top: Float, height: Int, screenH: Int): Float =
         maxOf(0f, minOf(top, (screenH - height).toFloat()))

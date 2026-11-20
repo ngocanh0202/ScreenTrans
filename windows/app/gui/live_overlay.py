@@ -13,6 +13,7 @@ from app.config import Overlay as OverlayCfg
 from app.gui.fullscreen import PAD, block_rect
 from app.gui.overlay import FONT, physical_to_logical
 from app.gui.win32 import exclude_from_capture
+from app.live.layout import separate, widen
 from app.live.style import BlockStyle
 
 LIVE_FLAGS = (Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
@@ -94,6 +95,14 @@ class AreaOverlay(QWidget):
             fg = fg if colors is not None else NAME_COLOR
             self.blocks[key] = LiveBlock(r, kind, text, max(base, MIN_PX), r.height(), fg, bg, angle, pivot)
         else:
+            if not angle:  # a short source ("Hello" -> "Xin chào") must not drop its last word to a new line
+                fm = QFontMetrics(_font(max(base, MIN_PX)))
+
+                def lines(w: int) -> int:
+                    h = fm.boundingRect(QRect(0, 0, max(w - 2 * PAD, 10), 100000), Qt.TextWordWrap, text).height()
+                    return max(1, round(h / max(1, fm.lineSpacing())))
+
+                r.setWidth(widen(r.width(), lines, self.width() - r.left(), max(base, MIN_PX)))
             px, fitted, h = fit_px(text, r.width(), r.height(), base, grow=self.cfg.long_text != "shrink")
             lift = min(round(px * LIFT), r.top()) if not angle else round(px * LIFT)  # never above the screen
             r.setTop(r.top() - lift)
@@ -102,6 +111,17 @@ class AreaOverlay(QWidget):
                 r.moveTop(max(0, self.height() - h))
             self.blocks[key] = LiveBlock(r, kind, fitted, px, h, fg, bg, angle, pivot)
         self._refresh()
+
+    def placed(self) -> dict[str, QRect]:
+        """Where each block is drawn: straight blocks moved down so none covers another (a translation taller than
+        its source used to cover the next one); the stored rects stay as tracked."""
+        keys = [k for k, b in self.blocks.items() if not b.angle]
+        rects = [(b.rect.left(), b.rect.top(), b.rect.left() + b.rect.width(), b.rect.top() + b.draw_height)
+                 for b in (self.blocks[k] for k in keys)]
+        out = {k: QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height) for k, b in self.blocks.items()}
+        for k, (l, t, r, bt) in zip(keys, separate(rects, 2)):
+            out[k] = QRect(l, t, r - l, bt - t)
+        return out
 
     def remove_block(self, key: str) -> None:
         if self.blocks.pop(key, None) is not None:
@@ -117,8 +137,9 @@ class AreaOverlay(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        for b in self.blocks.values():
-            area = QRect(b.rect.left(), b.rect.top(), b.rect.width(), b.draw_height)
+        placed = self.placed()
+        for key, b in self.blocks.items():
+            area = placed[key]
             if b.angle and b.pivot is not None:  # tilted text: draw in its frame, rotated around the image origin
                 p.save()
                 p.translate(b.pivot)

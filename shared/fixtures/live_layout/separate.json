@@ -1,0 +1,8 @@
+[
+ {"name": "apart: unchanged", "gap": 2, "rects": [[0, 0, 100, 30], [0, 40, 100, 60]], "expected": [[0, 0, 100, 30], [0, 40, 100, 60]]},
+ {"name": "a long translation covers the next block: it moves below", "gap": 2, "rects": [[0, 0, 100, 50], [0, 40, 100, 60]], "expected": [[0, 0, 100, 50], [0, 52, 100, 72]]},
+ {"name": "pushed blocks push the next ones", "gap": 2, "rects": [[0, 0, 100, 50], [0, 40, 100, 60], [0, 60, 100, 80]], "expected": [[0, 0, 100, 50], [0, 52, 100, 72], [0, 74, 100, 94]]},
+ {"name": "side by side (touching edges): unchanged", "gap": 2, "rects": [[0, 0, 100, 50], [100, 10, 200, 30]], "expected": [[0, 0, 100, 50], [100, 10, 200, 30]]},
+ {"name": "the upper block stays whatever the input order", "gap": 2, "rects": [[0, 40, 100, 60], [0, 0, 100, 50]], "expected": [[0, 52, 100, 72], [0, 0, 100, 50]]},
+ {"name": "a name lifted onto by the dialogue line below", "gap": 2, "rects": [[10, 100, 80, 120], [10, 117, 300, 160]], "expected": [[10, 100, 80, 120], [10, 122, 300, 165]]}
+]

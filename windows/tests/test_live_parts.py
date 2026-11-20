@@ -174,7 +174,7 @@ def test_long_live_translations_are_never_cut_and_stay_on_screen(qtbot):
         qtbot.addWidget(ao)
         ao.set_block("b1", text, (0, 100, 300, 130), (0, 0), font_px=30)
         b = ao.blocks["b1"]
-        assert b.text == text and b.draw_height > 30 * 4
+        assert b.text == text and b.draw_height > 30 * 3  # taller than the source line, nothing cut
         if long_text == "grow":
             assert b.px == 30  # the source size is kept
         short = ("Một câu dịch rất dài " * 6).strip()
@@ -184,3 +184,42 @@ def test_long_live_translations_are_never_cut_and_stay_on_screen(qtbot):
         if long_text == "grow":  # taller than the screen at the source size: from the top, never above it
             ao.set_block("b3", text * 3, (0, 1040, 300, 1070), (0, 0), font_px=30)
             assert ao.blocks["b3"].rect.top() == 0
+
+
+def test_a_short_source_line_does_not_drop_the_last_word(qtbot):
+    """"Hello" -> "Xin chào": the box was as wide as the source, so "chào" went to a second line."""
+    from PySide6.QtCore import QRect
+    from PySide6.QtGui import QFontMetrics
+
+    from app.config import Overlay
+    from app.gui.fullscreen import PAD
+    from app.gui.live_overlay import AreaOverlay, _font
+
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(ao)
+    source_w = QFontMetrics(_font(30)).horizontalAdvance("Hello") + 2 * PAD  # as wide as the English line
+    ao.set_block("b1", "Xin chào", (0, 100, source_w, 130), (0, 0), font_px=30)
+    b = ao.blocks["b1"]
+    assert QFontMetrics(_font(b.px)).horizontalAdvance("Xin chào") <= b.rect.width() - 2 * PAD  # one line
+    assert b.rect.left() == 0
+    ao.set_block("b2", "Xin chào", (1860, 300, 1920, 330), (0, 0), font_px=30)
+    assert ao.blocks["b2"].rect.right() < 1920  # never past the screen edge
+
+
+def test_translations_never_cover_each_other(qtbot):
+    """A translation taller than its source covered the next block's translation."""
+    from PySide6.QtCore import QRect
+
+    from app.config import Overlay
+    from app.gui.live_overlay import AreaOverlay
+
+    ao = AreaOverlay(Overlay(), QRect(0, 0, 1920, 1080), 1.0)
+    qtbot.addWidget(ao)
+    ao.set_block("n1", "Druvis III", (0, 60, 150, 90), (0, 0), "name", font_px=24)
+    ao.set_block("b1", ("Một câu dịch khá dài " * 8).strip(), (0, 100, 300, 130), (0, 0), font_px=30)
+    ao.set_block("b2", "Câu tiếp theo.", (0, 140, 300, 170), (0, 0), font_px=30)
+    placed = ao.placed()
+    rects = list(placed.values())
+    assert all(not a.intersects(b) for i, a in enumerate(rects) for b in rects[i + 1:])
+    assert placed["n1"].top() == 60 and placed["b2"].top() > 170  # the upper ones stay, the lower one moves
+    ao.grab()  # paints at the placed positions
