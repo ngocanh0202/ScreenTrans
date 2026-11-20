@@ -75,6 +75,11 @@ class Prefs(context: Context) {
         get() = sp.getString("kaggle_url", "") ?: ""
         set(v) = sp.edit().putString("kaggle_url", v).apply()
 
+    /** The on-device translation model (Settings → Model): the bundled one, or one downloaded from Hugging Face. */
+    var modelId: String
+        get() = sp.getString("model_id", "opus-mt-en-vi") ?: "opus-mt-en-vi"
+        set(v) = sp.edit().putString("model_id", v).apply()
+
     /** Characters sent to remote engines per day. */
     var dailyLimit: Int
         get() = sp.getInt("llm_daily_limit", 50_000)

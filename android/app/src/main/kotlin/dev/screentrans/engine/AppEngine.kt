@@ -71,9 +71,15 @@ object AppEngine {
 
     private fun asset(context: Context, path: String) = context.assets.open(path).bufferedReader().readText()
 
-    /** Built on the engine thread: copies the model if needed, loads ONNX, glossaries and OCR. */
+    /** The models downloaded in Settings → Model. */
+    fun store(context: Context) = dev.screentrans.core.model.ModelStore(File(context.filesDir, "models"))
+
+    /** Built on the engine thread: the chosen model (downloaded) or the bundled one, ONNX, glossaries and OCR. */
     fun bundle(context: Context): EngineBundle<Bitmap> {
-        val modelDir = ModelInstaller.install(context)
+        val chosen = dev.screentrans.ui.Prefs(context).modelId
+        val downloaded = if (chosen != MODEL_ID) store(context).dirFor(chosen) else null  // deleted: the bundled one
+        val modelDir = downloaded ?: ModelInstaller.install(context)
+        val modelId = if (downloaded != null) chosen else MODEL_ID
         val mt = Translator(modelDir, threads = 2)
         val translator = SentenceTranslator { texts ->
             texts.map { text ->
@@ -83,10 +89,10 @@ object AppEngine {
         val games = context.assets.list("glossary/games").orEmpty().sorted().map { asset(context, "glossary/games/$it") }
         val glossary = Glossary.load(*(games + asset(context, "glossary/common.json")).toTypedArray())
         val common = asset(context, "glossary/common_words_en.txt").lines().map { it.trim().lowercase() }.toSet()
-        val pipeline = Pipeline(translator, MODEL_ID, glossary, TranslationCache(5000), ProperNounTracker(common))
+        val pipeline = Pipeline(translator, modelId, glossary, TranslationCache(5000), ProperNounTracker(common))
         val ocr = MlKitOcr()
         // remote LLM engines per game (Phase 5): keys from the Android Keystore, context / usage under filesDir/llm
-        val llm = dev.screentrans.core.llm.LlmEngines(File(context.filesDir, "llm"), KeyVault(context), translator, MODEL_ID)
+        val llm = dev.screentrans.core.llm.LlmEngines(File(context.filesDir, "llm"), KeyVault(context), translator, modelId)
         return EngineBundle(
             ocr = ocr::recognize, pipeline = pipeline, warmUp = { mt.translate("Hello.") },
             close = { ocr.close(); mt.close() },  // ONNX sessions + ML Kit are native memory

@@ -318,4 +318,35 @@ class TranslationEngineTest {
 
     private fun java.util.concurrent.ExecutorService.asCoroutineDispatcherCompat() =
         asCoroutineDispatcher()
+
+    @Test
+    fun `reload swaps in the new model, closes the old one, and keeps it when the new one fails`() = runTest {
+        var built = 0
+        val closed = mutableListOf<Int>()
+        var fail = false
+        val engine = TranslationEngine({
+            if (fail) error("model files missing")
+            val n = ++built
+            val tr = SentenceTranslator { texts -> texts.map { "M$n $it" } }
+            EngineBundle(ocr = { _: String -> lines }, pipeline = Pipeline(tr, "m$n", Glossary(emptyList()), TranslationCache(100)),
+                close = { closed.add(n) })
+        }, this, StandardTestDispatcher(testScheduler))
+        val events = mutableListOf<EngineEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { engine.events.collect { events.add(it) } }
+        engine.start()
+        testScheduler.advanceUntilIdle()
+        engine.reload()
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf(1), closed)
+        assertEquals("m2", engine.activeModelId)
+        engine.submit(EngineJob(1, fullScreen = false, image = "img"))
+        testScheduler.advanceUntilIdle()
+        assertEquals("M2 Hello there.", events.filterIsInstance<EngineEvent.Done>().single().segments[1].translation)
+        fail = true
+        engine.reload()
+        testScheduler.advanceUntilIdle()
+        assertEquals(EngineState.Ready, engine.state.value)  // the old model keeps translating
+        assertTrue(events.filterIsInstance<EngineEvent.Notice>().any { "model files missing" in it.message })
+        assertEquals(listOf(1), closed)
+    }
 }

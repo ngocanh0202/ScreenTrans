@@ -51,6 +51,7 @@ import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.Prefs
 import dev.screentrans.ui.RegionEditView
 import dev.screentrans.ui.ResultCard
+import dev.screentrans.ui.ModelsPanel
 import dev.screentrans.ui.TermsPanel
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
@@ -232,6 +233,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
                 PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy"}", ::showLlm),
                 PanelTile("📖", "Thuật ngữ", ::showTerms),
+                PanelTile("🧠", "Model", ::showModels),
             ),
             onClose = ::closeMenu,
         )
@@ -317,12 +319,91 @@ class Controller(private val context: Context, projection: MediaProjection) {
         syncLivePause()
     }
 
+    // ---- models (Settings → Model) -------------------------------------------------------------------
+    private val modelStore by lazy { AppEngine.store(context) }
+    private var modelsPanel: ModelsPanel? = null
+    private var manifest: List<dev.screentrans.core.model.ManifestModel>? = null
+    private var modelBusy: String? = null
+
+    private fun modelRows(): List<dev.screentrans.core.model.ModelRow> {
+        // the bundled model is updated with the app: never shown as "Có bản mới"
+        val bundledVersion = manifest?.firstOrNull { it.id == AppEngine.MODEL_ID }?.version ?: "app"
+        return dev.screentrans.core.model.ModelCatalog.rows(manifest.orEmpty(), modelStore.installed(),
+            mapOf(AppEngine.MODEL_ID to bundledVersion), prefs.modelId)
+    }
+
+    private fun renderModels(message: String) {
+        modelsPanel?.render(modelRows(), modelBusy, message)
+    }
+
+    /** 🧠 Model: the published models (Hugging Face) and the downloaded ones; download / use / delete. */
+    private fun showModels() {
+        closeMenu()
+        lateinit var panel: ModelsPanel
+        panel = ModelsPanel(context,
+            onDownload = { r -> downloadModel(r, use = false) },
+            onUse = { r -> if (r.status == "missing") downloadModel(r, use = true) else useModel(r) },
+            onDelete = { r ->
+                modelStore.delete(r.id)
+                renderModels("Đã xóa ${r.label}.")
+            },
+            onClose = { modelsPanel = null; closeMenu() })
+        modelsPanel = panel
+        val w = (capturer.width * 0.9f).toInt()
+        val h = (capturer.height * 0.85f).toInt()
+        overlays.add(panel, overlays.params(w, h).apply { x = (capturer.width - w) / 2; y = (capturer.height - h) / 4 })
+        menu = panel
+        syncLivePause()
+        renderModels("Đang đọc danh sách model…")
+        scope.launch {
+            val m = kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { modelStore.manifest() }.getOrNull() }
+            if (m != null) manifest = m
+            renderModels(if (m == null) "Không đọc được danh sách model trên mạng: chỉ hiện model trên máy."
+                else "Model tải về nằm trong bộ nhớ của app. Đang tải thì vẫn đóng bảng này được.")
+        }
+    }
+
+    private fun downloadModel(r: dev.screentrans.core.model.ModelRow, use: Boolean) {
+        val m = manifest?.firstOrNull { it.id == r.id } ?: return
+        if (modelBusy != null) return
+        modelBusy = r.id
+        renderModels("Đang tải ${r.label}…")
+        scope.launch {
+            var shownAt = 0L
+            val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runCatching {
+                    modelStore.download(m) { done, total ->
+                        val now = SystemClock.uptimeMillis()
+                        if (now - shownAt > 300) {
+                            shownAt = now
+                            scope.launch { renderModels("Đang tải ${r.label}: ${done * 100 / maxOf(total, 1L)}%") }
+                        }
+                    }
+                }
+            }
+            modelBusy = null
+            result.fold(
+                onSuccess = { if (use) useModel(r) else renderModels("Đã tải ${r.label}.") },
+                onFailure = { renderModels("Không tải được: ${it.message}") },
+            )
+        }
+    }
+
+    private fun useModel(r: dev.screentrans.core.model.ModelRow) {
+        prefs.modelId = r.id
+        engine.reload()  // the old model keeps translating until the new one is loaded
+        engineGame = null  // then the game (glossary, engine) again
+        useGame(profile())
+        renderModels("Đang chuyển sang ${r.label}…")
+    }
+
     private fun stopLive() {
         live.stop()
         bubble.live = false
     }
 
     private fun closeMenu() {
+        if (menu === modelsPanel) modelsPanel = null
         overlays.remove(menu)
         menu = null
         syncLivePause()

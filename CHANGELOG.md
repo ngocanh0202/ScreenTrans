@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- **Quản lý model** (Windows: Cài đặt → "Quản lý model…" / menu khay Model; Android: ⚙ → 🧠 Model): danh sách model trên Hugging Face (`anhbui02/screentrans-models`) và model trên máy — tải về (có tiến trình, kiểm tra SHA-256), cập nhật, xóa, dùng; Windows thêm được model tự export từ thư mục. `models.manifest --upload` đưa model lên repo.
+
 - **Xem / sửa bảng thuật ngữ** của game trong Cài đặt (Windows: nút "Xem / sửa thuật ngữ…" và menu khay "Thuật ngữ của game…"; Android: ⚙ → 📖 Thuật ngữ): thêm, sửa, xóa; để trống bản dịch = giữ nguyên; áp dụng ngay.
 - Live: câu gốc ngắn không còn làm bản dịch rớt chữ cuối xuống dòng (khung nới rộng khi cần); các bản dịch không còn đè lên nhau.
 
