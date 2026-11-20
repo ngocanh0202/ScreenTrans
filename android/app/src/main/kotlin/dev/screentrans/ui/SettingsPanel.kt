@@ -31,20 +31,22 @@ class SettingsPanel(
 ) : LinearLayout(context) {
     private val blue = Color.rgb(37, 99, 235)
     private val idle = Color.argb(45, 255, 255, 255)
-    private val readable = segment("Dễ đọc") { onReadable(true) }
-    private val likeGame = segment("Giống game") { onReadable(false) }
-    private val grow = segment("Kéo dài khung") { onGrowLong(true) }
-    private val shrink = segment("Thu nhỏ chữ") { onGrowLong(false) }
+    private val readable = segment("👁 Dễ đọc") { onReadable(true) }
+    private val likeGame = segment("🎮 Giống game") { onReadable(false) }
+    private val grow = segment("↕ Kéo dài khung") { onGrowLong(true) }
+    private val shrink = segment("🔍 Thu nhỏ chữ") { onGrowLong(false) }
     private val scaleLabel = TextView(context).apply {
         gravity = Gravity.CENTER; textSize = 15f; setTextColor(Color.WHITE)
     }
 
     init {
         orientation = VERTICAL
-        background = GradientDrawable().apply { setColor(Color.argb(245, 22, 22, 28)); cornerRadius = context.dp(16).toFloat() }
-        val pad = context.dp(12)
-        setPadding(pad, pad, pad, pad)
-        minimumWidth = context.dp(280)
+        if (onClose != null) {  // floating panel: a dark card; on the start screen only the layout (the screen's own background)
+            background = GradientDrawable().apply { setColor(Color.argb(245, 22, 22, 28)); cornerRadius = context.dp(16).toFloat() }
+            val pad = context.dp(12)
+            setPadding(pad, pad, pad, pad)
+            minimumWidth = context.dp(280)
+        }
         addView(title("⚙  Cài đặt"))
         // the sections scroll between the title and "Đóng": in landscape (games) the panel is taller than the screen
         val body = LinearLayout(context).apply { orientation = VERTICAL }
@@ -64,7 +66,7 @@ class SettingsPanel(
         // Only the engines this platform can run: Android has ML Kit (on the phone). Phase 5/7 add more here.
         body.addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
-            val mlkit = segment("ML Kit (trên máy)") {}
+            val mlkit = segment("🔤 ML Kit (trên máy)") {}
             select(mlkit, true)
             addView(mlkit, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         })
@@ -83,7 +85,7 @@ class SettingsPanel(
             addView(body)
         }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         if (onClose != null) addView(TextView(context).apply {
-            text = "Đóng"
+            text = "✖  Đóng"
             gravity = Gravity.CENTER
             textSize = 14f
             setTextColor(Color.rgb(180, 180, 190))

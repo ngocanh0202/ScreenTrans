@@ -12,12 +12,13 @@ import android.provider.Settings
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowInsets
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.app.Dialog
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.Window
 import dev.screentrans.core.Step
@@ -36,8 +37,8 @@ import kotlinx.coroutines.cancel
  */
 class MainActivity : Activity() {
     private lateinit var status: TextView
-    private lateinit var action: Button
-    private lateinit var stop: Button
+    private lateinit var action: TextView
+    private lateinit var stop: TextView
     private lateinit var settings: SettingsPanel
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var dialog: Dialog? = null
@@ -70,18 +71,20 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        status = TextView(this).apply { textSize = 16f; setPadding(0, 0, 0, 32) }
-        action = Button(this).apply { setOnClickListener { onAction() } }
-        stop = Button(this).apply {
-            text = "Dừng ScreenTrans"
-            setOnClickListener { CaptureService.stop(this@MainActivity); refresh() }
+        status = TextView(this).apply { textSize = 15f; setPadding(0, 0, 0, dp(16)) }
+        action = pill { onAction() }
+        stop = pill { CaptureService.stop(this@MainActivity); refresh() }.apply {
+            text = "■  Dừng ScreenTrans"
+            paint(this, red)
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
-            addView(TextView(context).apply { text = "ScreenTrans"; textSize = 26f; setPadding(0, 0, 0, 24) })
+            addView(TextView(context).apply {
+                text = "🌐  ScreenTrans"; textSize = 26f; typeface = Typeface.DEFAULT_BOLD; setPadding(0, 0, 0, dp(12))
+            })
             addView(status, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-            addView(action, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(action, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) })
             addView(stop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             settings = screens.settingsPanel(emptyList(), onClose = null)
             addView(settings, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = context.dp(16) })
@@ -108,6 +111,28 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    private val green = Color.rgb(22, 163, 74)
+    private val red = Color.rgb(220, 38, 38)
+    private val blue = Color.rgb(37, 99, 235)
+    private val idle = Color.argb(60, 128, 128, 140)
+
+    private fun dp(v: Int) = (this as android.content.Context).dp(v)
+
+    /** A full-width rounded button: an icon and a label in one text. */
+    private fun pill(action: () -> Unit) = TextView(this).apply {
+        textSize = 17f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = android.view.Gravity.CENTER
+        setTextColor(Color.WHITE)
+        setPadding(dp(16), dp(14), dp(16), dp(14))
+        background = GradientDrawable().apply { cornerRadius = dp(14).toFloat() }
+        setOnClickListener { if (isEnabled) action() }
+    }
+
+    private fun paint(v: TextView, color: Int) {
+        (v.background as GradientDrawable).setColor(color)
+    }
+
     private fun notificationsOk(): Boolean =
         Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
@@ -128,13 +153,18 @@ class MainActivity : Activity() {
             Step.RUNNING -> "Đang chạy. Mở game, chạm nút nổi để dịch."
         }
         action.text = when (s) {
-            Step.OVERLAY -> "Mở cài đặt quyền hiện trên ứng dụng khác"
-            Step.NOTIFICATIONS -> "Cho phép thông báo"
-            Step.CAPTURE -> "Bắt đầu"
-            Step.RUNNING -> "Đang chạy"
+            Step.OVERLAY -> "🔓  Cho phép hiện trên ứng dụng khác"
+            Step.NOTIFICATIONS -> "🔔  Cho phép thông báo"
+            Step.CAPTURE -> "▶  Bắt đầu"
+            Step.RUNNING -> "✔  Đang chạy"
         }
+        paint(action, when (s) {  // the start button stands out; once running it steps back for the red stop
+            Step.CAPTURE -> green
+            Step.RUNNING -> idle
+            else -> blue
+        })
         action.isEnabled = s != Step.RUNNING
-        stop.visibility = if (s == Step.RUNNING) Button.VISIBLE else Button.GONE
+        stop.visibility = if (s == Step.RUNNING) View.VISIBLE else View.GONE
     }
 
     private fun onAction() {
