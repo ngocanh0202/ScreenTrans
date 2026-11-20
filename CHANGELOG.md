@@ -2,6 +2,9 @@
 
 ## Chưa phát hành
 
+- **Xem / sửa bảng thuật ngữ** của game trong Cài đặt (Windows: nút "Xem / sửa thuật ngữ…" và menu khay "Thuật ngữ của game…"; Android: ⚙ → 📖 Thuật ngữ): thêm, sửa, xóa; để trống bản dịch = giữ nguyên; áp dụng ngay.
+- Live: câu gốc ngắn không còn làm bản dịch rớt chữ cuối xuống dòng (khung nới rộng khi cần); các bản dịch không còn đè lên nhau.
+
 - **Công cụ huấn luyện model dịch (Phase 6)**: notebook Kaggle tinh chỉnh `opus-mt-en-vi` bằng dữ liệu giấy phép mở (ghi giấy phép kèm model), export bằng `models.export --hf-id`; công cụ tạo dữ liệu riêng từ LLM bằng key của bạn (không phát hành). Xem `training/README.md`.
 
 - **Dịch bằng mô hình lớn qua mạng (Windows)**: chọn theo game trong Cài đặt → "Dịch bằng": Gemini, OpenAI, Claude (mặc định `claude-opus-5-5`, đổi được) hoặc server Kaggle riêng (`training/kaggle_serve.ipynb`). Gửi kèm 3 câu trước, người nói và thuật ngữ của game; Live gom các câu của một lần đọc vào một lần gọi. Lỗi / quá thời gian (Live 2,5 s, dịch 1 lần 6 s) / hết hạn mức → dùng model trên máy ngay, thử lại server sau 30 s; sai key → báo, không thử lại. Key mã hóa DPAPI; giới hạn ký tự mỗi ngày.

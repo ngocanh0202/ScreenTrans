@@ -51,6 +51,7 @@ import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.Prefs
 import dev.screentrans.ui.RegionEditView
 import dev.screentrans.ui.ResultCard
+import dev.screentrans.ui.TermsPanel
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -230,6 +231,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
                 PanelTile("📷", "Kiểm tra chụp", ::probeCapture),
                 PanelTile("📄", "Nhật ký Live", ::saveLiveLog),
                 PanelTile("🌐", "Dịch bằng: ${dev.screentrans.core.llm.NAMES[profile().engine] ?: "máy"}", ::showLlm),
+                PanelTile("📖", "Thuật ngữ", ::showTerms),
             ),
             onClose = ::closeMenu,
         )
@@ -275,6 +277,35 @@ class Controller(private val context: Context, projection: MediaProjection) {
             repo.save(profile(p.id).copy(engine = e.engine, llmNotes = e.notes))  // the game the panel showed
             engineGame = null  // send the game (with its engine) to the engine again
             useGame(profile())
+            closeMenu()
+        }, onClose = ::closeMenu)
+        val w = (capturer.width * 0.9f).toInt()
+        val h = (capturer.height * 0.85f).toInt()
+        overlays.add(panel, overlays.params(w, h, focusable = true).apply {
+            x = (capturer.width - w) / 2; y = (capturer.height - h) / 4
+        })
+        menu = panel
+        syncLivePause()
+    }
+
+    /** 📖 Thuật ngữ: the game's own glossary terms; saved to its file and sent to the engine at once. */
+    private fun showTerms() {
+        closeMenu()
+        val id = if (live.running) liveGame ?: gameId() else gameId()
+        val file = repo.userGlossary(id)
+        var rows = emptyList<screentrans.text.TermEdit.Row>()
+        if (file.isFile) {
+            val parsed = runCatching { screentrans.text.TermEdit.parse(file.readText()) }.getOrNull()
+            if (parsed == null) {  // keep the broken file for the user, start a new one
+                file.renameTo(java.io.File(file.path + ".bad"))
+                android.widget.Toast.makeText(context, "File thuật ngữ hỏng, đã đổi tên thành ${file.name}.bad.", android.widget.Toast.LENGTH_LONG).show()
+            } else rows = parsed
+        }
+        lateinit var panel: TermsPanel
+        panel = TermsPanel(context, repo.label(id), rows, onSave = { edited ->
+            repo.saveTerms(id, edited)
+            engineGame = null  // reload the game's glossaries in the engine
+            useGame(profile(id))
             closeMenu()
         }, onClose = ::closeMenu)
         val w = (capturer.width * 0.9f).toInt()

@@ -3,6 +3,7 @@ Ctrl+Alt+L toggles Live (translate automatically whenever the text in the Live r
 import argparse
 import copy
 import itertools
+import json
 import os
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ from app.live.controller import LiveController
 from app.live.machine import LiveParams
 from app.cache import normalize
 from app.gui.correct_dialog import CorrectDialog
+from app.gui.terms_dialog import TermsDialog
 from app.gui.settings_dialog import SettingsDialog, SettingsValues, load_settings, save_settings
 from app.gui.foreground import current_game, game_window
 from app.profiles import DEFAULT_ID, Profile, ProfileStore, _rel, to_rel
@@ -132,7 +134,8 @@ class TrayApp(QObject):
         self._select_ctx = None
         self._last_segments: list = []   # last one-shot result, for "edit the last translation"
         self._dialog_factory = CorrectDialog
-        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name)
+        self._settings_factory = lambda values: SettingsDialog(values, self._profile().name, on_terms=self.edit_terms)
+        self._terms_factory = TermsDialog
         self._apply_saved_settings()
         self._build_tray()
         if timers:
@@ -176,6 +179,7 @@ class TrayApp(QObject):
         regions.addAction("Thêm vùng bỏ qua", self.add_ignore_region)
         regions.addAction("Xóa vùng Live", self.clear_live_regions)
         menu.addAction(f"Sửa bản dịch gần nhất ({display_combo(hk.edit_last)})", self.edit_last)
+        menu.addAction("Thuật ngữ của game…", self.edit_terms)
         self.game_action = menu.addAction("Game: —")
         self.game_action.setEnabled(False)
         menu.addSeparator()
@@ -750,6 +754,38 @@ class TrayApp(QObject):
             if self.region_overlay is not None and self.region_overlay.isVisible():
                 self.region_overlay.show_segments(self._last_segments, self.config.overlay.show_source)
                 self._present_region()
+
+    def edit_terms(self) -> None:
+        """Cài đặt → Thuật ngữ: the game's own terms, saved to its glossary file and applied at once."""
+        from app.text.term_edit import dump, parse
+
+        live_on = self.live is not None and self.live.running
+        p = self._live_profile() if live_on else self._profile()
+        path = self._user_glossary(p.id)
+        rows: list = []
+        if path.exists():
+            try:
+                parsed = parse(path.read_text(encoding="utf-8"))
+            except OSError:
+                parsed = None
+            if parsed is None:  # keep the broken file for the user, start a new one
+                try:
+                    os.replace(path, path.with_name(path.name + ".bad"))
+                except OSError:
+                    pass
+                self.notify(f"File thuật ngữ hỏng, đã đổi tên thành {path.name}.bad.")
+            else:
+                rows = parsed
+        dialog = self._terms_factory(rows, p.name or p.id)
+        if not dialog.exec():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(dump(dialog.rows()), ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+        if self._worker_game == p.id:  # reload the game's glossaries in the worker
+            self._worker_game = None
+            self._send_set_game(p)
 
     def _known_terms(self, game_id: str) -> set[str]:
         """Terms already in the game's own glossary (not suggested again in the correction window)."""

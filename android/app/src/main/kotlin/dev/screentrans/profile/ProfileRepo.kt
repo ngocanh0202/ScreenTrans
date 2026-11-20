@@ -69,6 +69,18 @@ class ProfileRepo(private val context: Context) {
         f.writeText(root.toString(1))
     }
 
+    /** Cài đặt → Thuật ngữ: the game's terms replaced by [rows] (already cleaned), written atomically. */
+    fun saveTerms(id: String, rows: List<screentrans.text.TermEdit.Row>) {
+        val f = userGlossary(id)
+        f.parentFile?.mkdirs()
+        val tmp = File(f.path + ".tmp")
+        tmp.writeText(screentrans.text.TermEdit.dump(rows))
+        if (!tmp.renameTo(f)) {
+            f.delete()
+            tmp.renameTo(f)
+        }
+    }
+
     /** corrections.jsonl (training data for Phase 6), same fields as Windows. */
     fun logCorrection(game: String, model: String, source: String, machine: String, corrected: String) {
         val row = JSONObject().apply {
