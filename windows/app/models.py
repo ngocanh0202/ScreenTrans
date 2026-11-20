@@ -1,6 +1,7 @@
 """Download translation models listed in the public manifest.json, verified by SHA-256."""
 import hashlib
 import json
+import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -68,6 +69,9 @@ def ensure_model(
         (m for m in manifest.get("models", []) if m["id"] == model_id and m["platform"] == platform), None
     )
     if entry is None:
+        local = _newest_complete(Path(data_dir) / "models" / model_id)
+        if local is not None:  # a model added from a folder (Settings → Model): not published
+            return local
         raise ModelNotFound(f"Model '{model_id}' for {platform} is not in the manifest at {manifest_url}.")
     model_dir = Path(data_dir) / "models" / model_id / entry["version"]
     missing = [
@@ -86,7 +90,42 @@ def ensure_model(
     for f in missing:
         _download(f["url"], model_dir / f["path"], f["sha256"], on_bytes)
     (model_dir / COMPLETE).write_text(entry["version"], encoding="utf-8")
+    for old in model_dir.parent.iterdir():  # a new version replaces the old ones (disk space)
+        if old.is_dir() and old != model_dir:
+            shutil.rmtree(old, ignore_errors=True)
     return model_dir
+
+
+def fetch_manifest(manifest_url: str, platform: str = "windows") -> list[dict]:
+    """The manifest's models for this platform (raises ModelDownloadError offline)."""
+    return [m for m in _fetch_manifest(manifest_url).get("models", []) if m.get("platform") == platform]
+
+
+def installed(data_dir: Path) -> dict[str, list[str]]:
+    """Models on disk: id -> its completely downloaded versions."""
+    root = Path(data_dir) / "models"
+    out: dict[str, list[str]] = {}
+    for d in sorted(root.glob("*/*")) if root.is_dir() else []:
+        if (d / COMPLETE).is_file():
+            out.setdefault(d.parent.name, []).append(d.name)
+    return out
+
+
+def delete_model(data_dir: Path, model_id: str) -> None:
+    shutil.rmtree(Path(data_dir) / "models" / model_id, ignore_errors=True)
+
+
+def import_folder(src: Path, data_dir: Path, model_id: str) -> Path:
+    """A model exported on this PC (e.g. a private fine-tune) copied in as data_dir/models/<id>/local."""
+    src = Path(src)
+    if not (src / "model.bin").is_file():
+        raise ModelDownloadError(f"{src} is not a CTranslate2 model folder (no model.bin): export it with "
+                                 f"python -m models.export ct2 <id> --hf-id <folder>.")
+    dest = Path(data_dir) / "models" / model_id / "local"
+    shutil.rmtree(dest.parent, ignore_errors=True)
+    shutil.copytree(src, dest)
+    (dest / COMPLETE).write_text("local", encoding="utf-8")
+    return dest
 
 
 def _newest_complete(model_root: Path) -> Path | None:

@@ -706,3 +706,27 @@ def test_terms_dialog_rows_are_cleaned(qtbot):
     d.table.selectRow(1)
     d.remove_selected()
     assert d.rows() == [("vertin", "Vertin", True)]
+
+
+def test_manage_models_switches_to_a_new_model_and_lists_it_in_the_tray(qtbot, tmp_path):
+    app, factory, _, _, _, _ = _live_app(qtbot, tmp_path, game())
+    seen = []
+
+    class FakeModels:
+        def __init__(self, data_dir, url, active, on_use):
+            seen.append((url, active))
+            self.on_use = on_use
+
+        def exec(self):
+            d = tmp_path / "models" / "screentrans-en-vi" / "2"
+            d.mkdir(parents=True)
+            (d / ".complete").write_text("2", encoding="utf-8")
+            self.on_use("screentrans-en-vi")
+
+    app._models_factory = FakeModels
+    workers_before = len(factory.workers)
+    app.open_models()
+    assert "huggingface.co" in seen[0][0]
+    assert app.config.translator.model == "screentrans-en-vi" and len(factory.workers) == workers_before + 1
+    assert app.model_actions["screentrans-en-vi"].isChecked()
+    assert "Quản lý model…" in [a.text() for a in app.models_menu.actions()]
