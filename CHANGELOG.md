@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- **Công cụ huấn luyện model dịch (Phase 6)**: notebook Kaggle tinh chỉnh `opus-mt-en-vi` bằng dữ liệu giấy phép mở (ghi giấy phép kèm model), export bằng `models.export --hf-id`; công cụ tạo dữ liệu riêng từ LLM bằng key của bạn (không phát hành). Xem `training/README.md`.
+
 - **Dịch bằng mô hình lớn qua mạng (Windows)**: chọn theo game trong Cài đặt → "Dịch bằng": Gemini, OpenAI, Claude (mặc định `claude-opus-5-5`, đổi được) hoặc server Kaggle riêng (`training/kaggle_serve.ipynb`). Gửi kèm 3 câu trước, người nói và thuật ngữ của game; Live gom các câu của một lần đọc vào một lần gọi. Lỗi / quá thời gian (Live 2,5 s, dịch 1 lần 6 s) / hết hạn mức → dùng model trên máy ngay, thử lại server sau 30 s; sai key → báo, không thử lại. Key mã hóa DPAPI; giới hạn ký tự mỗi ngày.
 - **Dịch bằng mô hình lớn qua mạng trên Android**: ⚙ → "🌐 Dịch bằng" chọn theo game (Gemini / OpenAI / Claude / Kaggle), cùng ngữ cảnh, ghi chú game, câu đã sửa làm ví dụ, tự dùng model trên máy khi lỗi, giới hạn ký tự mỗi ngày như Windows; key mã hóa bằng Android Keystore. Màn "Sửa": chạm chữ ở câu gốc để thêm thuật ngữ, có gợi ý tên riêng.
 - **Ngữ cảnh game cho LLM (Windows)**: ghi chú game (bối cảnh, nhân vật, cách xưng hô) trong Cài đặt; 10 câu trước kèm người nói, lưu riêng từng game (mở lại app vẫn còn, không lẫn giữa các game); các câu bạn đã sửa được gửi làm ví dụ giọng dịch. Xóa được key đã lưu; khi máy chủ lỗi, Live vẫn hiện từng câu bằng model trên máy.

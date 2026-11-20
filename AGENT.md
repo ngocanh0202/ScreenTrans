@@ -317,6 +317,7 @@ Ngoài ra: hiển thị đúng tiếng Việt có dấu; vùng không lệch ở
 - [ ] *(Người dùng chọn 2026-11-20: chất lượng cao hơn = gọi LLM qua API như 5a/5b; **không** chạy model nặng / LLM trên máy, không tải model lớn về để đo; chỉ dùng model giấy phép mở — bỏ NLLB. Mục dưới chỉ còn tinh chỉnh model nhỏ đang có, không đổi sang model lớn.)* **Tối ưu model trên máy:** đo lại bằng `windows/scripts/compare_engines.py` trên câu thoại thật; Android: thử vinai lượng tử hóa int8 / ONNX (độ trễ trên POCO X8 Pro) hoặc model en→vi khác tốt hơn opus-mt cùng cỡ; Windows: beam / số luồng; dịch theo lô câu của một lần OCR. Chỉ thay model mặc định khi tốt hơn rõ trên bộ câu thật.
 
 ### Phase 6 — Model dịch nhỏ tốt hơn (fine-tune `opus-mt-en-vi` trên Kaggle)
+> *Công cụ xong 2026-11-20 — [plan](docs/superpowers/plans/2026-11-20-phase6-finetune.md), hướng dẫn [training/README.md](training/README.md); chờ người dùng chạy notebook trên Kaggle rồi so sánh / export.*
 > Người dùng chọn 2026-11-20: app mã nguồn mở, model phát hành cho mọi người → **chỉ dữ liệu giấy phép mở**; dữ liệu sinh
 > bởi LLM (Claude / Gemini / OpenAI) **không** dùng cho model phát hành (điều khoản "không làm mô hình cạnh tranh"), chỉ
 > qua công cụ để mỗi người tự tạo model riêng bằng key của mình. Rà giấy phép: [báo cáo](docs/superpowers/reports/2026-11-20-en-vi-licenses.md).
