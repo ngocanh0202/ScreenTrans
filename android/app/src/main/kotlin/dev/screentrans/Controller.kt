@@ -180,7 +180,7 @@ class Controller(private val context: Context, projection: MediaProjection) {
             extras = listOf(
                 PanelTile("✍", "Sửa bản dịch", ::editLast),
                 PanelTile("⚙", "Cài đặt", ::showSettings),
-                PanelTile("⏻", "Tắt", ::quit),
+                PanelTile("✖", "Tắt", ::quit),
             ),
             onClose = ::closeMenu,
         )
