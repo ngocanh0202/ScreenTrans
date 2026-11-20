@@ -52,7 +52,7 @@ PUSH_TO = ""                     # e.g. "yourname/screentrans-en-vi" (needs the 
 APP_MODELS_REPO = "anhbui02/screentrans-models"  # the apps' model list: exported + published here ("" = off)
 '''),
     code('''
-!pip -q install sacrebleu sentencepiece
+!pip -q install sacrebleu sentencepiece sacremoses
 '''),
     code('''
 import sys, subprocess, pathlib
@@ -133,6 +133,7 @@ args = Seq2SeqTrainingArguments(
     eval_strategy="steps", eval_steps=2000, save_steps=2000, save_total_limit=2, logging_steps=200,
     load_best_model_at_end=True, metric_for_best_model="chrf", greater_is_better=True,
     predict_with_generate=True, generation_max_length=128, report_to="none",
+    disable_tqdm=True, logging_first_step=True,  # plain log lines: a background run (Save & Run All) shows no progress bars
 )
 trainer = Seq2SeqTrainer(model=model, args=args, train_dataset=tds["train"], eval_dataset=tds["dev"],
                          data_collator=DataCollatorForSeq2Seq(tok, model=model), compute_metrics=compute_metrics)
