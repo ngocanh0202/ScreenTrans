@@ -51,6 +51,7 @@ import dev.screentrans.ui.Overlays
 import dev.screentrans.ui.Prefs
 import dev.screentrans.ui.RegionEditView
 import dev.screentrans.ui.ResultCard
+import dev.screentrans.ui.TermsPanel
 import dev.screentrans.ui.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
