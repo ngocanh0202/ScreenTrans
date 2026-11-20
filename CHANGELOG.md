@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- Android: màn hình mở app có luôn **Cài đặt** (kiểu bản dịch, cỡ chữ, bản dịch dài, 🌐 Dịch bằng, 📖 Thuật ngữ, 🧠 Model) dưới nút Bắt đầu; đổi khi đang chạy được áp dụng ngay. Bảng nổi có nút **⏻ Tắt**.
+
 - **Quản lý model** (Windows: Cài đặt → "Quản lý model…" / menu khay Model; Android: ⚙ → 🧠 Model): danh sách model trên Hugging Face (`anhbui02/screentrans-models`) và model trên máy — tải về (có tiến trình, kiểm tra SHA-256), cập nhật, xóa, dùng; Windows thêm được model tự export từ thư mục. `models.manifest --upload` đưa model lên repo.
 
 - **Xem / sửa bảng thuật ngữ** của game trong Cài đặt (Windows: nút "Xem / sửa thuật ngữ…" và menu khay "Thuật ngữ của game…"; Android: ⚙ → 📖 Thuật ngữ): thêm, sửa, xóa; để trống bản dịch = giữ nguyên; áp dụng ngay.

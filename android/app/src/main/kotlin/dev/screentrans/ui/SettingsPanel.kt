@@ -27,7 +27,7 @@ class SettingsPanel(
     private val onScale: (up: Boolean) -> Unit,
     private val onGrowLong: (Boolean) -> Unit,
     tools: List<PanelTile>,
-    private val onClose: () -> Unit,
+    private val onClose: (() -> Unit)?,  // null: part of a screen (the app's start screen), no "Đóng"
 ) : LinearLayout(context) {
     private val blue = Color.rgb(37, 99, 235)
     private val idle = Color.argb(45, 255, 255, 255)
@@ -82,13 +82,13 @@ class SettingsPanel(
             isVerticalScrollBarEnabled = true
             addView(body)
         }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(TextView(context).apply {
+        if (onClose != null) addView(TextView(context).apply {
             text = "Đóng"
             gravity = Gravity.CENTER
             textSize = 14f
             setTextColor(Color.rgb(180, 180, 190))
             setPadding(0, context.dp(10), 0, context.dp(2))
-            setOnClickListener { onClose() }
+            setOnClickListener { onClose?.invoke() }
         }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         render(values)
     }
@@ -153,13 +153,13 @@ class SettingsPanel(
         background = GradientDrawable().apply { setColor(idle); cornerRadius = context.dp(12).toFloat() }
         addView(TextView(context).apply { text = t.icon; gravity = Gravity.CENTER; textSize = 18f; setTextColor(Color.WHITE) })
         addView(TextView(context).apply { text = t.label; gravity = Gravity.CENTER; textSize = 11f; setTextColor(Color.WHITE); maxLines = 2 })
-        setOnClickListener { onClose(); t.action() }
+        setOnClickListener { onClose?.invoke(); t.action() }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            onClose()
+            onClose?.invoke()
             return true
         }
         return super.onTouchEvent(e)

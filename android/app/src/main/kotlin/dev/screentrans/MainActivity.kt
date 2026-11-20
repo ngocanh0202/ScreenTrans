@@ -15,14 +15,58 @@ import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.app.Dialog
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.view.View
+import android.view.Window
 import dev.screentrans.core.Step
 import dev.screentrans.core.nextStep
+import dev.screentrans.core.profile.ProfileLogic
+import dev.screentrans.ui.SettingsPanel
+import dev.screentrans.ui.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
-/** Start screen: walks the user through the permissions, then starts CaptureService. */
+/**
+ * Start screen: walks the user through the permissions, then starts CaptureService. Below the buttons: the same
+ * ⚙ settings as the floating panel (its 🌐 / 📖 / 🧠 screens open as dialogs; a running session applies changes).
+ */
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var action: Button
     private lateinit var stop: Button
+    private lateinit var settings: SettingsPanel
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var dialog: Dialog? = null
+
+    private val host = object : SettingsHost {
+        override fun present(panel: View, focusable: Boolean) {
+            dialog?.dismiss()
+            dialog = Dialog(this@MainActivity).apply {
+                requestWindowFeature(Window.FEATURE_NO_TITLE)
+                setContentView(panel)
+                window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                val m = resources.displayMetrics
+                window?.setLayout((m.widthPixels * 0.95f).toInt(), (m.heightPixels * 0.85f).toInt())
+                show()
+            }
+        }
+
+        override fun dismiss() {
+            dialog?.dismiss()
+            dialog = null
+            settings.render(screens.values())
+        }
+
+        override fun gameId(): String =
+            ProfileLogic.pickGame(null, dev.screentrans.ui.Prefs(this@MainActivity).manualGame, packageName)
+
+        override fun changed(change: SettingsChange) = CaptureService.settingsChanged(change)
+    }
+    private val screens by lazy { SettingsScreens(this, scope, host) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +83,8 @@ class MainActivity : Activity() {
             addView(status, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(action, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             addView(stop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            settings = screens.settingsPanel(emptyList(), onClose = null)
+            addView(settings, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = context.dp(16) })
         }
         root.setOnApplyWindowInsetsListener { v, insets ->  // targetSdk 35+ draws edge-to-edge
             if (Build.VERSION.SDK_INT >= 30) {
@@ -53,6 +99,13 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        settings.render(screens.values())  // changed in the floating panel meanwhile
+    }
+
+    override fun onDestroy() {
+        dialog?.dismiss()
+        scope.cancel()
+        super.onDestroy()
     }
 
     private fun notificationsOk(): Boolean =
