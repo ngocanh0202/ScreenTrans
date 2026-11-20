@@ -7,7 +7,11 @@ Giấy phép dữ liệu: [báo cáo](../docs/superpowers/reports/2026-11-20-en-
 
 1. Tạo notebook trên [Kaggle](https://www.kaggle.com/code) → File → Import notebook → `training/kaggle_finetune.ipynb`.
 2. Settings: **Accelerator: GPU T4 x2** (hoặc P100), **Internet: On**.
-3. (Tùy chọn, để phát hành) Add-ons → Secrets: `HF_TOKEN` (token ghi của Hugging Face), đặt `PUSH_TO` trong ô cài đặt.
+3. Add-ons → Secrets: `HF_TOKEN` (token **ghi** của Hugging Face, bật gắn vào notebook). Có token thì cuối notebook
+   **tự export (ct2 + onnx) và đưa model lên `anhbui02/screentrans-models`** với phiên bản mới (ngày giờ) → app hiện
+   "Có bản mới" trong Quản lý model. Chỉ đăng khi điểm chrF cao hơn model gốc; không bao giờ đăng khi dùng
+   `EXTRA_TSV` (dữ liệu LLM) hoặc `ALLOW_SHARE_ALIKE`. Tắt: đặt `APP_MODELS_REPO = ""`. (`PUSH_TO`: tùy chọn, đăng
+   bản Hugging Face thường.)
 4. **Run all**. Tải + lọc dữ liệu ~20–40 phút, huấn luyện vài giờ (phiên Kaggle tối đa 12 giờ). Notebook in điểm
    chrF / BLEU của model gốc và model mới, và các câu thoại mẫu dịch cạnh nhau (CŨ / MỚI).
 5. Tải `screentrans-en-vi.zip` (Output) về, giải nén, rồi trên máy:
