@@ -655,3 +655,23 @@ def test_a_block_that_really_moved_follows_it():
     c._ocr_final[800] = True
     c.on_ocr_done(800, [[Paragraph("text", "Hello there.", ["Hello there."], 10, 118, 300, 148, 30.0)]])  # 18 px: moved
     assert overlays[0].boxes["b1"][1] == 118
+
+
+def test_match_colours_stay_the_same_for_the_next_lines_of_the_dialogue_box():
+    """A new block sampled again made the colours change all the time: a line read while fading in (low contrast,
+    no style) went white-on-dark between two game-coloured ones."""
+    good = _boxed((250, 250, 250), (20, 20, 20))
+    fading = _boxed((250, 250, 250), (235, 235, 235))  # text barely visible yet: sampling fails
+    c, jobs, _, overlays = make([good, good, fading, fading, fading, fading, fading, fading])
+    c.tick(0)
+    first = Paragraph("text", "Hello.", ["Hello."], 0, 0, 300, 30, line_height=30)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[first]])
+    translate(c, translate_jobs(jobs)[-1])
+    colors_first = overlays[0].styles[next(iter(overlays[0].blocks))][1]
+    assert colors_first is not None
+    drive(c, 100, 2000)
+    second = Paragraph("text", "Goodbye now.", ["Goodbye now."], 0, 0, 300, 30, line_height=30)
+    c.on_ocr_done(ocr_jobs(jobs)[-1].id, [[second]])
+    translate(c, translate_jobs(jobs)[-1])
+    key = next(k for k, v in overlays[0].blocks.items() if "Goodbye" in v)
+    assert overlays[0].styles[key][1] == colors_first

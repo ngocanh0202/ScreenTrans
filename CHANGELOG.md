@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- Live kiểu "Giống game": màu bản dịch không còn đổi liên tục — màu được nhớ theo vị trí (lưới 6×6 của vùng Live, theo loại tên / lời thoại), câu sau trong hộp thoại dùng lại màu câu trước; lấy màu thất bại (chữ đang hiện dần) thì lần sau lấy lại.
+
 - Android: màn hình mở app có luôn **Cài đặt** (kiểu bản dịch, cỡ chữ, bản dịch dài, 🌐 Dịch bằng, 📖 Thuật ngữ, 🧠 Model) dưới nút Bắt đầu; đổi khi đang chạy được áp dụng ngay. Bảng nổi có nút **⏻ Tắt**.
 
 - **Quản lý model** (Windows: Cài đặt → "Quản lý model…" / menu khay Model; Android: ⚙ → 🧠 Model): danh sách model trên Hugging Face (`anhbui02/screentrans-models`) và model trên máy — tải về (có tiến trình, kiểm tra SHA-256), cập nhật, xóa, dùng; Windows thêm được model tự export từ thư mục. `models.manifest --upload` đưa model lên repo.

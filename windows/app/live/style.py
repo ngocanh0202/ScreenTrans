@@ -79,3 +79,15 @@ def steady_box(old: tuple | None, new: tuple) -> tuple:
     if abs(new[0] - old[0]) > tol or abs(new[1] - old[1]) > tol:
         return new
     return old[0], old[1], max(old[2], new[2]), max(old[3], new[3])
+
+
+STYLE_CELLS = 6  # Live regions are split into 6 x 6 cells: one remembered "match" style per cell and kind
+
+
+def style_cell(box: tuple, size: tuple[int, int], kind: str) -> str:
+    """Which remembered style a block uses (rules: shared/fixtures/live_style_cells): sampling every new block made
+    the colours change all the time (a line read while fading in, or a failed sample between two good ones)."""
+    w, h = max(1, size[0]), max(1, size[1])
+    col = min(STYLE_CELLS - 1, max(0, int(box[0] * STYLE_CELLS // w)))
+    row = min(STYLE_CELLS - 1, max(0, int(box[1] * STYLE_CELLS // h)))
+    return f"{kind}:{col}:{row}"

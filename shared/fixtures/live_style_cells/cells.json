@@ -1,0 +1,7 @@
+[
+ {"name": "dialogue box near the bottom", "box": [120, 820, 1500, 900], "size": [1920, 1080], "kind": "text", "cell": "text:0:4"},
+ {"name": "the next line of the same box: same cell", "box": [130, 860, 1400, 930], "size": [1920, 1080], "kind": "text", "cell": "text:0:4"},
+ {"name": "the speaker name above it", "box": [120, 770, 300, 805], "size": [1920, 1080], "kind": "name", "cell": "name:0:4"},
+ {"name": "right edge and bottom edge clamp", "box": [1920, 1080, 1930, 1090], "size": [1920, 1080], "kind": "text", "cell": "text:5:5"},
+ {"name": "negative (tilted frame) clamps to 0", "box": [-12, -3, 40, 20], "size": [1920, 1080], "kind": "text", "cell": "text:0:0"}
+]

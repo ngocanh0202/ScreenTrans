@@ -18,6 +18,18 @@ data class BlockStyle(val textR: Int, val textG: Int, val textB: Int, val bgR: I
         private const val MIN_CONTRAST = 3.0
         private const val FONT_PER_LINE = 0.8f
 
+        const val STYLE_CELLS = 6
+
+        /**
+         * Which remembered "match" style a block uses (rules: shared/fixtures/live_style_cells): [left] / [top] of the
+         * block inside its region of [w] x [h] px. Sampling every new block made the colours change all the time.
+         */
+        fun styleCell(left: Float, top: Float, w: Int, h: Int, kind: String): String {
+            val col = (left * STYLE_CELLS / maxOf(1, w)).toInt().coerceIn(0, STYLE_CELLS - 1)
+            val row = (top * STYLE_CELLS / maxOf(1, h)).toInt().coerceIn(0, STYLE_CELLS - 1)
+            return "$kind:$col:$row"
+        }
+
         /** Font size (px) for a source line of [lineHeight] px; null when unknown. */
         fun fontPxFor(lineHeight: Float): Float? = if (lineHeight > 0) lineHeight * FONT_PER_LINE else null
 

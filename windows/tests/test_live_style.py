@@ -47,3 +47,14 @@ def test_paragraph_keeps_the_median_line_height():
 def test_block_style_dataclass():
     s = BlockStyle((1, 2, 3), (4, 5, 6))
     assert s.text == (1, 2, 3) and s.bg == (4, 5, 6)
+
+
+def test_style_cells_match_the_shared_fixtures():
+    import json
+    from pathlib import Path
+
+    from app.live.style import style_cell
+
+    fix = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "live_style_cells" / "cells.json"
+    for c in json.loads(fix.read_text(encoding="utf-8")):
+        assert style_cell(tuple(c["box"]), tuple(c["size"]), c["kind"]) == c["cell"], c["name"]
