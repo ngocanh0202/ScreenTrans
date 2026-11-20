@@ -16,7 +16,7 @@ from app.live.filter import worth_translating
 from app.live.machine import Action, LiveMachine, LiveParams
 from app.live.mask import ignore_mask
 from app.live.sentences import SentenceGate, ocr_key
-from app.live.style import BlockStyle, font_px_for, sample_style, steady_box, steady_font
+from app.live.style import BlockStyle, font_px_for, sample_style, steady_box, steady_font, style_cell
 from app.live.thumb import diff, gray_thumb
 from app.profiles import Rel, to_px
 from app.text.postprocess import Paragraph
@@ -106,6 +106,7 @@ class LiveController(QObject):
     def start(self, regions: list[Region]) -> None:
         self.stop()
         self._known.clear()  # a new run (another model / game): translate again
+        self._cell_styles: dict[tuple[int, str], BlockStyle] = {}  # remembered "match" colours per region cell
         self.regions = list(regions)
         self.machine = LiveMachine(self.params)
         self._trackers = [BlockTracker(self._area_max_blocks) for _ in self.regions]
@@ -158,6 +159,7 @@ class LiveController(QObject):
         return True
 
     def _clear_blocks(self) -> None:
+        self._cell_styles = {}  # another place / scene: sample again
         for (i, key) in list(self._blocks):
             if i < len(self._overlays):
                 self._overlays[i].remove_block(key)
@@ -319,11 +321,16 @@ class LiveController(QObject):
                 if k not in st.shown and (i, key, k, st.sentences[k]) not in self._inflight]
 
     def _style_block(self, i: int, key: str, p: Paragraph, image) -> None:
-        """Font size from the source line height; colours sampled once from the block's pixels."""
+        """Font size from the source line height; colours remembered per cell of the region (style_cell): every
+        block of the dialogue box gets the same colours, sampled once (again only while sampling fails)."""
         st = self._blocks.setdefault((i, key), _BlockState())
         st.font_px = steady_font(st.font_px, font_px_for(getattr(p, "line_height", 0.0)))
         if self.style == "match" and not st.sampled and image is not None:
-            st.sampled = True
+            cell = (i, style_cell((p.left, p.top), (image.width, image.height), p.kind))
+            known = getattr(self, "_cell_styles", {}).get(cell)
+            if known is not None:
+                st.colors, st.sampled = known, True
+                return
             from app.ocr.deskew import bounds
 
             l, t, r, b = bounds((p.left, p.top, p.right, p.bottom), getattr(p, "angle", 0.0))
@@ -335,6 +342,9 @@ class LiveController(QObject):
             import numpy as np
 
             st.colors = sample_style(np.asarray(crop))
+            if st.colors is not None:  # a failed sample (fading in, picture behind) is tried again next read
+                st.sampled = True
+                self._cell_styles[cell] = st.colors
 
     def _update_block(self, i: int, key: str, p: Paragraph, final: bool, carry: dict | None = None) -> list:
         st = self._blocks.setdefault((i, key), _BlockState())

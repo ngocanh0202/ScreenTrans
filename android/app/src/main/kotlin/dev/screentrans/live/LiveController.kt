@@ -68,6 +68,7 @@ class LiveController(
     private val frames = HashMap<Int, Bitmap>()      // OCR job -> the frame it reads (to sample colours)
     private var lastOcrFrame: Bitmap? = null
     private val styles = HashMap<String, BlockStyle?>()  // block -> sampled colours (null: readable style)
+    private val cellStyles = HashMap<String, BlockStyle>()  // region cell + kind -> its remembered "match" colours
     private var blackTicks = 0
     private var blackReported = false
     private var sawGame = false  // a non-black frame since Live started: later black frames are scene fades
@@ -165,6 +166,7 @@ class LiveController(
         layer = null
         frames.clear()
         styles.clear()
+        cellStyles.clear()
         lastOcrFrame = null
         if (capturing) hideOthers(false)
         capturing = false
@@ -290,7 +292,14 @@ class LiveController(
 
     override fun setBlock(region: Int, key: String, text: String, box: FloatArray, kind: Kind, lineHeight: Float, angle: Float) {
         val k = "$region:$key"
-        val colors = if (style != "match") null else styles.getOrPut(k) { sampleStyle(screentrans.text.Deskew.bounds(box, angle)) }
+        val colors = if (style != "match") null else styles[k] ?: run {
+            // one style per cell of the region and kind (BlockStyle.styleCell): the dialogue box keeps its colours
+            val r = regions.getOrNull(region)
+            val cell = "$region:" + if (r == null) "" else
+                BlockStyle.styleCell(box[0] - r[0], box[1] - r[1], r[2] - r[0], r[3] - r[1], kind.name.lowercase())
+            (cellStyles[cell] ?: sampleStyle(screentrans.text.Deskew.bounds(box, angle))?.also { cellStyles[cell] = it })
+                ?.also { styles[k] = it }  // a failed sample (fading in) is tried again on the next draw
+        }
         layer?.set(k, text, box, kind, BlockStyle.fontPxFor(lineHeight), colors, angle)  // whole text, never cut
     }
 

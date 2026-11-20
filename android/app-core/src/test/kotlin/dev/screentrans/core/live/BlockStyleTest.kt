@@ -47,4 +47,15 @@ class BlockStyleTest {
         val p = Postprocess.run(listOf(Line("Where are you going? The", 20f, 100f, 400f, 30f), Line("station is closed today.", 20f, 134f, 380f, 32f))).single()
         assertEquals(31f, p.lineHeight)
     }
+
+    @Test
+    fun `style cells match the shared fixtures`() {
+        val file = File(System.getProperty("shared.dir"), "fixtures/live_style_cells/cells.json")
+        for (e in JsonParser.parseString(file.readText()).asJsonArray) {
+            val c = e.asJsonObject
+            val box = c["box"].asJsonArray.map { it.asFloat }
+            val size = c["size"].asJsonArray.map { it.asInt }
+            assertEquals(c["cell"].asString, BlockStyle.styleCell(box[0], box[1], size[0], size[1], c["kind"].asString), c["name"].asString)
+        }
+    }
 }
